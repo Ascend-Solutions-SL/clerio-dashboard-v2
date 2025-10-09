@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Outfit } from 'next/font/google';
 import './globals.css';
 import LayoutWrapper from '@/components/LayoutWrapper';
 
-const inter = Inter({ subsets: ['latin'] });
+const outfit = Outfit({ subsets: ['latin'], weight: ['200', '300', '400', '500', '600'] });
 
 export const metadata: Metadata = {
   title: 'Clerio Dashboard',
@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={inter.className}>
+      <body className={outfit.className}>
         <LayoutWrapper>{children}</LayoutWrapper>
       </body>
     </html>
