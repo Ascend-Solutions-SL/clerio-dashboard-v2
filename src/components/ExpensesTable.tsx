@@ -98,15 +98,19 @@ export function ExpensesTable() {
   return (
     <div className="bg-white p-6 rounded-lg border border-gray-200">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" className="flex items-center gap-2">
-            Filtros <span className="bg-blue-600 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span> <ChevronDown className="h-4 w-4" />
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" className="flex items-center gap-1.5 text-sm h-9 px-3">
+            <span className="leading-none">Filtros</span>
+            <span className="bg-blue-600 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">3</span>
+            <ChevronDown className="h-3.5 w-3.5" />
           </Button>
-          <div className="bg-gray-100 text-gray-700 text-sm px-3 py-1 rounded-full flex items-center gap-2">
-            Proveedor: ErgoNatural SL <button>x</button>
+          <div className="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+            Proveedor: ErgoNatural SL
+            <button type="button" className="text-gray-400 text-xs leading-none">✕</button>
           </div>
-          <div className="bg-gray-100 text-gray-700 text-sm px-3 py-1 rounded-full flex items-center gap-2">
-            Periodo: 01/09/2025 - 01/10/2025 <button>x</button>
+          <div className="bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+            Periodo: 01/09/2025 - 01/10/2025
+            <button type="button" className="text-gray-400 text-xs leading-none">✕</button>
           </div>
         </div>
         <div className="relative">

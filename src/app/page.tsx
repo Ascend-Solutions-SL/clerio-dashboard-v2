@@ -7,35 +7,49 @@ import { FileText, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
 
 export default function Home() {
   return (
-    <div>
-      <Header />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        <StatCard 
-          title="Facturas Procesadas"
-          value="220"
-          percentage={22}
-          Icon={FileText}
-        />
-        <StatCard 
-          title="Ingresos"
-          value="8070€"
-          percentage={41}
-          Icon={ArrowUpCircle}
-        />
-        <StatCard 
-          title="Gastos"
-          value="3260€"
-          percentage={-16} // Negative for decrease
-          Icon={ArrowDownCircle}
-        />
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <BalanceChart />
+    <div className="-m-8">
+      <div className="bg-white pt-8 pb-8">
+        <div className="max-w-6xl mx-auto px-6">
+          <Header />
+          <div className="flex flex-col md:flex-row md:justify-between gap-4 md:gap-6 max-w-5xl mx-auto">
+            <StatCard 
+              title="Facturas Procesadas"
+              value="220"
+              percentage={22}
+              Icon={FileText}
+              size="compact"
+              className="md:w-[300px]"
+            />
+            <StatCard 
+              title="Ingresos"
+              value="8070€"
+              percentage={41}
+              Icon={ArrowUpCircle}
+              size="compact"
+              className="md:w-[300px]"
+            />
+            <StatCard 
+              title="Gastos"
+              value="3260€"
+              percentage={-16}
+              Icon={ArrowDownCircle}
+              size="compact"
+              className="md:w-[300px]"
+            />
+          </div>
         </div>
-        <div>
-          <Integrations />
-          <ClerioChat />
+      </div>
+      <div className="bg-gray-50 pb-8 pt-6 border-t border-gray-100">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <BalanceChart />
+            </div>
+            <div>
+              <Integrations />
+              <ClerioChat />
+            </div>
+          </div>
         </div>
       </div>
     </div>
