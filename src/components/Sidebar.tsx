@@ -15,8 +15,8 @@ const navItems = [
   { href: '/', icon: Home, label: 'Inicio' },
   { href: '/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
   { href: '/gastos', icon: ArrowDownCircle, label: 'Gastos' },
-  { href: '#', icon: LinkIcon, label: 'Integraciones' },
-  { href: '#', icon: MessageSquare, label: 'ClerioChat', badge: 2 },
+  { href: '/integraciones', icon: LinkIcon, label: 'Integraciones' },
+  { href: '/cleriochat', icon: MessageSquare, label: 'ClerioChat', badge: 2 },
 ];
 
 interface SidebarProps {
