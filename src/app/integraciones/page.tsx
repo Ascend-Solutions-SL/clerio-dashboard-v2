@@ -23,14 +23,21 @@ const IntegracionesPage = () => {
       </div>
       <div className="bg-gray-50 pb-8 pt-8 border-t border-gray-100">
         <div className="max-w-5xl mx-auto px-6">
-          <section className="bg-blue-50 border border-blue-100 rounded-2xl px-6 py-5 flex items-start gap-4">
-            <Sparkles className="h-8 w-8 text-blue-500 mt-1" />
-            <div className="space-y-2 text-sm text-blue-900">
-              <p className="font-semibold">¿Tu herramienta favorita no aparece?</p>
-              <p>
-                Estamos ampliando el catálogo. Escríbenos y te avisamos cuando esté lista.
-                Prometemos traer cables nuevos cada semana.
-              </p>
+          <section className="bg-blue-50 border border-blue-200 rounded-xl px-6 py-6 flex flex-col md:flex-row md:items-center gap-4 md:gap-8 shadow-sm">
+            <div className="flex items-start gap-3">
+              <Sparkles className="h-8 w-8 text-blue-500 mt-1" />
+              <div className="space-y-2 text-sm text-blue-900">
+                <p className="font-semibold">¿Tu herramienta favorita no aparece?</p>
+                <p>
+                  Estamos ampliando el catálogo. Escríbenos y te avisamos cuando esté lista.
+                  Prometemos traer cables nuevos cada semana.
+                </p>
+              </div>
+            </div>
+            <div className="md:ml-auto">
+              <button className="inline-flex items-center justify-center rounded-lg border border-blue-800 bg-blue-500 px-1 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50">
+                Solicitar Integración
+              </button>
             </div>
           </section>
         </div>
