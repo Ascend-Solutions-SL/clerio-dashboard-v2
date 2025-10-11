@@ -35,7 +35,7 @@ const IntegracionesPage = () => {
               </div>
             </div>
             <div className="md:ml-auto">
-              <button className="inline-flex items-center justify-center rounded-lg border border-blue-800 bg-blue-500 px-1 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50">
+              <button className="inline-flex items-center justify-center rounded-lg border border-blue-800 bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50">
                 Solicitar Integración
               </button>
             </div>

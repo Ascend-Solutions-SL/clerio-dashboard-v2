@@ -27,6 +27,7 @@ export default function Home() {
               Icon={ArrowUpCircle}
               size="compact"
               className="md:w-[300px]"
+              href="/ingresos"
             />
             <StatCard 
               title="Gastos"
@@ -35,6 +36,7 @@ export default function Home() {
               Icon={ArrowDownCircle}
               size="compact"
               className="md:w-[300px]"
+              href="/gastos"
             />
           </div>
         </div>
