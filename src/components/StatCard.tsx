@@ -50,8 +50,8 @@ const StatCard: React.FC<StatCardProps> = ({
 
   const variantClasses = {
     default: 'bg-white text-gray-700',
-    green: 'bg-green-100 text-green-900',
-    red: 'bg-red-50 text-red-800',
+    green: 'bg-white text-gray-700',
+    red: 'bg-white text-gray-700',
   };
 
   const valueColorClasses = {

@@ -64,8 +64,20 @@ export const columns: ColumnDef<Income>[] = [
   { accessorKey: 'invoice', header: 'Nº Factura' },
   { accessorKey: 'client', header: 'Cliente' },
   { accessorKey: 'description', header: 'Descripción' },
-  { accessorKey: 'subtotal', header: 'Subtotal' },
-  { accessorKey: 'total', header: 'Total' },
+  {
+    accessorKey: 'subtotal',
+    header: () => <div className="text-center">Subtotal</div>,
+    cell: ({ getValue }) => (
+      <span className="block text-center font-semibold text-green-600">{getValue<string>()}</span>
+    ),
+  },
+  {
+    accessorKey: 'total',
+    header: () => <div className="text-center">Total</div>,
+    cell: ({ getValue }) => (
+      <span className="block text-center font-semibold text-green-600">{getValue<string>()}</span>
+    ),
+  },
   {
     id: 'actions',
     cell: () => {
