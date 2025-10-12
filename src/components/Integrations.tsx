@@ -93,11 +93,14 @@ const Integrations = () => {
               href="/integraciones"
               className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 flex flex-col gap-1.5 hover:border-blue-300 hover:shadow-sm transition"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-7 h-7 rounded-full bg-gray-50 border flex items-center justify-center">
                   {tile.icon}
                 </div>
-                <div className={`text-sm font-semibold text-gray-800 leading-tight ${nunito.className}`}>
+                <div
+                  className={`text-sm font-semibold text-gray-800 leading-tight ${nunito.className} truncate flex-1`}
+                  title={tile.name}
+                >
                   {tile.name}
                 </div>
               </div>
