@@ -1,5 +1,7 @@
 import React from 'react';
+import Link from 'next/link';
 import { LucideProps } from 'lucide-react';
+
 interface StatCardProps {
   title: string;
   value: string;
@@ -11,6 +13,7 @@ interface StatCardProps {
   variant?: 'default' | 'green' | 'red';
   showIcon?: boolean;
   className?: string;
+  href?: string;
 }
 
 const StatCard: React.FC<StatCardProps> = ({
@@ -24,6 +27,7 @@ const StatCard: React.FC<StatCardProps> = ({
   variant = 'default',
   showIcon = true,
   className,
+  href,
 }) => {
   const hasPercentage = typeof percentage === 'number';
   const isPositive = (percentage ?? 0) >= 0;
@@ -56,8 +60,18 @@ const StatCard: React.FC<StatCardProps> = ({
     red: 'text-red-800',
   };
 
-  return (
-    <div className={`rounded-2xl border border-gray-200 w-full flex flex-col gap-3 ${containerClasses} ${variantClasses[variant]} ${className ?? ''}`}>
+  const cardClasses = [
+    'rounded-2xl border border-gray-200 w-full flex flex-col gap-3',
+    containerClasses,
+    variantClasses[variant],
+    className ?? '',
+    href ? 'transition-transform duration-200 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:border-blue-200 cursor-pointer' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const content = (
+    <div className={cardClasses}>
       <span className="text-base md:text-lg font-light text-gray-600 tracking-wide break-words">{title}</span>
 
       <div className="flex items-center justify-between">
@@ -80,6 +94,19 @@ const StatCard: React.FC<StatCardProps> = ({
       </div>
     </div>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white rounded-2xl"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
 };
 
 export default StatCard;

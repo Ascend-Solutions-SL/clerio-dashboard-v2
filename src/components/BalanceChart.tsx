@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const data = [
+const rawData = [
   { name: 'E', ingresos: 4000, gastos: 2400 },
   { name: 'F', ingresos: 3000, gastos: 1398 },
   { name: 'M', ingresos: 2000, gastos: 9800 },
@@ -17,6 +17,11 @@ const data = [
   { name: 'N', ingresos: 2780, gastos: 3908 },
   { name: 'D', ingresos: 1890, gastos: 4800 },
 ];
+
+const data = rawData.map((item) => ({
+  ...item,
+  total: item.ingresos - item.gastos,
+}));
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState('Ingresos');
@@ -32,23 +37,30 @@ const BalanceChart = () => {
         </div>
         <div className="text-sm text-gray-600">Último año</div>
       </div>
-      <div className="flex border-b mb-4">
-        {['Ingresos', 'Gastos', 'Total'].map(tab => (
-          <button 
-            key={tab}
-            className={`py-2 px-4 text-sm font-medium ${activeTab === tab ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500'}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
+      <div className="flex gap-2 border-b mb-4 pb-2">
+        {['Ingresos', 'Gastos', 'Total'].map((tab) => {
+          const isActive = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              className={`inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 ${
+                isActive
+                  ? 'text-blue-600 bg-blue-50 shadow-md shadow-blue-500/20 border border-blue-200 -translate-y-0.5'
+                  : 'text-gray-500 hover:text-blue-600 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/15 border border-transparent'
+              }`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab}
+            </button>
+          );
+        })}
       </div>
       <div style={{ width: '100%', height: 300 }}>
         <ResponsiveContainer>
-          <BarChart data={data} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+          <BarChart data={data} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" axisLine={false} tickLine={false} />
-            <YAxis axisLine={false} tickLine={false} />
+            <YAxis width={50} axisLine={false} tickLine={false} />
             <Tooltip />
             <Bar dataKey={activeDataKey} fill="#3B82F6" radius={[4, 4, 0, 0]} />
           </BarChart>
