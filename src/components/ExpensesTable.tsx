@@ -64,8 +64,24 @@ export const columns: ColumnDef<Expense>[] = [
   { accessorKey: 'invoice', header: 'Nº Factura' },
   { accessorKey: 'provider', header: 'Proveedor' },
   { accessorKey: 'description', header: 'Descripción' },
-  { accessorKey: 'subtotal', header: 'Subtotal' },
-  { accessorKey: 'total', header: 'Total' },
+  {
+    accessorKey: 'subtotal',
+    header: () => <div className="text-center">Subtotal</div>,
+    cell: ({ getValue }) => {
+      const value = getValue<string>();
+      const formatted = value?.startsWith('-') ? value : `-${value}`;
+      return <span className="block text-center font-semibold text-red-600">{formatted}</span>;
+    },
+  },
+  {
+    accessorKey: 'total',
+    header: () => <div className="text-center">Total</div>,
+    cell: ({ getValue }) => {
+      const value = getValue<string>();
+      const formatted = value?.startsWith('-') ? value : `-${value}`;
+      return <span className="block text-center font-semibold text-red-600">{formatted}</span>;
+    },
+  },
   {
     id: 'actions',
     cell: () => (
