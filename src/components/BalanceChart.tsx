@@ -43,7 +43,7 @@ const BalanceChart = () => {
           return (
             <button
               key={tab}
-              className={`inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 ${
+              className={`inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 cursor-pointer select-none ${
                 isActive
                   ? 'text-blue-600 bg-blue-50 shadow-md shadow-blue-500/20 border border-blue-200 -translate-y-0.5'
                   : 'text-gray-500 hover:text-blue-600 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/15 border border-transparent'

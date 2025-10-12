@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   Home,
@@ -61,10 +62,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       </nav>
 
       <div className="p-4 flex items-center">
-        <img
+        <Image
           src="https://i.pravatar.cc/40?u=helena"
           alt="User Avatar"
-          className="w-10 h-10 rounded-full flex-shrink-0"
+          width={40}
+          height={40}
+          className="rounded-full flex-shrink-0"
+          priority
         />
         <div className={`ml-3 overflow-hidden transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
           <p className="font-semibold whitespace-nowrap">Helena Albir</p>
