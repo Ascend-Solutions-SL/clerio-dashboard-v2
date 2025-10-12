@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 
 type ChatItem = {
   id: string;
@@ -80,10 +81,12 @@ const ClerioChat = () => {
       <div className="max-h-32 overflow-y-auto pr-1 space-y-3">
         {chats.map((chat) => (
           <div key={chat.id} className="flex items-start">
-            <img
+            <Image
               src={chat.avatar}
               alt={chat.name}
-              className="w-10 h-10 rounded-full mr-3"
+              width={40}
+              height={40}
+              className="rounded-full mr-3"
             />
             <div className="flex-1">
               <div className="flex items-center">
