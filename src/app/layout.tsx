@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Outfit } from 'next/font/google';
 import './globals.css';
 import LayoutWrapper from '@/components/LayoutWrapper';
+import { DashboardSessionProvider } from '@/context/dashboard-session-context';
 
 const outfit = Outfit({ subsets: ['latin'], weight: ['200', '300', '400', '500', '600'] });
 
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={outfit.className}>
-        <LayoutWrapper>{children}</LayoutWrapper>
+        <DashboardSessionProvider>
+          <LayoutWrapper>{children}</LayoutWrapper>
+        </DashboardSessionProvider>
       </body>
     </html>
   );
