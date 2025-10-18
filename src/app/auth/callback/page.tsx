@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -10,7 +10,18 @@ const resolveLoginUrl = () => process.env.NEXT_PUBLIC_LOGIN_URL ?? process.env.C
 
 type VerificationState = 'idle' | 'verifying' | 'success' | 'error';
 
-export default function AuthCallback() {
+const LoadingScreen = () => (
+  <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-6">
+    <div className="w-full max-w-md rounded-2xl border border-blue-500/30 bg-blue-500/10 p-6 text-center space-y-4">
+      <h1 className="text-2xl font-semibold">Validando acceso…</h1>
+      <p className="text-sm text-blue-200">
+        Estamos comprobando tus credenciales, un momento por favor.
+      </p>
+    </div>
+  </main>
+);
+
+function AuthCallbackVerifier() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [state, setState] = useState<VerificationState>('idle');
@@ -78,16 +89,13 @@ export default function AuthCallback() {
     );
   }
 
+  return <LoadingScreen />;
+}
+
+export default function AuthCallback() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-100 p-6">
-      <div className="w-full max-w-md rounded-2xl border border-blue-500/30 bg-blue-500/10 p-6 text-center space-y-4">
-        <h1 className="text-2xl font-semibold">Validando acceso…</h1>
-        <p className="text-sm text-blue-200">
-          {state === 'verifying'
-            ? 'Estamos comprobando tus credenciales, un momento por favor.'
-            : 'Preparando la redirección al dashboard.'}
-        </p>
-      </div>
-    </main>
+    <Suspense fallback={<LoadingScreen />}>
+      <AuthCallbackVerifier />
+    </Suspense>
   );
 }

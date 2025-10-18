@@ -16,7 +16,10 @@ export interface SessionData {
 }
 
 declare module 'iron-session' {
-  interface IronSessionData extends SessionData {}
+  interface IronSessionData {
+    user?: SessionUser;
+    lastActivity?: number;
+  }
 }
 
 const sessionPassword = process.env.IRON_SESSION_PASSWORD;

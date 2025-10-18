@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     payload = decoded as DashboardTokenPayload;
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Token caducado o inválido' }, { status: 401 });
   }
 
