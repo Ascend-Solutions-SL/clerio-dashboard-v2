@@ -22,6 +22,14 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    env:
+      IRON_SESSION_PASSWORD: ${{ secrets.IRON_SESSION_PASSWORD }}
+      DASHBOARD_SIGNING_SECRET: ${{ secrets.DASHBOARD_SIGNING_SECRET }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      CLERIO_LOGIN_URL: ${{ secrets.CLERIO_LOGIN_URL }}
+      NEXT_PUBLIC_LOGIN_URL: ${{ secrets.NEXT_PUBLIC_LOGIN_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
