@@ -21,17 +21,34 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useDashboardSession } from '@/context/dashboard-session-context';
+import { supabase } from '@/lib/supabase';
 
-const data: Income[] = Array(8).fill({
-  date: '07/10/2025',
-  invoice: 'F2500061',
-  client: 'ErgoNatural SL',
-  description: 'Servicios de post venta personal...',
-  subtotal: '100€',
-  total: '121€',
-});
+const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+
+const formatDate = (value: string) => {
+  if (!value) {
+    return '';
+  }
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) {
+    return value;
+  }
+  return `${day}/${month}/${year}`;
+};
+
+type FacturaRow = {
+  id: number;
+  numero: string;
+  fecha: string;
+  cliente_proveedor: string;
+  concepto: string | null;
+  importe_sin_iva: number | string | null;
+  importe_total: number | string | null;
+};
 
 export type Income = {
+  id: number;
   date: string;
   invoice: string;
   client: string;
@@ -96,7 +113,67 @@ export const columns: ColumnDef<Income>[] = [
 ];
 
 export function IncomeTable() {
+  const { user, isLoading } = useDashboardSession();
+  const [data, setData] = React.useState<Income[]>([]);
   const [rowSelection, setRowSelection] = React.useState({});
+
+  React.useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    const empresaId = user?.empresaId ? Number(user.empresaId) : null;
+
+    if (!empresaId) {
+      setData([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadData = async () => {
+      const { data: rows, error } = await supabase
+        .from('facturas')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
+        .eq('empresa_id', empresaId)
+        .eq('tipo', 'Ingresos')
+        .order('fecha', { ascending: false })
+        .returns<FacturaRow[]>();
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error || !rows) {
+        setData([]);
+        return;
+      }
+
+      const mapped = rows.map((row) => {
+        const subtotalValue = Number(row.importe_sin_iva ?? 0);
+        const totalValue = Number(row.importe_total ?? 0);
+
+        return {
+          id: row.id,
+          date: formatDate(row.fecha),
+          invoice: row.numero,
+          client: row.cliente_proveedor,
+          description: row.concepto ?? '',
+          subtotal: currencyFormatter.format(Number.isNaN(subtotalValue) ? 0 : subtotalValue),
+          total: currencyFormatter.format(Number.isNaN(totalValue) ? 0 : totalValue),
+        };
+      });
+
+      setData(mapped);
+    };
+
+    void loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isLoading, user?.empresaId]);
+
   const table = useReactTable({
     data,
     columns,

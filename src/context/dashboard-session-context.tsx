@@ -11,7 +11,11 @@ interface DashboardSessionState {
   refresh: () => Promise<void>;
 }
 
-const LOGIN_URL = process.env.NEXT_PUBLIC_LOGIN_URL ?? 'https://clerio-login.vercel.app';
+import { ENV, assertEnv } from '@/lib/config';
+
+const LOGIN_URL = ENV.APP_BASE_URL;
+
+assertEnv();
 
 const DashboardSessionContext = createContext<DashboardSessionState | undefined>(undefined);
 
@@ -35,7 +39,9 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (response.status === 401) {
-        window.location.href = LOGIN_URL;
+        if (window.location.origin !== LOGIN_URL) {
+          window.location.href = LOGIN_URL;
+        }
         return;
       }
 

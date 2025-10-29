@@ -4,9 +4,12 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-const DEFAULT_LOGIN_URL = 'https://clerio-login.vercel.app';
+import { ENV, assertEnv } from '@/lib/config';
 
-const resolveLoginUrl = () => process.env.NEXT_PUBLIC_LOGIN_URL ?? process.env.CLERIO_LOGIN_URL ?? DEFAULT_LOGIN_URL;
+assertEnv();
+
+const resolveLoginUrl = () => ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://clerio-login.vercel.app';
+const resolveDashboardBaseUrl = () => ENV.DASHBOARD_BASE_URL || 'https://dashboard.ascendsolutions.es';
 
 type VerificationState = 'idle' | 'verifying' | 'success' | 'error';
 
@@ -28,7 +31,7 @@ function AuthCallbackVerifier() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const token = searchParams.get('token');
-  const target = searchParams.get('redirect') ?? undefined;
+  const target = searchParams.get('redirect') ?? resolveDashboardBaseUrl();
   const loginUrl = useMemo(resolveLoginUrl, []);
 
   useEffect(() => {
@@ -59,7 +62,7 @@ function AuthCallbackVerifier() {
         }
 
         setState('success');
-        router.replace(target ?? '/');
+        router.replace(target);
       } catch (error) {
         const reason = error instanceof Error ? error.message : 'Error desconocido';
         setErrorMessage(reason);
