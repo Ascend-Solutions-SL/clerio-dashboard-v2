@@ -4,8 +4,9 @@ import { useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { ENV } from '@/lib/config';
 
-const LOGIN_URL = process.env.NEXT_PUBLIC_LOGIN_URL ?? 'https://clerio-login.vercel.app';
+const LOGIN_URL = ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://clerio-login.vercel.app';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
