@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 import type { SessionUser } from '@/lib/session';
 
@@ -20,6 +21,7 @@ assertEnv();
 const DashboardSessionContext = createContext<DashboardSessionState | undefined>(undefined);
 
 const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) => {
+  const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,10 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (response.status === 401) {
-        if (window.location.origin !== LOGIN_URL) {
+        const { origin, pathname } = window.location;
+        const isAuthFlow = pathname.startsWith('/auth/');
+
+        if (origin !== LOGIN_URL && !isAuthFlow) {
           window.location.href = LOGIN_URL;
         }
         return;
@@ -61,7 +66,7 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
 
   useEffect(() => {
     void loadSession();
-  }, [loadSession]);
+  }, [loadSession, pathname]);
 
   const value = useMemo<DashboardSessionState>(
     () => ({
