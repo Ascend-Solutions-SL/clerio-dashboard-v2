@@ -37,16 +37,16 @@ const StatCard: React.FC<StatCardProps> = ({
       ? 'h-44 px-7 py-6'
       : size === 'md'
         ? 'h-32 px-6 py-4'
-        : 'h-28 px-4 py-4';
+        : 'h-24 px-4 py-3';
 
   const valueClasses =
     size === 'lg'
-      ? 'text-5xl md:text-6xl'
+      ? 'text-4xl md:text-5xl'
       : size === 'md'
-        ? 'text-4xl md:text-5xl'
-        : 'text-3xl md:text-4xl';
+        ? 'text-3xl md:text-4xl'
+        : 'text-lg md:text-xl';
 
-  const iconSize = size === 'lg' ? 26 : size === 'md' ? 22 : 20;
+  const iconSize = size === 'lg' ? 26 : size === 'md' ? 22 : 18;
 
   const variantClasses = {
     default: 'bg-white text-gray-700',
@@ -72,7 +72,7 @@ const StatCard: React.FC<StatCardProps> = ({
 
   const content = (
     <div className={cardClasses}>
-      <span className="text-base md:text-lg font-light text-gray-600 tracking-wide break-words">{title}</span>
+      <span className="text-sm md:text-base font-light text-gray-600 tracking-wide break-words">{title}</span>
 
       <div className="flex items-center justify-between">
         <p className={`${valueClasses} font-light tracking-tight ${valueColorClasses[variant]}`}>{value}</p>
