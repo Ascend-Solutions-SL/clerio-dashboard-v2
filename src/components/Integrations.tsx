@@ -77,16 +77,16 @@ const Integrations = () => {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <h3 className={`text-gray-800 text-base font-semibold ${nunito.className}`}>Integraciones</h3>
+        <h3 className={`text-gray-800 text-sm font-semibold ${nunito.className}`}>Conexiones</h3>
         <Link
           href="/integraciones"
-          className="inline-flex items-center px-2 py-1 text-xs font-semibold text-blue-600 transition-all duration-200 rounded hover:text-blue-700 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          className="inline-flex items-center px-1 py-0.5 text-[10px] font-medium text-blue-600 transition-all duration-200 rounded hover:text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
         >
           Gestionar
         </Link>
       </div>
       <div className="max-h-46 overflow-y-auto pr-1">
-        <div className="grid grid-cols-2 gap-2.5 auto-rows-min">
+        <div className="grid grid-cols-1 gap-2.5 auto-rows-min">
           {tiles.map((tile) => (
             <Link
               key={tile.name}
