@@ -6,7 +6,6 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
-  getPaginationRowModel,
   getFilteredRowModel,
   getSortedRowModel,
 } from '@tanstack/react-table';
@@ -36,6 +35,8 @@ import { TableFilters } from '@/components/ui/table-filters';
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 const buildDriveDownloadUrl = (driveFileId?: string | null) =>
   driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
+const buildDrivePreviewUrl = (driveFileId?: string | null) =>
+  driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : undefined;
 
 interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
@@ -185,15 +186,28 @@ export const columns: ColumnDef<Income>[] = [
     id: 'actions',
     cell: ({ row }) => {
       const downloadUrl = buildDriveDownloadUrl(row.original.driveFileId);
+      const previewUrl = buildDrivePreviewUrl(row.original.driveFileId);
 
       const handleDownload = () => {
         if (!downloadUrl) return;
         window.open(downloadUrl, '_blank', 'noopener,noreferrer');
       };
 
+      const handlePreview = () => {
+        if (!previewUrl) return;
+        window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      };
+
       return (
         <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="icon">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={previewUrl ? '' : 'text-gray-400'}
+            disabled={!previewUrl}
+            onClick={handlePreview}
+            aria-label={previewUrl ? 'Ver factura' : 'Vista previa no disponible'}
+          >
             <Eye className="h-4 w-4" />
           </Button>
           <Button
@@ -356,7 +370,6 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     defaultColumn: {
@@ -464,35 +477,37 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
       </div>
 
       <div className="rounded-md border">
-        <Table className="table">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="truncate text-left">
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id} className="truncate text-left">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="max-h-[520px] overflow-y-auto">
+          <Table className="table">
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="truncate text-left">
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext()
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => (
+                <TableRow key={row.id}>
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="truncate text-left">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </div>
   );
