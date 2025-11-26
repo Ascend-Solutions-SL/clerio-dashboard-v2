@@ -1,11 +1,23 @@
+"use client";
+
 import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import BalanceChart from '@/components/BalanceChart';
 import Integrations from '@/components/Integrations';
 import ClerioChat from '@/components/ClerioChat';
 import { FileText, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { useFinancialData } from '@/context/FinancialDataContext';
 
 export default function Home() {
+  const { data, loading } = useFinancialData();
+
+  const totalInvoices = data ? data.incomeCount + data.expenseCount : 0;
+  const totalIncome = data?.totalIncome ?? 0;
+  const totalExpenses = data?.totalExpenses ?? 0;
+
+  const formatCurrency = (value: number) =>
+    value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
   return (
     <div className="-m-8">
       <div className="bg-white pt-8 pb-8">
@@ -14,7 +26,7 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:justify-between gap-4 md:gap-6 max-w-5xl mx-auto">
             <StatCard 
               title="Facturas Procesadas"
-              value="220"
+              value={loading ? '—' : totalInvoices.toString()}
               percentage={22}
               Icon={FileText}
               size="compact"
@@ -22,7 +34,7 @@ export default function Home() {
             />
             <StatCard 
               title="Ingresos"
-              value="8070€"
+              value={loading ? '—' : `${formatCurrency(totalIncome)}€`}
               percentage={41}
               Icon={ArrowUpCircle}
               size="compact"
@@ -31,7 +43,7 @@ export default function Home() {
             />
             <StatCard 
               title="Gastos"
-              value="3260€"
+              value={loading ? '—' : `${formatCurrency(totalExpenses)}€`}
               percentage={-16}
               Icon={ArrowDownCircle}
               size="compact"

@@ -4,12 +4,14 @@ import { useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { useNotifications } from '@/context/NotificationContext';
 import { ENV } from '@/lib/config';
 
 const LOGIN_URL = ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://clerio-login.vercel.app';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
+  const { notificationCount } = useNotifications();
   const [isPending, startTransition] = useTransition();
 
   const handleLogout = () => {
@@ -29,8 +31,8 @@ const Header = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-gray-500">
-            Hola {user?.firstName ?? 'usuario'}! Tienes 3 avisos.{' '}
-            <a href="#" className="text-blue-600 font-semibold">
+            Hola {user?.firstName ?? 'usuario'}! Tienes {notificationCount} mensaje{notificationCount !== 1 ? 's' : ''}.{' '}
+            <a href="/cleriochat" className="text-blue-600 font-semibold hover:underline">
               Ver
             </a>
           </p>

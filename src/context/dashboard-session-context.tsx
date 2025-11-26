@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { usePathname } from 'next/navigation';
 
 import type { SessionUser } from '@/lib/session';
+import { supabase } from '@/lib/supabase';
 
 interface DashboardSessionState {
   user: SessionUser | null;
@@ -55,7 +56,21 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       }
 
       const payload = (await response.json()) as { user: SessionUser };
-      setUser(payload.user);
+      const userData = { ...payload.user };
+
+      if (!userData.role && userData.id) {
+        const { data: profile } = await supabase
+          .from('auth_users')
+          .select('user_role')
+          .eq('user_uid', userData.id)
+          .single();
+
+        if (profile?.user_role) {
+          userData.role = profile.user_role;
+        }
+      }
+
+      setUser(userData);
     } catch (fetchError) {
       const reason = fetchError instanceof Error ? fetchError.message : 'Error desconocido';
       setError(reason);

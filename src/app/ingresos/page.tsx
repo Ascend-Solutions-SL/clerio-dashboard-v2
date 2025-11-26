@@ -1,16 +1,27 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import StatCard from '@/components/StatCard';
 import { IncomeTable } from '@/components/IncomeTable';
 import { Button } from '@/components/ui/button';
 import Integrations from '@/components/Integrations';
 import PageBanner from '@/components/PageBanner';
 import { ArrowUpCircle, FileText, RefreshCw } from 'lucide-react';
+import { useInvoices } from '@/context/InvoiceContext';
 
 const IngresosPage = () => {
+  const { setIncomeData } = useInvoices();
   const [totalIncome, setTotalIncome] = React.useState<number>(0);
   const [invoiceCount, setInvoiceCount] = React.useState<number>(0);
+  const prevData = useRef({ total: 0, count: 0 });
+
+  // Update the context when data changes
+  useEffect(() => {
+    if (prevData.current.total !== totalIncome || prevData.current.count !== invoiceCount) {
+      setIncomeData(totalIncome, invoiceCount);
+      prevData.current = { total: totalIncome, count: invoiceCount };
+    }
+  }, [totalIncome, invoiceCount, setIncomeData]);
 
   // Dynamic font size based on income value length
   const getIncomeFontSize = (value: number) => {

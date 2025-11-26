@@ -1,6 +1,10 @@
+"use client"
+
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useNotifications } from '@/context/NotificationContext';
+
 
 type ChatItem = {
   id: string;
@@ -63,6 +67,7 @@ const chats: ChatItem[] = [
 ];
 
 const ClerioChat = () => {
+  const { notificationCount } = useNotifications();
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mt-4">
       <div className="flex justify-between items-center mb-3">
@@ -75,7 +80,8 @@ const ClerioChat = () => {
           >
             Ver
           </Link>
-          <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">{chats.length}</span>
+          <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+            {notificationCount !== null ? notificationCount : '...'}</span>
         </div>
       </div>
       <div className="max-h-32 overflow-y-auto pr-1 space-y-3">

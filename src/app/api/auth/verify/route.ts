@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
   const supabaseAdmin = createSupabaseAdminClient();
   const { data: profileData } = await supabaseAdmin
     .from('auth_users')
-    .select('first_name, last_name, user_initials, user_businessname, user_phone, user_email, empresa_id')
+    .select('first_name, last_name, user_initials, user_businessname, user_phone, user_email, user_role, empresa_id')
     .eq('user_uid', payload.sub)
     .single();
 
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     initials: profileData?.user_initials ?? payload.user_initials ?? '',
     businessName: profileData?.user_businessname ?? payload.user_businessname ?? '',
     empresaId: profileData?.empresa_id ?? null,
+    role: profileData?.user_role ?? '',
     phone: profileData?.user_phone ?? payload.phone ?? '',
   };
   session.lastActivity = Date.now();

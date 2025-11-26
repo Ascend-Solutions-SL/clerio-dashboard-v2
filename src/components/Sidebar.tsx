@@ -2,8 +2,9 @@
 
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { useNotifications } from '@/context/NotificationContext';
+import { useDashboardSession } from '@/context/dashboard-session-context';
 import {
   Home,
   ArrowUpCircle,
@@ -17,7 +18,7 @@ const navItems = [
   { href: '/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
   { href: '/gastos', icon: ArrowDownCircle, label: 'Gastos' },
   { href: '/integraciones', icon: LinkIcon, label: 'Integraciones' },
-  { href: '/cleriochat', icon: MessageSquare, label: 'ClerioChat', badge: 2 },
+  { href: '/cleriochat', icon: MessageSquare, label: 'ClerioChat', isNotification: true },
 ];
 
 interface SidebarProps {
@@ -27,6 +28,14 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
   const pathname = usePathname();
+  const { notificationCount } = useNotifications();
+  const { user, isLoading } = useDashboardSession();
+
+  const displayName = user?.firstName
+    ? `${user.firstName} ${user.lastName ?? ''}`.trim()
+    : user?.businessName ?? 'Usuario';
+  const role = user?.role ?? (isLoading ? 'Cargando…' : 'Sin rol');
+  const initials = (user?.initials ?? `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`).toUpperCase() || 'U';
 
   return (
     <aside 
@@ -49,12 +58,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
               <item.icon size={20} />
             </div>
             <span className={`ml-3 whitespace-nowrap transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
-            {item.badge && (
+            {item.isNotification && (
               <span className={`ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
-                {item.badge}
+                {notificationCount}
               </span>
             )}
-            {!isOpen && item.badge && (
+            {!isOpen && item.isNotification && (
               <span className="absolute top-1 right-1 bg-red-500 w-2 h-2 rounded-full"></span>
             )}
           </Link>
@@ -62,17 +71,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       </nav>
 
       <div className="p-4 flex items-center">
-        <Image
-          src="https://i.pravatar.cc/40?u=helena"
-          alt="User Avatar"
-          width={40}
-          height={40}
-          className="rounded-full flex-shrink-0"
-          priority
-        />
+        <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold flex-shrink-0">
+          {initials}
+        </div>
         <div className={`ml-3 overflow-hidden transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
-          <p className="font-semibold whitespace-nowrap">Helena Albir</p>
-          <p className="text-sm text-blue-200 whitespace-nowrap">helenaalbir@gmail.com</p>
+          <p className="font-semibold whitespace-nowrap">
+            {isLoading ? 'Cargando…' : displayName}
+          </p>
+          <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
         </div>
       </div>
     </aside>
