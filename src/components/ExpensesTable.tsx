@@ -34,6 +34,8 @@ import { supabase } from '@/lib/supabase';
 import { TableFilters } from '@/components/ui/table-filters';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+const buildDriveDownloadUrl = (driveFileId?: string | null) =>
+  driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
 
 const formatDate = (value: string) => {
   if (!value) {
@@ -59,6 +61,7 @@ type FacturaRow = {
   concepto: string | null;
   importe_sin_iva: number | string | null;
   importe_total: number | string | null;
+  drive_file_id?: string | null;
 };
 
 export type Expense = {
@@ -69,6 +72,7 @@ export type Expense = {
   description: string;
   subtotal: string;
   total: string;
+  driveFileId?: string | null;
 };
 
 export const columns: ColumnDef<Expense>[] = [
@@ -202,16 +206,32 @@ export const columns: ColumnDef<Expense>[] = [
   },
   {
     id: 'actions',
-    cell: () => (
-      <div className="flex items-center space-x-2">
-        <Button variant="ghost" size="icon">
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="text-gray-400" disabled>
-          <Download className="h-4 w-4" />
-        </Button>
-      </div>
-    ),
+    cell: ({ row }) => {
+      const downloadUrl = buildDriveDownloadUrl(row.original.driveFileId);
+
+      const handleDownload = () => {
+        if (!downloadUrl) return;
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      };
+
+      return (
+        <div className="flex items-center space-x-2">
+          <Button variant="ghost" size="icon">
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={downloadUrl ? '' : 'text-gray-400'}
+            disabled={!downloadUrl}
+            onClick={handleDownload}
+            aria-label={downloadUrl ? 'Descargar factura' : 'Archivo no disponible'}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      );
+    },
     size: 80,
     minSize: 80,
   },
@@ -234,7 +254,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
     const loadData = async () => {
       const { data: facturas, error } = await supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
         .eq('empresa_id', user.empresaId)
         .eq('tipo', 'Gastos')
         .order('fecha', { ascending: false });
@@ -275,6 +295,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
           description: row.concepto || '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
+          driveFileId: row.drive_file_id ?? null,
         };
       });
 
@@ -302,7 +323,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
     const loadData = async () => {
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
         .eq('empresa_id', empresaId)
         .eq('tipo', 'Gastos')
         .order('fecha', { ascending: false });
@@ -342,6 +363,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
           rawDate: row.fecha, // Para facilitar el filtrado por fecha
+          driveFileId: row.drive_file_id ?? null,
         };
       });
 

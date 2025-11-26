@@ -34,6 +34,8 @@ import { supabase } from '@/lib/supabase';
 import { TableFilters } from '@/components/ui/table-filters';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+const buildDriveDownloadUrl = (driveFileId?: string | null) =>
+  driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
 
 interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
@@ -59,6 +61,7 @@ type FacturaRow = {
   concepto: string | null;
   importe_sin_iva: number | string | null;
   importe_total: number | string | null;
+  drive_file_id?: string | null;
 };
 
 export type Income = {
@@ -69,6 +72,7 @@ export type Income = {
   description: string;
   subtotal: string;
   total: string;
+  driveFileId?: string | null;
 };
 
 export const columns: ColumnDef<Income>[] = [
@@ -179,16 +183,32 @@ export const columns: ColumnDef<Income>[] = [
   },
   {
     id: 'actions',
-    cell: () => (
-      <div className="flex items-center space-x-2">
-        <Button variant="ghost" size="icon">
-          <Eye className="h-4 w-4" />
-        </Button>
-        <Button variant="ghost" size="icon" className="text-gray-400" disabled>
-          <Download className="h-4 w-4" />
-        </Button>
-      </div>
-    ),
+    cell: ({ row }) => {
+      const downloadUrl = buildDriveDownloadUrl(row.original.driveFileId);
+
+      const handleDownload = () => {
+        if (!downloadUrl) return;
+        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+      };
+
+      return (
+        <div className="flex items-center space-x-2">
+          <Button variant="ghost" size="icon">
+            <Eye className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={downloadUrl ? '' : 'text-gray-400'}
+            disabled={!downloadUrl}
+            onClick={handleDownload}
+            aria-label={downloadUrl ? 'Descargar factura' : 'Archivo no disponible'}
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        </div>
+      );
+    },
   },
 ];
 
@@ -210,7 +230,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
 
       const { data: facturas, error } = await supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
         .eq('empresa_id', user.empresaId)
         .eq('tipo', 'Ingresos')
         .order('fecha', { ascending: false });
@@ -248,6 +268,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
           description: row.concepto || '',
           subtotal: currencyFormatter.format(subtotalValue),
           total: currencyFormatter.format(totalValue),
+          driveFileId: row.drive_file_id ?? null,
         };
       });
 
@@ -311,6 +332,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
           subtotal: currencyFormatter.format(Number.isNaN(subtotalValue) ? 0 : subtotalValue),
           total: currencyFormatter.format(Number.isNaN(totalValue) ? 0 : totalValue),
           rawDate: row.fecha, // Para facilitar el filtrado por fecha
+          driveFileId: row.drive_file_id ?? null,
         };
       });
 
