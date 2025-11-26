@@ -3,16 +3,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import StatCard from '@/components/StatCard';
 import { ExpensesTable } from '@/components/ExpensesTable';
-import { Button } from '@/components/ui/button';
 import { ArrowDownCircle, FileText, RefreshCw } from 'lucide-react';
 import Integrations from '@/components/Integrations';
 import PageBanner from '@/components/PageBanner';
 import { useInvoices } from '@/context/InvoiceContext';
+import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 
 const GastosPage = () => {
   const { setExpensesData } = useInvoices();
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);
+  const [tableRefreshKey, setTableRefreshKey] = useState<number>(0);
   const prevData = useRef({ total: 0, count: 0 });
 
   // Update the context when data changes
@@ -64,11 +65,15 @@ const GastosPage = () => {
                   <RefreshCw className="h-4 w-4" />
                   <span>Último escaneo hace 22 min</span>
                 </div>
-                <Button className="bg-blue-600 hover:bg-blue-700">+ Subir gastos</Button>
+                <InvoiceUploadDialog
+                  type="Gastos"
+                  onCreated={() => setTableRefreshKey((prev) => prev + 1)}
+                />
               </div>
               <ExpensesTable 
                 onTotalExpensesChange={setTotalExpenses}
                 onInvoiceCountChange={setInvoiceCount}
+                refreshKey={tableRefreshKey}
               />
             </div>
           </div>

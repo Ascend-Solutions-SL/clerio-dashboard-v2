@@ -38,6 +38,15 @@ const buildDriveDownloadUrl = (driveFileId?: string | null) =>
 const buildDrivePreviewUrl = (driveFileId?: string | null) =>
   driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : undefined;
 
+const SortIndicator = ({ state }: { state: false | 'asc' | 'desc' }) => (
+  <span
+    aria-hidden
+    className={`text-xs transition-colors ${state ? 'text-gray-600' : 'text-gray-300'}`}
+  >
+    {state === 'asc' ? '↑' : state === 'desc' ? '↓' : '↕'}
+  </span>
+);
+
 const formatDate = (value: string) => {
   if (!value) {
     return '';
@@ -52,6 +61,7 @@ const formatDate = (value: string) => {
 interface ExpensesTableProps {
   onTotalExpensesChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
+  refreshKey?: number;
 }
 
 type FacturaRow = {
@@ -68,11 +78,14 @@ type FacturaRow = {
 export type Expense = {
   id: number;
   date: string;
+  rawDate?: string;
   invoice: string;
   provider: string;
   description: string;
   subtotal: string;
   total: string;
+  subtotalValue?: number;
+  totalValue?: number;
   driveFileId?: string | null;
 };
 
@@ -105,9 +118,26 @@ export const columns: ColumnDef<Expense>[] = [
   },
   { 
     accessorKey: 'date', 
-    header: 'Fecha',
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Fecha
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
     size: 40,
     minSize: 40,
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.rawDate ?? rowA.getValue<string>('date');
+      const b = rowB.original.rawDate ?? rowB.getValue<string>('date');
+      return (a ?? '').localeCompare(b ?? '');
+    },
   },
   { 
     accessorKey: 'invoice', 
@@ -177,7 +207,19 @@ export const columns: ColumnDef<Expense>[] = [
   },
   {
     accessorKey: 'subtotal',
-    header: () => <div className="text-center">Subtotal</div>,
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex w-full justify-center items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Subtotal
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
     cell: ({ getValue }) => {
       const value = getValue<string>();
       const formatted = value?.startsWith('-') ? value : `-${value}`;
@@ -189,10 +231,27 @@ export const columns: ColumnDef<Expense>[] = [
     },
     size: 100,
     minSize: 90,
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.subtotalValue ?? 0;
+      const b = rowB.original.subtotalValue ?? 0;
+      return a - b;
+    },
   },
   {
     accessorKey: 'total',
-    header: () => <div className="text-center">Total</div>,
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex w-full justify-center items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Total
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
     cell: ({ getValue }) => {
       const value = getValue<string>();
       const formatted = value?.startsWith('-') ? value : `-${value}`;
@@ -204,6 +263,11 @@ export const columns: ColumnDef<Expense>[] = [
     },
     size: 100,
     minSize: 90,
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.totalValue ?? 0;
+      const b = rowB.original.totalValue ?? 0;
+      return a - b;
+    },
   },
   {
     id: 'actions',
@@ -251,7 +315,7 @@ export const columns: ColumnDef<Expense>[] = [
   },
 ];
 
-export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: ExpensesTableProps) {
+export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, refreshKey = 0 }: ExpensesTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [data, setData] = React.useState<Expense[]>([]);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -303,12 +367,15 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
 
         return {
           id: row.id,
-          date: row.fecha,
+          date: formatDate(row.fecha),
+          rawDate: row.fecha,
           invoice: row.numero,
           provider: row.cliente_proveedor,
           description: row.concepto || '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
+          subtotalValue,
+          totalValue,
           driveFileId: row.drive_file_id ?? null,
         };
       });
@@ -317,7 +384,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
     };
 
     void loadData();
-  }, [user?.empresaId, onTotalExpensesChange, onInvoiceCountChange]);
+  }, [user?.empresaId, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
 
   // Apply date range filter
   React.useEffect(() => {
@@ -371,12 +438,14 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
         return {
           id: row.id,
           date: formatDate(row.fecha),
+          rawDate: row.fecha,
           invoice: row.numero,
           provider: row.cliente_proveedor,
           description: row.concepto ?? '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
-          rawDate: row.fecha, // Para facilitar el filtrado por fecha
+          subtotalValue,
+          totalValue,
           driveFileId: row.drive_file_id ?? null,
         };
       });
@@ -398,7 +467,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
     return () => {
       isMounted = false;
     };
-  }, [isLoading, user?.empresaId, dateRange, onTotalExpensesChange, onInvoiceCountChange]);
+  }, [isLoading, user?.empresaId, dateRange, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
 
   const handleDateRangeChange = (startDate: string, endDate: string) => {
     setDateRange({ startDate, endDate });
@@ -417,6 +486,14 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange }: E
     state: {
       rowSelection,
       globalFilter,
+    },
+    initialState: {
+      sorting: [
+        {
+          id: 'date',
+          desc: true,
+        },
+      ],
     },
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,

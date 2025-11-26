@@ -38,9 +38,19 @@ const buildDriveDownloadUrl = (driveFileId?: string | null) =>
 const buildDrivePreviewUrl = (driveFileId?: string | null) =>
   driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : undefined;
 
+const SortIndicator = ({ state }: { state: false | 'asc' | 'desc' }) => (
+  <span
+    aria-hidden
+    className={`text-xs transition-colors ${state ? 'text-gray-600' : 'text-gray-300'}`}
+  >
+    {state === 'asc' ? '↑' : state === 'desc' ? '↓' : '↕'}
+  </span>
+);
+
 interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
+  refreshKey?: number;
 }
 
 const formatDate = (value: string) => {
@@ -68,11 +78,14 @@ type FacturaRow = {
 export type Income = {
   id: number;
   date: string;
+  rawDate?: string;
   invoice: string;
   client: string;
   description: string;
   subtotal: string;
   total: string;
+  subtotalValue?: number;
+  totalValue?: number;
   driveFileId?: string | null;
 };
 
@@ -105,7 +118,24 @@ export const columns: ColumnDef<Income>[] = [
   },
   { 
     accessorKey: 'date', 
-    header: 'Fecha'
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Fecha
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.rawDate ?? rowA.getValue<string>('date');
+      const b = rowB.original.rawDate ?? rowB.getValue<string>('date');
+      return (a ?? '').localeCompare(b ?? '');
+    },
   },
   { 
     accessorKey: 'invoice', 
@@ -166,21 +196,55 @@ export const columns: ColumnDef<Income>[] = [
   },
   {
     accessorKey: 'subtotal',
-    header: () => <div className="text-center">Subtotal</div>,
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex w-full justify-center items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Subtotal
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
     cell: ({ getValue }) => (
       <span className="block text-center font-semibold text-green-600">
         {getValue<string>()}
       </span>
     ),
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.subtotalValue ?? 0;
+      const b = rowB.original.subtotalValue ?? 0;
+      return a - b;
+    },
   },
   {
     accessorKey: 'total',
-    header: () => <div className="text-center">Total</div>,
+    header: ({ column }) => {
+      const sortState = column.getIsSorted();
+      return (
+        <button
+          type="button"
+          className="flex w-full justify-center items-center gap-1 font-semibold"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          Total
+          <SortIndicator state={sortState} />
+        </button>
+      );
+    },
     cell: ({ getValue }) => (
       <span className="block text-center font-semibold text-green-600">
         {getValue<string>()}
       </span>
     ),
+    sortingFn: (rowA, rowB) => {
+      const a = rowA.original.totalValue ?? 0;
+      const b = rowB.original.totalValue ?? 0;
+      return a - b;
+    },
   },
   {
     id: 'actions',
@@ -226,7 +290,7 @@ export const columns: ColumnDef<Income>[] = [
   },
 ];
 
-export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: IncomeTableProps) {
+export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refreshKey = 0 }: IncomeTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [data, setData] = React.useState<Income[]>([]);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -276,12 +340,15 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
 
         return {
           id: row.id,
-          date: row.fecha,
+          date: formatDate(row.fecha),
+          rawDate: row.fecha,
           invoice: row.numero,
           client: row.cliente_proveedor,
           description: row.concepto || '',
           subtotal: currencyFormatter.format(subtotalValue),
           total: currencyFormatter.format(totalValue),
+          subtotalValue,
+          totalValue,
           driveFileId: row.drive_file_id ?? null,
         };
       });
@@ -290,7 +357,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
     };
 
     void loadData();
-  }, [user?.empresaId, onTotalIncomeChange, onInvoiceCountChange]);
+  }, [user?.empresaId, onTotalIncomeChange, onInvoiceCountChange, refreshKey]);
 
   // Apply date range filter
   React.useEffect(() => {
@@ -345,7 +412,9 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
           description: row.concepto ?? '',
           subtotal: currencyFormatter.format(Number.isNaN(subtotalValue) ? 0 : subtotalValue),
           total: currencyFormatter.format(Number.isNaN(totalValue) ? 0 : totalValue),
-          rawDate: row.fecha, // Para facilitar el filtrado por fecha
+          rawDate: row.fecha,
+          subtotalValue: Number.isNaN(subtotalValue) ? 0 : subtotalValue,
+          totalValue: Number.isNaN(totalValue) ? 0 : totalValue,
           driveFileId: row.drive_file_id ?? null,
         };
       });
@@ -358,7 +427,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
     return () => {
       isMounted = false;
     };
-  }, [isLoading, user?.empresaId, dateRange]);
+  }, [isLoading, user?.empresaId, dateRange, refreshKey]);
 
   const table = useReactTable({
     data,
@@ -366,6 +435,14 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange }: Incom
     state: {
       rowSelection,
       globalFilter,
+    },
+    initialState: {
+      sorting: [
+        {
+          id: 'date',
+          desc: true,
+        },
+      ],
     },
     onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
