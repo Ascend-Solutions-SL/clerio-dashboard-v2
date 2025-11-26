@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFinancialData } from '@/context/FinancialDataContext';
 
@@ -15,7 +15,6 @@ const roundUpToThousand = (value: number) => {
   return Math.ceil(value / 1000) * 1000;
 };
 
-const BAR_WIDTH = 56;
 const VISIBLE_MONTHS = 12;
 
 const BalanceChart = () => {
