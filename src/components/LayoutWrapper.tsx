@@ -1,6 +1,5 @@
 'use client';
 
-import { usePathname } from "next/navigation";
 import React, { useState } from 'react';
 import Sidebar from './Sidebar';
 
@@ -9,13 +8,7 @@ interface LayoutWrapperProps {
 }
 
 const LayoutWrapper: React.FC<LayoutWrapperProps> = ({ children }) => {
-  const pathname = usePathname();
-  const isAuthRoute = pathname.startsWith("/auth");
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-
-  if (isAuthRoute) {
-    return <>{children}</>;
-  }
 
   return (
     <div className="flex h-screen bg-blue-600">
