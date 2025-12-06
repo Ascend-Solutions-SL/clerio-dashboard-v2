@@ -12,7 +12,7 @@ const isPublicPath = (pathname: string) =>
   pathname.startsWith('/api/auth/logout') ||
   pathname.startsWith('/api/auth/session');
 
-export async function middleware(request: NextRequest) {
+export async function NEXTMiddleware(request: NextRequest) {
   assertEnv();
 
   const { pathname } = request.nextUrl;
