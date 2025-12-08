@@ -1,7 +1,10 @@
 "use client";
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { PlugZap, Sparkles, Search } from 'lucide-react';
+
+import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
+import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
 import {
   SiAmazon,
   SiAsana,
@@ -47,7 +50,7 @@ const integrations: Integration[] = [
     id: 'gmail',
     name: 'Gmail',
     description: 'Conecta tu cuenta para que Clerio detecte automáticamente tus facturas y las clasifique en el portal.',
-    status: 'connected',
+    status: 'disconnected',
     categories: ['popular', 'ingresos', 'gastos'],
     icon: <SiGmail className="text-red-500" size={24} />,
   },
@@ -192,6 +195,31 @@ const integrations: Integration[] = [
 const IntegracionesPage = () => {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [requestStatus, setRequestStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>(
+    'idle'
+  );
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [requestForm, setRequestForm] = useState({
+    toolName: '',
+    urgencyLevel: '',
+    comments: '',
+  });
+  const [toastState, setToastState] = useState<'hidden' | 'visible' | 'fading'>('hidden');
+
+  useEffect(() => {
+    if (toastState !== 'visible') {
+      return;
+    }
+
+    const fadeTimeout = window.setTimeout(() => setToastState('fading'), 1000);
+    const hideTimeout = window.setTimeout(() => setToastState('hidden'), 4000);
+
+    return () => {
+      window.clearTimeout(fadeTimeout);
+      window.clearTimeout(hideTimeout);
+    };
+  }, [toastState]);
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
@@ -221,7 +249,7 @@ const IntegracionesPage = () => {
             <div className="space-y-3 max-w-2xl">
               <div className="flex items-center gap-3 text-blue-700">
                 <PlugZap className="h-10 w-10" />
-                <h1 className="text-3xl font-semibold">Integraciones &amp; workflows</h1>
+                <h1 className="text-3xl font-semibold">Integraciones</h1>
               </div>
               <p className="text-gray-500 text-base">
                 Conecta tus herramientas y deja que Clerio sincronice automáticamente tus facturas de ingresos y gastos.
@@ -274,15 +302,18 @@ const IntegracionesPage = () => {
                     >
                       <div className="text-3xl">{integration.icon}</div>
                     </div>
-                    <button
-                      className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition ${
-                        integration.status === 'connected'
-                          ? 'bg-emerald-500 text-white shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
-                          : 'bg-gray-100 text-gray-700 border border-gray-200 hover:border-blue-300 hover:text-blue-600'
-                      }`}
-                    >
-                      {integration.status === 'connected' ? 'Conectado' : 'Conectar'}
-                    </button>
+                    {integration.id === 'gmail' ? (
+                      <GmailConnectButton />
+                    ) : integration.id === 'drive' ? (
+                      <DriveConnectButton />
+                    ) : (
+                      <button
+                        disabled
+                        className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold border border-dashed border-gray-300 bg-gray-50 text-gray-400 cursor-not-allowed"
+                      >
+                        Próximamente
+                      </button>
+                    )}
                   </div>
                   <div className="mt-4 space-y-1">
                     <h3 className="text-base font-semibold text-gray-900">{integration.name}</h3>
@@ -310,7 +341,14 @@ const IntegracionesPage = () => {
                 </div>
               </div>
               <div className="md:ml-auto">
-                <button className="inline-flex items-center justify-center rounded-lg border border-blue-800 bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50">
+                <button
+                  onClick={() => {
+                    setIsRequestModalOpen(true);
+                    setRequestStatus('idle');
+                    setRequestError(null);
+                  }}
+                  className="inline-flex items-center justify-center rounded-lg border border-blue-800 bg-blue-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-blue-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-500/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50"
+                >
                   Solicitar Integración
                 </button>
               </div>
@@ -319,6 +357,145 @@ const IntegracionesPage = () => {
         </div>
       </div>
       <div className="bg-gray-50 pb-8 pt-8 border-t border-gray-100" />
+
+      {isRequestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Solicitar nueva integración</h2>
+                <p className="text-sm text-gray-500">
+                  Cuéntanos qué herramienta necesitas y qué tan urgente es.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsRequestModalOpen(false)}
+                className="text-sm text-gray-500 hover:text-gray-800"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <form
+              className="mt-6 space-y-4"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setRequestStatus('submitting');
+                setRequestError(null);
+
+                try {
+                  const response = await fetch('/api/integration-requests', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      toolName: requestForm.toolName,
+                      urgencyLevel: requestForm.urgencyLevel,
+                      comments: requestForm.comments,
+                    }),
+                  });
+
+                  if (!response.ok) {
+                    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+                    throw new Error(payload.error ?? 'No se pudo registrar la solicitud');
+                  }
+
+                  setRequestStatus('success');
+                  setRequestForm({ toolName: '', urgencyLevel: '', comments: '' });
+                  setIsRequestModalOpen(false);
+                  setToastState('visible');
+                } catch (formError) {
+                  setRequestStatus('error');
+                  setRequestError(formError instanceof Error ? formError.message : 'Error desconocido');
+                }
+              }}
+            >
+              <label className="block space-y-1">
+                <span className="text-sm font-medium text-gray-700">Nombre de la herramienta</span>
+                <input
+                  required
+                  type="text"
+                  value={requestForm.toolName}
+                  onChange={(event) =>
+                    setRequestForm((prev) => ({ ...prev, toolName: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Ej. Hubspot, Airtable, Zapier..."
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-sm font-medium text-gray-700">Nivel de necesidad</span>
+                <select
+                  required
+                  value={requestForm.urgencyLevel}
+                  onChange={(event) =>
+                    setRequestForm((prev) => ({ ...prev, urgencyLevel: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                >
+                  <option value="" disabled>
+                    Selecciona una opción
+                  </option>
+                  <option value="Estaría bien tenerlo">Estaría bien tenerlo</option>
+                  <option value="Lo uso muy a menudo">Lo uso muy a menudo</option>
+                  <option value="Imprescindible/Urgente">Imprescindible/Urgente</option>
+                </select>
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-sm font-medium text-gray-700">Comentarios (opcional)</span>
+                <textarea
+                  value={requestForm.comments}
+                  onChange={(event) =>
+                    setRequestForm((prev) => ({ ...prev, comments: event.target.value }))
+                  }
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:ring-blue-500"
+                  rows={4}
+                  placeholder="Comparte más contexto para ayudarte mejor"
+                />
+              </label>
+
+              {requestStatus === 'error' && (
+                <p className="text-sm text-red-600">{requestError ?? 'Algo salió mal'}</p>
+              )}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRequestModalOpen(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:text-gray-800"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={requestStatus === 'submitting'}
+                  className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-60"
+                >
+                  {requestStatus === 'submitting' ? 'Enviando…' : 'Enviar Solicitud'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {toastState !== 'hidden' && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center px-4 pointer-events-none">
+          <div
+            className={`w-full max-w-md rounded-2xl border border-emerald-200 bg-white px-6 py-4 text-center shadow-xl shadow-emerald-500/20 transition-opacity ${
+              toastState === 'visible'
+                ? 'duration-200 opacity-100'
+                : 'duration-1000 opacity-0'
+            }`}
+          >
+            <p className="text-sm font-semibold text-emerald-600">Solicitud enviada con éxito</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Te avisaremos en cuanto la integración esté disponible.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
