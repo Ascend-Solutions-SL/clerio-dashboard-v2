@@ -32,6 +32,10 @@ jobs:
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
       CLERIO_LOGIN_URL: ${{ secrets.CLERIO_LOGIN_URL }}
       NEXT_PUBLIC_LOGIN_URL: ${{ secrets.NEXT_PUBLIC_LOGIN_URL }}
+      GMAIL_OAUTH_STATE_SECRET: ${{ secrets.GMAIL_OAUTH_STATE_SECRET }}
+      DRIVE_OAUTH_STATE_SECRET: ${{ secrets.DRIVE_OAUTH_STATE_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
