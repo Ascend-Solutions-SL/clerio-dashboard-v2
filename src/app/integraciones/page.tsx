@@ -5,6 +5,8 @@ import { PlugZap, Sparkles, Search } from 'lucide-react';
 
 import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
+import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
+import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
 import {
   SiAmazon,
   SiAsana,
@@ -71,6 +73,14 @@ const integrations: Integration[] = [
     icon: <FaMicrosoft className="text-sky-600" size={24} />,
   },
   {
+    id: 'onedrive',
+    name: 'One Drive',
+    description: 'Conecta tu repositorio de archivos corporativos y comparte documentación segura.',
+    status: 'disconnected',
+    categories: ['ingresos', 'gastos'],
+    icon: <FaCloud className="text-sky-500" size={24} />,
+  },
+  {
     id: 'holded',
     name: 'Holded',
     description: 'Sincroniza productos, contactos y facturas de tu cuenta Holded con Clerio sin duplicados.',
@@ -125,14 +135,6 @@ const integrations: Integration[] = [
     status: 'disconnected',
     categories: ['gastos'],
     icon: <TbDeviceAnalytics className="text-lime-600" size={24} />,
-  },
-  {
-    id: 'onedrive',
-    name: 'One Drive',
-    description: 'Conecta tu repositorio de archivos corporativos y comparte documentación segura.',
-    status: 'disconnected',
-    categories: ['ingresos', 'gastos'],
-    icon: <FaCloud className="text-sky-500" size={24} />,
   },
   {
     id: 'shopify',
@@ -306,6 +308,10 @@ const IntegracionesPage = () => {
                       <GmailConnectButton />
                     ) : integration.id === 'drive' ? (
                       <DriveConnectButton />
+                    ) : integration.id === 'outlook' ? (
+                      <OutlookConnectButton />
+                    ) : integration.id === 'onedrive' ? (
+                      <OneDriveConnectButton />
                     ) : (
                       <button
                         disabled
