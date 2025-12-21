@@ -14,7 +14,7 @@ export const getRouteSession = (request: NextRequest, response: NextResponse) =>
   getIronSession<SessionData>(request, response, sessionOptions);
 
 export const resolveLoginUrl = () =>
-  ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://clerio-login.vercel.app';
+  process.env.CLERIO_LOGIN_URL || ENV.APP_BASE_URL || 'https://clerio-login.vercel.app';
 
 export {
   sessionOptions,

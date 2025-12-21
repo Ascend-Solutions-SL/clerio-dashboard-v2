@@ -15,7 +15,7 @@ interface DashboardSessionState {
 
 import { ENV, assertEnv } from '@/lib/config';
 
-const LOGIN_URL = ENV.APP_BASE_URL;
+const LOGIN_URL = ENV.LOGIN_BASE_URL || 'https://clerio-login.vercel.app';
 
 assertEnv();
 

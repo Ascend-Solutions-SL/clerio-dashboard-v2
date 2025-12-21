@@ -1,13 +1,15 @@
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { ENV, assertEnv } from '@/lib/config';
+import { assertEnv } from '@/lib/config';
+import { resolveLoginUrl } from '@/lib/session';
 
 const isStaticAsset = (pathname: string) =>
   pathname.startsWith('/_next') || pathname.startsWith('/static') || pathname.endsWith('.ico');
 
 const isPublicPath = (pathname: string) =>
   pathname.startsWith('/auth/callback') ||
+  pathname.startsWith('/auth/login') ||
   pathname.startsWith('/api/auth/verify') ||
   pathname.startsWith('/api/auth/logout') ||
   pathname.startsWith('/api/auth/session');
@@ -27,8 +29,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const loginUrl = new URL(ENV.APP_BASE_URL);
-  loginUrl.searchParams.set('redirect', request.nextUrl.href);
+  const relativeRedirect = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+
+  let loginUrl = new URL(resolveLoginUrl());
+  if (loginUrl.origin === request.nextUrl.origin) {
+    loginUrl = new URL('https://clerio-login.vercel.app');
+  }
+  loginUrl.searchParams.set('redirect', relativeRedirect);
 
   return NextResponse.redirect(loginUrl);
 }

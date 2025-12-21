@@ -7,7 +7,10 @@ import { useDashboardSession } from '@/context/dashboard-session-context';
 import { useNotifications } from '@/context/NotificationContext';
 import { ENV } from '@/lib/config';
 
-const LOGIN_URL = ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://app.clerio.es';
+const LOGIN_URL =
+  ENV.LOGIN_BASE_URL ||
+  process.env.NEXT_PUBLIC_CLERIO_LOGIN_URL ||
+  'https://clerio-login.vercel.app';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
