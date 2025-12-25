@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronLeft, ChevronRight, Plug } from 'lucide-react';
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 const steps = [
@@ -147,6 +147,14 @@ const storageProviders: ProviderOption[] = [
 ];
 
 export default function ClerioOnboarding() {
+  return (
+    <Suspense fallback={null}>
+      <ClerioOnboardingInner />
+    </Suspense>
+  );
+}
+
+function ClerioOnboardingInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeStep, setActiveStep] = useState<StepId>(1);
@@ -531,8 +539,6 @@ function IntegrationsStep({
 
   const stageOrder = ['email', 'storage', 'success'] as const;
   const stageIndex = stageOrder.indexOf(stage);
-
-  const canGoNext = stage === 'email' ? !!emailSelection : stage === 'storage' ? !!storageSelection : false;
 
   const handleEmailConnect = () => {
     if (!emailSelection) return;
