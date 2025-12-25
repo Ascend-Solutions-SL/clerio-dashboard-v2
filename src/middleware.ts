@@ -13,9 +13,13 @@ const isPublicPath = (pathname: string) =>
   pathname.startsWith('/auth/callback') ||
   pathname.startsWith('/api/auth/verify') ||
   pathname.startsWith('/api/gmail/oauth/start') ||
+  pathname.startsWith('/api/gmail/oauth/callback') ||
   pathname.startsWith('/api/drive/oauth/start') ||
+  pathname.startsWith('/api/drive/oauth/callback') ||
   pathname.startsWith('/api/oauth/outlook/start') ||
+  pathname.startsWith('/api/oauth/outlook/callback') ||
   pathname.startsWith('/api/oauth/onedrive/start') ||
+  pathname.startsWith('/api/oauth/onedrive/callback') ||
   pathname.startsWith('/api/public');
 
 const isApiPath = (pathname: string) => pathname.startsWith('/api/');

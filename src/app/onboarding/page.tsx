@@ -1,8 +1,8 @@
 "use client";
 
 import { Check, ChevronLeft, ChevronRight, Plug } from 'lucide-react';
-import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 const steps = [
   { id: 1, label: 'Bienvenida' },
@@ -148,11 +148,39 @@ const storageProviders: ProviderOption[] = [
 
 export default function ClerioOnboarding() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeStep, setActiveStep] = useState<StepId>(1);
   const [selectedChannel, setSelectedChannel] = useState<string>('LinkedIn');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteMessage, setInviteMessage] = useState('');
   const [integrationsDone, setIntegrationsDone] = useState(false);
+  const [integrationsInitialStage, setIntegrationsInitialStage] = useState<'email' | 'storage' | 'success'>('email');
+  const [integrationsAutoAdvanceTo, setIntegrationsAutoAdvanceTo] = useState<'email' | 'storage' | 'success' | null>(null);
+
+  useEffect(() => {
+    const stepParam = searchParams.get('step');
+    if (stepParam === '3') {
+      setActiveStep(3);
+      setIntegrationsDone(false);
+    }
+
+    const stageParam = searchParams.get('integrationStage');
+    if (stageParam === 'email' || stageParam === 'storage' || stageParam === 'success') {
+      setIntegrationsInitialStage(stageParam);
+      setIntegrationsAutoAdvanceTo(null);
+      return;
+    }
+
+    const fromParam = searchParams.get('integrationFrom');
+    const toParam = searchParams.get('integrationTo');
+    if (
+      (fromParam === 'email' || fromParam === 'storage' || fromParam === 'success') &&
+      (toParam === 'email' || toParam === 'storage' || toParam === 'success')
+    ) {
+      setIntegrationsInitialStage(fromParam);
+      setIntegrationsAutoAdvanceTo(toParam);
+    }
+  }, [searchParams]);
 
   const isFirst = activeStep === 1;
   const isLast = activeStep === steps.length;
@@ -173,31 +201,28 @@ export default function ClerioOnboarding() {
     return true;
   };
 
+  const finishOnboarding = async () => {
+    const response = await fetch('/api/onboarding/complete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; detail?: string };
+      const reason =
+        typeof payload.error === 'string' ? payload.error : 'No se pudo completar el onboarding. Inténtalo de nuevo.';
+      setInviteMessage(reason);
+      return;
+    }
+
+    router.replace('/dashboard');
+  };
+
   const handleNext = async () => {
     if (isLast) {
-      const canFinish = handleInviteSend();
-      if (!canFinish) {
-        return;
-      }
-
-      const response = await fetch('/api/onboarding/complete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string; detail?: string };
-        const reason =
-          typeof payload.error === 'string'
-            ? payload.error
-            : 'No se pudo completar el onboarding. Inténtalo de nuevo.';
-        setInviteMessage(reason);
-        return;
-      }
-
-      router.replace('/dashboard');
+      await finishOnboarding();
       return;
     }
 
@@ -253,7 +278,12 @@ export default function ClerioOnboarding() {
           )}
           {activeStep === 2 && <WorkspaceStep />}
           {activeStep === 3 && (
-            <IntegrationsStep items={integrations} onComplete={() => setIntegrationsDone(true)} />
+            <IntegrationsStep
+              items={integrations}
+              initialStage={integrationsInitialStage}
+              autoAdvanceTo={integrationsAutoAdvanceTo}
+              onComplete={() => setIntegrationsDone(true)}
+            />
           )}
           {activeStep === 4 && (
             <InviteStep
@@ -272,17 +302,28 @@ export default function ClerioOnboarding() {
             >
               Anterior
             </button>
-            <button
-              className={`rounded-xl px-10 py-3 text-sm font-semibold transition ${
-                isNextEnabled
-                  ? 'bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-white shadow-[0_16px_36px_rgba(18,82,199,0.28)] hover:-translate-y-0.5 hover:brightness-[0.98]'
-                  : 'bg-[#d7e2f8] text-[#8aa0c7]'
-              }`}
-              onClick={() => void handleNext()}
-              disabled={!isNextEnabled}
-            >
-              {isLast ? 'Finalizar' : 'Siguiente'}
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {isLast && (
+                <button
+                  className="rounded-xl px-10 py-3 text-sm font-semibold transition bg-[#f3efe6] text-[#6b5b3a] border border-[#e4ddcf] shadow-[0_16px_36px_rgba(107,91,58,0.10)] hover:-translate-y-0.5 hover:bg-[#efe8db]"
+                  onClick={() => void finishOnboarding()}
+                  type="button"
+                >
+                  Saltar
+                </button>
+              )}
+              <button
+                className={`rounded-xl px-10 py-3 text-sm font-semibold transition ${
+                  isNextEnabled
+                    ? 'bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-white shadow-[0_16px_36px_rgba(18,82,199,0.28)] hover:-translate-y-0.5 hover:brightness-[0.98]'
+                    : 'bg-[#d7e2f8] text-[#8aa0c7]'
+                }`}
+                onClick={() => void handleNext()}
+                disabled={!isNextEnabled}
+              >
+                {isLast ? 'Finalizar' : 'Siguiente'}
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -437,14 +478,56 @@ function WorkspaceStep() {
 
 function IntegrationsStep({
   items,
+  initialStage,
+  autoAdvanceTo,
   onComplete,
 }: {
   items: Integration[];
+  initialStage: 'email' | 'storage' | 'success';
+  autoAdvanceTo: 'email' | 'storage' | 'success' | null;
   onComplete: () => void;
 }) {
-  const [stage, setStage] = useState<'email' | 'storage' | 'success'>('email');
+  const [stage, setStage] = useState<'email' | 'storage' | 'success'>(initialStage);
   const [emailSelection, setEmailSelection] = useState<string | null>(null);
   const [storageSelection, setStorageSelection] = useState<string | null>(null);
+  const didAutoAdvanceRef = useRef(false);
+
+  useEffect(() => {
+    setStage(initialStage);
+    didAutoAdvanceRef.current = false;
+  }, [initialStage]);
+
+  useEffect(() => {
+    if (!autoAdvanceTo) return;
+    if (didAutoAdvanceRef.current) return;
+    if (autoAdvanceTo === stage) {
+      didAutoAdvanceRef.current = true;
+      return;
+    }
+
+    const slideTimeout = window.setTimeout(() => {
+      didAutoAdvanceRef.current = true;
+      setStage(autoAdvanceTo);
+    }, 650);
+
+    return () => {
+      window.clearTimeout(slideTimeout);
+    };
+  }, [autoAdvanceTo, stage]);
+
+  const buildOnboardingRedirect = (fromStage: 'email' | 'storage', toStage: 'storage' | 'success') => {
+    const url = new URL('/onboarding', window.location.origin);
+    url.searchParams.set('step', '3');
+    url.searchParams.set('integrationFrom', fromStage);
+    url.searchParams.set('integrationTo', toStage);
+    return `${url.pathname}${url.search}`;
+  };
+
+  const redirectToOAuthStart = (path: string, fromStage: 'email' | 'storage', nextStage: 'storage' | 'success') => {
+    const url = new URL(path, window.location.origin);
+    url.searchParams.set('redirect', buildOnboardingRedirect(fromStage, nextStage));
+    window.location.href = url.toString();
+  };
 
   const stageOrder = ['email', 'storage', 'success'] as const;
   const stageIndex = stageOrder.indexOf(stage);
@@ -453,12 +536,34 @@ function IntegrationsStep({
 
   const handleEmailConnect = () => {
     if (!emailSelection) return;
+
+    if (emailSelection === 'gmail') {
+      redirectToOAuthStart('/api/gmail/oauth/start', 'email', 'storage');
+      return;
+    }
+
+    if (emailSelection === 'outlook') {
+      redirectToOAuthStart('/api/oauth/outlook/start', 'email', 'storage');
+      return;
+    }
+
     setStage('storage');
     setStorageSelection(null);
   };
 
   const handleStorageConnect = () => {
     if (!storageSelection) return;
+
+    if (storageSelection === 'drive') {
+      redirectToOAuthStart('/api/drive/oauth/start', 'storage', 'success');
+      return;
+    }
+
+    if (storageSelection === 'onedrive') {
+      redirectToOAuthStart('/api/oauth/onedrive/start', 'storage', 'success');
+      return;
+    }
+
     setStage('success');
   };
 
@@ -469,17 +574,19 @@ function IntegrationsStep({
   }, [onComplete, stage]);
 
   const handlePrevStage = () => {
-    const prevIndex = Math.max(stageIndex - 1, 0);
-    setStage(stageOrder[prevIndex]);
+    if (stage === 'storage') {
+      setStage('email');
+      return;
+    }
+    if (stage === 'success') {
+      setStage('storage');
+      return;
+    }
   };
 
   const handleNextStage = () => {
     if (stage === 'email') {
-      handleEmailConnect();
-      return;
-    }
-    if (stage === 'storage') {
-      handleStorageConnect();
+      setStage('storage');
       return;
     }
   };
@@ -583,7 +690,7 @@ function IntegrationsStep({
             type="button"
             className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e1e8f7] bg-transparent text-[#9bb0d6] transition hover:bg-white/60 disabled:cursor-not-allowed disabled:opacity-30"
             onClick={handlePrevStage}
-            disabled={stageIndex === 0}
+            disabled={stage === 'email'}
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
@@ -595,12 +702,12 @@ function IntegrationsStep({
           <button
             type="button"
             className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
-              canGoNext
+              stage === 'email'
                 ? 'border-[#e1e8f7] bg-transparent text-[#2d63df] hover:bg-white/60'
                 : 'border-[#e1e8f7] bg-transparent text-[#b3c2df] cursor-not-allowed'
             }`}
             onClick={handleNextStage}
-            disabled={!canGoNext}
+            disabled={stage !== 'email'}
           >
             <ChevronRight className="h-4 w-4" />
           </button>
