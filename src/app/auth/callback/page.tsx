@@ -4,12 +4,11 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-import { ENV, assertEnv } from '@/lib/config';
+import { assertEnv } from '@/lib/config';
 
 assertEnv();
 
-const resolveLoginUrl = () => ENV.APP_BASE_URL || process.env.CLERIO_LOGIN_URL || 'https://clerio-login.vercel.app';
-const resolveDashboardBaseUrl = () => ENV.DASHBOARD_BASE_URL || 'https://dashboard.ascendsolutions.es';
+const resolveLoginUrl = () => '/login';
 
 type VerificationState = 'idle' | 'verifying' | 'success' | 'error';
 
@@ -31,7 +30,7 @@ function AuthCallbackVerifier() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const token = searchParams.get('token');
-  const target = searchParams.get('redirect') ?? resolveDashboardBaseUrl();
+  const target = searchParams.get('redirect') ?? '/dashboard';
   const loginUrl = useMemo(resolveLoginUrl, []);
 
   useEffect(() => {

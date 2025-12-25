@@ -1,23 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { buildOneDriveOAuthUrl, createOneDriveOAuthState } from '@/lib/onedrive/onedriveOAuth';
-import { getRouteSession } from '@/lib/session';
-import { resolveAbsoluteUrl } from '@/lib/url';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
-  const response = NextResponse.next();
-  const session = await getRouteSession(request, response);
+  const origin = request.nextUrl.origin;
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  if (!session.user) {
-    return NextResponse.redirect(resolveAbsoluteUrl('/auth/login?reason=onedrive-auth'), {
-      status: 302,
-    });
+  if (userError || !user) {
+    const loginUrl = new URL('/login', origin);
+    loginUrl.searchParams.set('redirect', '/integraciones');
+    loginUrl.searchParams.set('reason', 'onedrive-auth');
+    return NextResponse.redirect(loginUrl.toString(), { status: 302 });
   }
 
   const redirectPath = request.nextUrl.searchParams.get('redirect') ?? '/integraciones';
-  const state = createOneDriveOAuthState(session.user.id, redirectPath);
+  const state = createOneDriveOAuthState(user.id, redirectPath);
 
-  const redirectUri = resolveAbsoluteUrl('/api/oauth/onedrive/callback');
+  const redirectUri = new URL('/api/oauth/onedrive/callback', origin).toString();
   const authorizationUrl = await buildOneDriveOAuthUrl({
     state,
     redirectUri,

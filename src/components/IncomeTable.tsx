@@ -324,7 +324,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       console.log('Fetched invoices:', facturas);
 
       // Calculate total income and count
-      const total = facturas.reduce((sum, factura) => {
+      const total = (facturas as FacturaRow[]).reduce((sum: number, factura: FacturaRow) => {
         const amount = parseFloat(factura.importe_total as string) || 0;
         return sum + amount;
       }, 0);
@@ -334,7 +334,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       onInvoiceCountChange?.(facturas.length);
 
       // Map to table data
-      const mapped = facturas.map((row) => {
+      const mapped = (facturas as FacturaRow[]).map((row: FacturaRow) => {
         const subtotalValue = Number(row.importe_sin_iva ?? 0);
         const totalValue = Number(row.importe_total ?? 0);
 
@@ -389,7 +389,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           .lte('fecha', dateRange.endDate);
       }
 
-      const { data: rows, error } = await query.returns<FacturaRow[]>();
+      const { data: rows, error } = await query;
 
       if (!isMounted) {
         return;
@@ -400,7 +400,9 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
         return;
       }
 
-      const mapped = rows.map((row) => {
+      const typedRows = rows as FacturaRow[];
+
+      const mapped = typedRows.map((row: FacturaRow) => {
         const subtotalValue = Number(row.importe_sin_iva ?? 0);
         const totalValue = Number(row.importe_total ?? 0);
 

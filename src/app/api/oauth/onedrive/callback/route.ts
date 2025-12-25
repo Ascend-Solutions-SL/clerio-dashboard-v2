@@ -7,10 +7,9 @@ import {
   parseOneDriveOAuthState,
 } from '@/lib/onedrive/onedriveOAuth';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { resolveAbsoluteUrl } from '@/lib/url';
 
-const buildRedirectUrl = (path: string, status: 'success' | 'error', reason?: string) => {
-  const url = new URL(path, resolveAbsoluteUrl('/'));
+const buildRedirectUrl = (origin: string, path: string, status: 'success' | 'error', reason?: string) => {
+  const url = new URL(path, origin);
   url.searchParams.set('onedrive', status);
 
   if (reason) {
@@ -21,13 +20,14 @@ const buildRedirectUrl = (path: string, status: 'success' | 'error', reason?: st
 };
 
 export async function GET(request: NextRequest) {
+  const origin = request.nextUrl.origin;
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
   if (error) {
-    const redirectUrl = buildRedirectUrl('/integraciones', 'error', error);
+    const redirectUrl = buildRedirectUrl(origin, '/integraciones', 'error', error);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const redirectUri = resolveAbsoluteUrl('/api/oauth/onedrive/callback');
+  const redirectUri = new URL('/api/oauth/onedrive/callback', origin).toString();
 
   try {
     const tokenResponse = await exchangeOneDriveCodeForTokens({ code, redirectUri });
@@ -91,12 +91,12 @@ export async function GET(request: NextRequest) {
       throw upsertError;
     }
 
-    const redirectUrl = buildRedirectUrl(redirectPath, 'success');
+    const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');
     return NextResponse.redirect(redirectUrl, { status: 302 });
   } catch (callbackError) {
     const reason =
       callbackError instanceof Error ? callbackError.message : 'OneDrive authorization failed';
-    const redirectUrl = buildRedirectUrl('/integraciones', 'error', reason);
+    const redirectUrl = buildRedirectUrl(origin, '/integraciones', 'error', reason);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 }

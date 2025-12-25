@@ -14,6 +14,11 @@ interface MonthlyData {
   total: number;
 }
 
+type FacturaAggregateRow = {
+  fecha: string | null;
+  importe_total: number | string | null;
+};
+
 interface FinancialData {
   totalIncome: number;
   incomeCount: number;
@@ -125,8 +130,12 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
           if (expensesResult.error) throw expensesResult.error;
 
           const allDates = [
-            ...(incomeResult.data ?? []).map((item) => (item.fecha ? new Date(item.fecha) : null)),
-            ...(expensesResult.data ?? []).map((item) => (item.fecha ? new Date(item.fecha) : null)),
+            ...((incomeResult.data ?? []) as FacturaAggregateRow[]).map((item: FacturaAggregateRow) =>
+              item.fecha ? new Date(item.fecha) : null
+            ),
+            ...((expensesResult.data ?? []) as FacturaAggregateRow[]).map((item: FacturaAggregateRow) =>
+              item.fecha ? new Date(item.fecha) : null
+            ),
           ].filter((d): d is Date => Boolean(d));
 
           const monthlyData = (() => {
@@ -159,7 +168,7 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
           const incomeCount = incomeResult.data?.length ?? 0;
           const expenseCount = expensesResult.data?.length ?? 0;
 
-          incomeResult.data?.forEach((item) => {
+          (incomeResult.data as FacturaAggregateRow[] | null | undefined)?.forEach((item: FacturaAggregateRow) => {
             if (!item.fecha) return;
             const amount = parseAmount(item.importe_total);
             totalIncome += amount;
@@ -178,7 +187,7 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
             }
           });
 
-          expensesResult.data?.forEach((item) => {
+          (expensesResult.data as FacturaAggregateRow[] | null | undefined)?.forEach((item: FacturaAggregateRow) => {
             if (!item.fecha) return;
             const amount = Math.abs(parseAmount(item.importe_total));
             totalExpenses += amount;

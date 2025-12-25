@@ -117,6 +117,96 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
+
+  input,
+  textarea,
+  select {
+    @apply w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm placeholder:text-muted-foreground;
+  }
+
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+.onboarding-shell {
+  background:
+    radial-gradient(circle at top right, #fefefe 0%, #f2f7ff 35%, #e3eefc 70%, #ebf3ff 100%)
+      fixed,
+    #f7faff;
+  color: #0a1630;
+  -webkit-font-smoothing: antialiased;
+}
+
+.onboarding-shell ::selection {
+  background: rgba(29, 107, 255, 0.2);
+}
+
+.onboarding-shell button,
+.onboarding-shell input,
+.onboarding-shell select,
+.onboarding-shell textarea {
+  font: inherit;
+}
+
+.onboarding-shell input,
+.onboarding-shell select,
+.onboarding-shell textarea {
+  outline: none;
+}
+
+.onboarding-shell button:focus-visible,
+.onboarding-shell input:focus-visible,
+.onboarding-shell select:focus-visible,
+.onboarding-shell textarea:focus-visible {
+  outline: 2px solid rgba(29, 107, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.onboarding-shell .field-input {
+  border: 1px solid #dfe6f5;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7ff 100%);
+  padding: 0.9rem 1rem;
+  font-size: 0.95rem;
+  color: #0a1f44;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: border 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.onboarding-shell .field-input:focus {
+  border-color: #1d6bff;
+  box-shadow: 0 12px 32px rgba(21, 75, 174, 0.16);
+}
+
+.onboarding-shell .workspace-field {
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.9rem;
+}
+
+.onboarding-shell .workspace-phone {
+  border-radius: 10px;
+  padding: 0.75rem 0.85rem;
+}
+
+.onboarding-shell .workspace-phone-input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  outline: none;
+  font-size: inherit;
+  color: inherit;
+}
+
+.onboarding-shell .workspace-phone-input::placeholder {
+  color: #9fb0cc;
 }

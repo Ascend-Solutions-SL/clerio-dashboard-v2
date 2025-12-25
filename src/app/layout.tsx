@@ -1,6 +1,6 @@
 // src/app/layout.tsx
 import type { Metadata } from 'next'
-import { Outfit } from 'next/font/google'
+import { Manrope, Roboto_Mono } from 'next/font/google'
 import './globals.css'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import { DashboardSessionProvider } from '@/context/dashboard-session-context'
@@ -10,9 +10,16 @@ import { InvoiceProvider } from '@/context/InvoiceContext'
 import { FinancialDataProvider } from '@/context/FinancialDataContext'
 import { Toaster } from '@/components/ui/toaster'
 
-const outfit = Outfit({ 
-  subsets: ['latin'], 
-  weight: ['200', '300', '400', '500', '600'] 
+const manrope = Manrope({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-geist-sans',
+  display: 'swap',
+})
+
+const robotoMono = Roboto_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
 })
 
 export const metadata: Metadata = {
@@ -27,7 +34,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className={outfit.className}>
+      <body className={`${manrope.variable} ${robotoMono.variable} antialiased`}>
         <DashboardSessionProvider>
           <NotificationProvider>
             <FinancialDataProvider>

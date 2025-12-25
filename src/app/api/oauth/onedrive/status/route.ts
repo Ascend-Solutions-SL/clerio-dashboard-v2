@@ -1,20 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { getRouteSession } from '@/lib/session';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
-export async function GET(request: NextRequest) {
-  const response = NextResponse.next();
-  const session = await getRouteSession(request, response);
+export async function GET() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  if (!session.user) {
+  if (userError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { data, error } = await supabaseAdmin
     .from('onedrive_accounts')
     .select('id, account_email, drive_name, updated_at')
-    .eq('user_uid', session.user.id)
+    .eq('user_uid', user.id)
     .maybeSingle();
 
   if (error) {

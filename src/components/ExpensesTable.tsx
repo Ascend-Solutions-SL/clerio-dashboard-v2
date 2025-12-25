@@ -347,7 +347,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       }
 
       // Calculate total expenses and count
-      const total = facturas.reduce((sum, factura) => {
+      const total = facturas.reduce((sum: number, factura: FacturaRow) => {
         const amount = Math.abs(Number(factura.importe_total) || 0);
         return sum + amount;
       }, 0);
@@ -357,7 +357,9 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       onInvoiceCountChange?.(facturas.length);
 
       // Map to table data
-      const mapped = facturas.map((row) => {
+      const typedFacturas = facturas as FacturaRow[];
+
+      const mapped = typedFacturas.map((row: FacturaRow) => {
         const subtotalValue = Math.abs(Number(row.importe_sin_iva) || 0);
         const totalValue = Math.abs(Number(row.importe_total) || 0);
 
@@ -416,7 +418,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           .lte('fecha', dateRange.endDate);
       }
 
-      const { data: rows, error } = await query.returns<FacturaRow[]>();
+      const { data: rows, error } = await query;
 
       if (!isMounted) {
         return;
@@ -427,7 +429,9 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
         return;
       }
 
-      const mapped = rows.map((row) => {
+      const typedRows = rows as FacturaRow[];
+
+      const mapped = typedRows.map((row: FacturaRow) => {
         const subtotalValue = Math.abs(Number(row.importe_sin_iva) || 0);
         const totalValue = Math.abs(Number(row.importe_total) || 0);
 
@@ -451,13 +455,13 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       });
 
       // Update parent components with filtered data
-      const total = rows.reduce((sum, row) => {
+      const total = typedRows.reduce((sum: number, row: FacturaRow) => {
         const amount = Math.abs(Number(row.importe_total) || 0);
         return sum + amount;
       }, 0);
 
       onTotalExpensesChange?.(total);
-      onInvoiceCountChange?.(rows.length);
+      onInvoiceCountChange?.(typedRows.length);
 
       setData(mapped);
     };

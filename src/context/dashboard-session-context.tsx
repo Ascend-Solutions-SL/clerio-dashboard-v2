@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { usePathname } from 'next/navigation';
 
 import type { SessionUser } from '@/lib/session';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 interface DashboardSessionState {
   user: SessionUser | null;
@@ -12,12 +12,6 @@ interface DashboardSessionState {
   error: string | null;
   refresh: () => Promise<void>;
 }
-
-import { ENV, assertEnv } from '@/lib/config';
-
-const LOGIN_URL = ENV.LOGIN_BASE_URL || 'https://clerio-login.vercel.app';
-
-assertEnv();
 
 const DashboardSessionContext = createContext<DashboardSessionState | undefined>(undefined);
 
@@ -32,45 +26,41 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
     setError(null);
 
     try {
-      const response = await fetch('/api/auth/session', {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (response.status === 401) {
-        const { origin, pathname } = window.location;
-        const isAuthFlow = pathname.startsWith('/auth/');
-
-        if (origin !== LOGIN_URL && !isAuthFlow) {
-          window.location.href = LOGIN_URL;
-        }
+      if (userError || !user) {
+        setUser(null);
         return;
       }
 
-      if (!response.ok) {
-        throw new Error('No se pudo recuperar la sesión');
+      const { data: profile, error: profileError } = await supabase
+        .schema('public')
+        .from('auth_users')
+        .select(
+          'first_name, last_name, user_initials, user_businessname, user_phone, user_email, user_role, empresa_id'
+        )
+        .eq('user_uid', user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        throw new Error(profileError.message);
       }
 
-      const payload = (await response.json()) as { user: SessionUser };
-      const userData = { ...payload.user };
-
-      if (!userData.role && userData.id) {
-        const { data: profile } = await supabase
-          .from('auth_users')
-          .select('user_role')
-          .eq('user_uid', userData.id)
-          .single();
-
-        if (profile?.user_role) {
-          userData.role = profile.user_role;
-        }
-      }
-
-      setUser(userData);
+      setUser({
+        id: user.id,
+        email: profile?.user_email ?? user.email ?? '',
+        firstName: profile?.first_name ?? '',
+        lastName: profile?.last_name ?? '',
+        initials: profile?.user_initials ?? '',
+        businessName: profile?.user_businessname ?? '',
+        empresaId: profile?.empresa_id ?? null,
+        role: profile?.user_role ?? '',
+        phone: profile?.user_phone ?? '',
+      });
     } catch (fetchError) {
       const reason = fetchError instanceof Error ? fetchError.message : 'Error desconocido';
       setError(reason);
@@ -80,6 +70,10 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
   }, []);
 
   useEffect(() => {
+    if (pathname === '/login' || pathname === '/onboarding') {
+      setIsLoading(false);
+      return;
+    }
     void loadSession();
   }, [loadSession, pathname]);
 

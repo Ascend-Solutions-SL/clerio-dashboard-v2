@@ -2,17 +2,40 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { assertEnv } from '@/lib/config';
-import { resolveLoginUrl } from '@/lib/session';
+import { createSupabaseMiddlewareClient } from '@/lib/supabase/middleware';
 
 const isStaticAsset = (pathname: string) =>
   pathname.startsWith('/_next') || pathname.startsWith('/static') || pathname.endsWith('.ico');
 
 const isPublicPath = (pathname: string) =>
+  pathname === '/login' ||
+  pathname === '/onboarding' ||
   pathname.startsWith('/auth/callback') ||
-  pathname.startsWith('/auth/login') ||
   pathname.startsWith('/api/auth/verify') ||
-  pathname.startsWith('/api/auth/logout') ||
-  pathname.startsWith('/api/auth/session');
+  pathname.startsWith('/api/gmail/oauth/start') ||
+  pathname.startsWith('/api/drive/oauth/start') ||
+  pathname.startsWith('/api/oauth/outlook/start') ||
+  pathname.startsWith('/api/oauth/onedrive/start') ||
+  pathname.startsWith('/api/public');
+
+const isApiPath = (pathname: string) => pathname.startsWith('/api/');
+
+const isOnboardingCompletePath = (pathname: string) => pathname === '/api/onboarding/complete';
+
+const buildLoginRedirectUrl = (request: NextRequest) => {
+  const redirect = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  const url = request.nextUrl.clone();
+  url.pathname = '/login';
+  url.searchParams.set('redirect', redirect);
+  return url;
+};
+
+const redirectTo = (request: NextRequest, pathname: string) => {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = '';
+  return NextResponse.redirect(url);
+};
 
 export async function middleware(request: NextRequest) {
   assertEnv();
@@ -23,21 +46,56 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const sessionCookie = request.cookies.get('clerio_session');
+  const { supabase, response } = createSupabaseMiddlewareClient(request);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (sessionCookie) {
-    return NextResponse.next();
+  if (!user) {
+    if (isApiPath(pathname)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    return NextResponse.redirect(buildLoginRedirectUrl(request));
   }
 
-  const relativeRedirect = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  const { data: authUserRow, error: authUserError } = await supabase
+    .schema('public')
+    .from('auth_users')
+    .select('is_onboarded')
+    .eq('user_uid', user.id)
+    .maybeSingle();
 
-  let loginUrl = new URL(resolveLoginUrl());
-  if (loginUrl.origin === request.nextUrl.origin) {
-    loginUrl = new URL('https://clerio-login.vercel.app');
+  if (authUserError) {
+    if (isApiPath(pathname)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    return NextResponse.redirect(buildLoginRedirectUrl(request));
   }
-  loginUrl.searchParams.set('redirect', relativeRedirect);
 
-  return NextResponse.redirect(loginUrl);
+  const isOnboarded = authUserRow?.is_onboarded === true;
+
+  if (!isOnboarded) {
+    if (pathname === '/onboarding') {
+      return response;
+    }
+
+    if (isOnboardingCompletePath(pathname) && request.method === 'POST') {
+      return response;
+    }
+
+    if (isApiPath(pathname)) {
+      return NextResponse.json({ error: 'Onboarding required' }, { status: 403 });
+    }
+
+    return redirectTo(request, '/onboarding');
+  }
+
+  if (pathname === '/login' || pathname === '/onboarding') {
+    return redirectTo(request, '/dashboard');
+  }
+
+  return response;
 }
 
 export const config = {

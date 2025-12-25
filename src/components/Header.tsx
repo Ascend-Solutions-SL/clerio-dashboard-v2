@@ -5,12 +5,6 @@ import { useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { useNotifications } from '@/context/NotificationContext';
-import { ENV } from '@/lib/config';
-
-const LOGIN_URL =
-  ENV.LOGIN_BASE_URL ||
-  process.env.NEXT_PUBLIC_CLERIO_LOGIN_URL ||
-  'https://clerio-login.vercel.app';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
@@ -24,7 +18,7 @@ const Header = () => {
       } catch (error) {
         console.error('Error al cerrar sesión', error);
       } finally {
-        window.location.href = LOGIN_URL;
+        window.location.href = '/login';
       }
     });
   };

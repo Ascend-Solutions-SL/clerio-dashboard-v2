@@ -1,7 +1,5 @@
 export const ENV = {
   APP_BASE_URL: process.env.NEXT_PUBLIC_APP_BASE_URL ?? "",
-  LOGIN_BASE_URL: process.env.NEXT_PUBLIC_LOGIN_BASE_URL ?? "",
-  DASHBOARD_BASE_URL: process.env.NEXT_PUBLIC_DASHBOARD_BASE_URL ?? "",
   SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
   SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
   NODE_ENV: process.env.NODE_ENV ?? "development",
@@ -19,8 +17,6 @@ export function assertEnv() {
   }
 
   const requiredKeys: (keyof typeof ENV)[] = [
-    "APP_BASE_URL",
-    "DASHBOARD_BASE_URL",
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
   ];
