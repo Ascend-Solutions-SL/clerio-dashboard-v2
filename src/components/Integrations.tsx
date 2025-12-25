@@ -79,7 +79,7 @@ const Integrations = () => {
       <div className="flex items-center justify-between mb-3">
         <h3 className={`text-gray-800 text-sm font-semibold ${nunito.className}`}>Conexiones</h3>
         <Link
-          href="/integraciones"
+          href="/dashboard/integraciones"
           className="inline-flex items-center px-1 py-0.5 text-[10px] font-medium text-blue-600 transition-all duration-200 rounded hover:text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
         >
           Gestionar
@@ -90,7 +90,7 @@ const Integrations = () => {
           {tiles.map((tile) => (
             <Link
               key={tile.name}
-              href="/integraciones"
+              href="/dashboard/integraciones"
               className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 flex flex-col gap-1.5 hover:border-blue-300 hover:shadow-sm transition"
             >
               <div className="flex items-center gap-2 min-w-0">

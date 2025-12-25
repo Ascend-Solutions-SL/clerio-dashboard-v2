@@ -29,7 +29,7 @@ const Header = () => {
         <div>
           <p className="text-gray-500">
             Hola {user?.firstName ?? 'usuario'}! Tienes {notificationCount} mensaje{notificationCount !== 1 ? 's' : ''}.{' '}
-            <a href="/cleriochat" className="text-blue-600 font-semibold hover:underline">
+            <a href="/dashboard/cleriochat" className="text-blue-600 font-semibold hover:underline">
               Ver
             </a>
           </p>

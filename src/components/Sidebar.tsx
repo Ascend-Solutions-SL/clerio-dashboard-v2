@@ -14,11 +14,11 @@ import {
 } from 'lucide-react';
 
 const navItems = [
-  { href: '/', icon: Home, label: 'Inicio' },
-  { href: '/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
-  { href: '/gastos', icon: ArrowDownCircle, label: 'Gastos' },
-  { href: '/integraciones', icon: LinkIcon, label: 'Integraciones' },
-  { href: '/cleriochat', icon: MessageSquare, label: 'ClerioChat', isNotification: true },
+  { href: '/dashboard', icon: Home, label: 'Inicio' },
+  { href: '/dashboard/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
+  { href: '/dashboard/gastos', icon: ArrowDownCircle, label: 'Gastos' },
+  { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
+  { href: '/dashboard/cleriochat', icon: MessageSquare, label: 'ClerioChat', isNotification: true },
 ];
 
 interface SidebarProps {
@@ -53,7 +53,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           <Link 
             key={item.label} 
             href={item.href} 
-            className={`flex items-center p-3 my-1 rounded-lg relative ${pathname === item.href ? 'bg-blue-700' : 'hover:bg-blue-700'}`}>
+            className={`flex items-center p-3 my-1 rounded-lg relative ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'bg-blue-700' : 'hover:bg-blue-700'}`}>
             <div className="w-6">
               <item.icon size={20} />
             </div>

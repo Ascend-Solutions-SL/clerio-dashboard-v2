@@ -13,12 +13,12 @@ export async function GET(request: NextRequest) {
 
   if (userError || !user) {
     const loginUrl = new URL('/login', origin);
-    loginUrl.searchParams.set('redirect', '/integraciones');
+    loginUrl.searchParams.set('redirect', '/dashboard/integraciones');
     loginUrl.searchParams.set('reason', 'onedrive-auth');
     return NextResponse.redirect(loginUrl.toString(), { status: 302 });
   }
 
-  const redirectPath = request.nextUrl.searchParams.get('redirect') ?? '/integraciones';
+  const redirectPath = request.nextUrl.searchParams.get('redirect') ?? '/dashboard/integraciones';
   const state = createOneDriveOAuthState(user.id, redirectPath);
 
   const redirectUri = new URL('/api/oauth/onedrive/callback', origin).toString();

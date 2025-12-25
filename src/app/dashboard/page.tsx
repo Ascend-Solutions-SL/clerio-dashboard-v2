@@ -39,7 +39,7 @@ export default function DashboardHome() {
               Icon={ArrowUpCircle}
               size="compact"
               className="md:w-[300px]"
-              href="/ingresos"
+              href="/dashboard/ingresos"
             />
             <StatCard
               title="Gastos"
@@ -48,7 +48,7 @@ export default function DashboardHome() {
               Icon={ArrowDownCircle}
               size="compact"
               className="md:w-[300px]"
-              href="/gastos"
+              href="/dashboard/gastos"
             />
           </div>
         </div>

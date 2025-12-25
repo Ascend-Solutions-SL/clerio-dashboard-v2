@@ -10,7 +10,7 @@ interface OneDriveConnectButtonProps {
 type OneDriveConnectionState = "checking" | "connected" | "disconnected";
 
 export function OneDriveConnectButton({
-  redirectPath = "/integraciones",
+  redirectPath = "/dashboard/integraciones",
   className,
 }: OneDriveConnectButtonProps) {
   const [status, setStatus] = useState<OneDriveConnectionState>("checking");

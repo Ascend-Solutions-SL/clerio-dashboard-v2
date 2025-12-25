@@ -10,7 +10,7 @@ interface DriveConnectButtonProps {
 type DriveConnectionState = "checking" | "connected" | "disconnected";
 
 export function DriveConnectButton({
-  redirectPath = "/integraciones",
+  redirectPath = "/dashboard/integraciones",
   className,
 }: DriveConnectButtonProps) {
   const [status, setStatus] = useState<DriveConnectionState>("checking");

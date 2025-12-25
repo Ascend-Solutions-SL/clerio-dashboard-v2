@@ -10,7 +10,7 @@
  type GmailConnectionState = "checking" | "connected" | "disconnected";
  
  export function GmailConnectButton({
-   redirectPath = "/integraciones",
+   redirectPath = "/dashboard/integraciones",
    className,
  }: GmailConnectButtonProps) {
    const [status, setStatus] = useState<GmailConnectionState>("checking");

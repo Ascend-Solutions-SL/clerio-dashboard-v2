@@ -10,7 +10,7 @@ interface OutlookConnectButtonProps {
 type OutlookConnectionState = "checking" | "connected" | "disconnected";
 
 export function OutlookConnectButton({
-  redirectPath = "/integraciones",
+  redirectPath = "/dashboard/integraciones",
   className,
 }: OutlookConnectButtonProps) {
   const [status, setStatus] = useState<OutlookConnectionState>("checking");

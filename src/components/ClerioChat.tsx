@@ -74,7 +74,7 @@ const ClerioChat = () => {
         <h3 className="font-bold text-gray-800">ClerioChat</h3>
         <div className="flex items-center gap-2">
           <Link
-            href="/cleriochat"
+            href="/dashboard/cleriochat"
             className="inline-flex items-center px-2 py-1 text-xs font-semibold text-blue-600 transition-all duration-200 rounded hover:text-blue-700 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             aria-label="Ir a ClerioChat"
           >

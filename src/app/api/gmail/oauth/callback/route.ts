@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
 
   if (error) {
-    const redirectUrl = buildRedirectUrl(origin, '/integraciones', 'error', error);
+    const redirectUrl = buildRedirectUrl(origin, '/dashboard/integraciones', 'error', error);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
   try {
     const statePayload = parseOAuthState(state);
     userUid = statePayload.userUid;
-    redirectPath = statePayload.redirectPath ?? '/integraciones';
+    redirectPath = statePayload.redirectPath ?? '/dashboard/integraciones';
   } catch (stateError) {
     return NextResponse.json(
       { error: stateError instanceof Error ? stateError.message : 'Invalid state parameter' },
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
   } catch (callbackError) {
     const reason =
       callbackError instanceof Error ? callbackError.message : 'Gmail authorization failed';
-    const redirectUrl = buildRedirectUrl(origin, '/integraciones', 'error', reason);
+    const redirectUrl = buildRedirectUrl(origin, '/dashboard/integraciones', 'error', reason);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 }

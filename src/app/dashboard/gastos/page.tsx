@@ -16,7 +16,6 @@ const GastosPage = () => {
   const [tableRefreshKey, setTableRefreshKey] = useState<number>(0);
   const prevData = useRef({ total: 0, count: 0 });
 
-  // Update the context when data changes
   useEffect(() => {
     if (prevData.current.total !== totalExpenses || prevData.current.count !== invoiceCount) {
       setExpensesData(totalExpenses, invoiceCount);
@@ -24,7 +23,6 @@ const GastosPage = () => {
     }
   }, [totalExpenses, invoiceCount, setExpensesData]);
 
-  // Dynamic font size based on expenses value length
   const getExpensesFontSize = (value: number) => {
     const valueStr = value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (valueStr.length > 10) return 'text-xs';
@@ -39,7 +37,7 @@ const GastosPage = () => {
           <PageBanner title="Gastos" color="red" />
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,6fr)] gap-6">
             <div className="flex flex-col gap-4 self-start sticky top-4">
-              <StatCard 
+              <StatCard
                 title="Gastos"
                 value={`${totalExpenses.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`}
                 Icon={ArrowDownCircle}
@@ -48,7 +46,7 @@ const GastosPage = () => {
                 showIcon={false}
                 className={`${getExpensesFontSize(totalExpenses)} flex-shrink-0`}
               />
-              <StatCard 
+              <StatCard
                 title="Nº Facturas"
                 value={invoiceCount.toString()}
                 Icon={FileText}
@@ -65,12 +63,9 @@ const GastosPage = () => {
                   <RefreshCw className="h-4 w-4" />
                   <span>Último escaneo hace 22 min</span>
                 </div>
-                <InvoiceUploadDialog
-                  type="Gastos"
-                  onCreated={() => setTableRefreshKey((prev) => prev + 1)}
-                />
+                <InvoiceUploadDialog type="Gastos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
               </div>
-              <ExpensesTable 
+              <ExpensesTable
                 onTotalExpensesChange={setTotalExpenses}
                 onInvoiceCountChange={setInvoiceCount}
                 refreshKey={tableRefreshKey}
