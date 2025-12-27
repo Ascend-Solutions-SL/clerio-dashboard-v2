@@ -514,6 +514,16 @@ function IntegrationsStep({
   autoAdvanceTo: 'email' | 'storage' | 'success' | null;
   onComplete: () => void;
 }) {
+  const logoSrcByIntegrationName: Record<string, string> = {
+    Gmail: '/brand/gmail_logo.png',
+    WhatsApp: '/brand/whatsapp_logo.png',
+    Dropbox: '/brand/dropbox_logo.png',
+    'One Drive': '/brand/onedrive_logo.png',
+    'Wolters Kluwer': '/brand/wolters_logo.png',
+    Hubspot: '/brand/hubspot_logo.png',
+    'Microsoft Teams': '/brand/teams_logo.png',
+  };
+
   const [stage, setStage] = useState<'email' | 'storage' | 'success'>(initialStage);
   const [emailSelection, setEmailSelection] = useState<string | null>(null);
   const [storageSelection, setStorageSelection] = useState<string | null>(null);
@@ -646,20 +656,27 @@ function IntegrationsStep({
         <div className="mt-4 rounded-2xl border border-[#e4e9f5] bg-[#f9fbff] px-3 py-3.5 shadow-[0_14px_40px_rgba(15,40,92,0.07)]">
           <div className="max-h-[10.5rem] overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-2">
-              {items.map((integration) => (
-                <div
-                  key={integration.name}
-                  className="flex min-h-[50px] items-center gap-2 rounded-2xl border border-[#dde4f3] bg-white px-2 py-1.5 shadow-[0_10px_24px_rgba(12,32,72,0.05)]"
-                >
+              {items.map((integration) => {
+                const logoSrc = logoSrcByIntegrationName[integration.name] ?? null;
+                return (
                   <div
-                    className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold text-white"
-                    style={{ background: integration.color }}
+                    key={integration.name}
+                    className="flex min-h-[50px] items-center gap-2 rounded-2xl border border-[#dde4f3] bg-white px-2 py-1.5 shadow-[0_10px_24px_rgba(12,32,72,0.05)]"
                   >
-                    {integration.icon}
+                    <div
+                      className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold text-white"
+                      style={{ background: integration.color }}
+                    >
+                      {logoSrc ? (
+                        <img src={logoSrc} alt={integration.name} className="h-6.5 w-6.5 rounded-lg bg-white" />
+                      ) : (
+                        integration.icon
+                      )}
+                    </div>
+                    <p className="text-[10px] font-semibold text-[#0a1f44] leading-tight">{integration.name}</p>
                   </div>
-                  <p className="text-[10px] font-semibold text-[#0a1f44] leading-tight">{integration.name}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -757,6 +774,12 @@ function IntegrationPanel({
   onSelect: (value: string) => void;
   action?: ReactNode;
 }) {
+  const logoSrcByProviderValue: Record<string, string> = {
+    gmail: '/brand/gmail_logo.png',
+    onedrive: '/brand/onedrive_logo.png',
+    'other-storage': '/brand/dropbox_logo.png',
+  };
+
   return (
     <div className="flex min-h-[320px] flex-col justify-center">
       <div className="mx-auto w-full max-w-[520px] bg-transparent px-2 pt-1 pb-1">
@@ -769,6 +792,7 @@ function IntegrationPanel({
           {options.map((option) => {
             const isActive = option.value === selection;
             const isOther = option.value.includes('other');
+            const logoSrc = logoSrcByProviderValue[option.value] ?? null;
             return (
               <button
                 key={option.value}
@@ -782,10 +806,16 @@ function IntegrationPanel({
               >
                 <div className="flex items-center gap-2.5">
                   <div
-                    className="flex h-7 w-7 items-center justify-center rounded-xl text-[11px] font-semibold text-white"
-                    style={{ background: option.accent }}
+                    className={`flex h-7 w-7 items-center justify-center rounded-xl text-[11px] font-semibold ${
+                      logoSrc ? 'bg-white' : 'text-white'
+                    }`}
+                    style={logoSrc ? undefined : { background: option.accent }}
                   >
-                    {option.icon}
+                    {logoSrc ? (
+                      <img src={logoSrc} alt={option.label} className="h-7 w-7 rounded-xl" />
+                    ) : (
+                      option.icon
+                    )}
                   </div>
                   <p className="text-[13px] font-semibold text-[#0a1f44]">{option.label}</p>
                 </div>
