@@ -5,7 +5,10 @@ import { assertEnv } from '@/lib/config';
 import { createSupabaseMiddlewareClient } from '@/lib/supabase/middleware';
 
 const isStaticAsset = (pathname: string) =>
-  pathname.startsWith('/_next') || pathname.startsWith('/static') || pathname.endsWith('.ico');
+  pathname.startsWith('/_next') ||
+  pathname.startsWith('/static') ||
+  pathname.startsWith('/brand') ||
+  pathname.endsWith('.ico');
 
 const isPublicPath = (pathname: string) =>
   pathname === '/login' ||
