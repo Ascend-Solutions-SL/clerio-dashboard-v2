@@ -395,6 +395,12 @@ function DiscoveryStep({
       <div className="mt-8 grid w-full max-w-3xl grid-cols-2 gap-3 lg:grid-cols-4">
         {reachOptions.map((option) => {
           const isSelected = selectedChannel === option.label;
+          const logoSrc =
+            option.label === 'LinkedIn'
+              ? '/brand/linkedin_logo.png'
+              : option.label === 'Email'
+                ? '/brand/gmail_logo.png'
+                : null;
           return (
             <button
               key={option.label}
@@ -405,12 +411,18 @@ function DiscoveryStep({
                   : 'border-[#e0e6f4] hover:-translate-y-0.5 hover:border-[#1d6bff]/50'
               }`}
             >
-              <span
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold uppercase text-white"
-                style={{ background: option.tone }}
-              >
-                {option.icon}
-              </span>
+              {logoSrc ? (
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                  <img src={logoSrc} alt={option.label} className="h-9 w-9 rounded-lg" />
+                </span>
+              ) : (
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold uppercase text-white"
+                  style={{ background: option.tone }}
+                >
+                  {option.icon}
+                </span>
+              )}
               <p className="text-sm font-semibold text-[#0b2044]">{option.label}</p>
             </button>
           );
