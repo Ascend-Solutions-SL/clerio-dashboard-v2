@@ -18,7 +18,7 @@ const navItems = [
   { href: '/dashboard/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
   { href: '/dashboard/gastos', icon: ArrowDownCircle, label: 'Gastos' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
-  { href: '/dashboard/cleriochat', icon: MessageSquare, label: 'ClerioChat', isNotification: true },
+  { href: '/dashboard/cleriochat', icon: '/brand/cleria_logo.png', label: 'ClerioChat', isNotification: true },
 ];
 
 interface SidebarProps {
@@ -55,7 +55,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
             href={item.href} 
             className={`flex items-center p-3 my-1 rounded-lg relative ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'bg-blue-700' : 'hover:bg-blue-700'}`}>
             <div className="w-6">
-              <item.icon size={20} />
+              {typeof item.icon === 'string' ? (
+                <img src={item.icon} alt={item.label} className="h-5 w-5" />
+              ) : (
+                <item.icon size={20} />
+              )}
             </div>
             <span className={`ml-3 whitespace-nowrap transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
             {item.isNotification && (
