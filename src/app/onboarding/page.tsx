@@ -395,12 +395,17 @@ function DiscoveryStep({
       <div className="mt-8 grid w-full max-w-3xl grid-cols-2 gap-3 lg:grid-cols-4">
         {reachOptions.map((option) => {
           const isSelected = selectedChannel === option.label;
-          const logoSrc =
-            option.label === 'LinkedIn'
-              ? '/brand/linkedin_logo.png'
-              : option.label === 'Email'
-                ? '/brand/gmail_logo.png'
-                : null;
+          const logoSrcByLabel: Record<string, string> = {
+            LinkedIn: '/brand/linkedin_logo.png',
+            Email: '/brand/gmail_logo.png',
+            Instagram: '/brand/instagram_logo.png',
+            'Twitter/X': '/brand/x_logo.png',
+            Amigos: '/brand/mouth_logo.png',
+            TikTok: '/brand/tiktok_logo.png',
+            Internet: '/brand/internet_logo.png',
+            Otro: '/brand/others_logo.png',
+          };
+          const logoSrc = logoSrcByLabel[option.label] ?? null;
           return (
             <button
               key={option.label}
