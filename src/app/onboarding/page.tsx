@@ -268,7 +268,7 @@ function ClerioOnboardingInner() {
               <img
                 src="/brand/IMAGO_AZUL.png"
                 alt="Clerio"
-                className="h-9 w-9 rounded-full"
+                className="h-auto w-auto rounded-full"
               />
             </div>
             <p className="text-lg font-semibold text-[#091c42]">Clerio</p>
