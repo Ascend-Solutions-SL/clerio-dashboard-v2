@@ -265,9 +265,11 @@ function ClerioOnboardingInner() {
         <header className="relative flex items-center justify-center py-2">
           <div className="absolute left-0 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-[0_6px_24px_rgba(19,64,142,0.22)]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-[#20a0ff] to-[#0059ff] text-lg font-semibold text-white">
-                C
-              </div>
+              <img
+                src="/brand/small_logo.png"
+                alt="Clerio"
+                className="h-9 w-9 rounded-full"
+              />
             </div>
             <p className="text-lg font-semibold text-[#091c42]">Clerio</p>
           </div>
