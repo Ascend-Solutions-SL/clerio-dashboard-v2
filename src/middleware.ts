@@ -10,6 +10,7 @@ const isStaticAsset = (pathname: string) =>
 const isPublicPath = (pathname: string) =>
   pathname === '/login' ||
   pathname === '/onboarding' ||
+  pathname.startsWith('/auth/confirm') ||
   pathname.startsWith('/auth/callback') ||
   pathname.startsWith('/api/auth/verify') ||
   pathname.startsWith('/api/gmail/oauth/start') ||

@@ -4,6 +4,7 @@ import { FormEvent, Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { assertEnv } from '@/lib/config';
+import { ENV } from '@/lib/config';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 type AuthMode = 'login' | 'register';
@@ -33,6 +34,15 @@ function LoginForm() {
 
     return redirect;
   }, [searchParams]);
+
+  const emailRedirectTo = useMemo(() => {
+    if (!ENV.APP_BASE_URL) {
+      return '';
+    }
+    const url = new URL('/auth/confirm', ENV.APP_BASE_URL);
+    url.searchParams.set('redirect', '/onboarding');
+    return url.toString();
+  }, []);
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
@@ -96,6 +106,7 @@ function LoginForm() {
         email,
         password,
         options: {
+          ...(emailRedirectTo ? { emailRedirectTo } : {}),
           data: {
             email,
             first_name: trimmedFirstName,
@@ -110,7 +121,20 @@ function LoginForm() {
       });
 
       if (signUpError) {
+        const msg = (signUpError as { message?: string }).message ?? '';
+        if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
+          setError('Ya existe una cuenta con ese correo. Inicia sesión o usa otro correo.');
+          return;
+        }
         throw signUpError;
+      }
+
+      if (data.user) {
+        const identities = (data.user as { identities?: unknown[] }).identities;
+        if (Array.isArray(identities) && identities.length === 0) {
+          setError('Ya existe una cuenta con ese correo. Inicia sesión o usa otro correo.');
+          return;
+        }
       }
 
       if (data.user && !data.session) {
