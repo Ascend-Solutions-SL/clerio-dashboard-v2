@@ -516,12 +516,14 @@ function IntegrationsStep({
 }) {
   const logoSrcByIntegrationName: Record<string, string> = {
     Gmail: '/brand/gmail_logo.png',
+    Outlook: '/brand/outlook_logo.png',
     WhatsApp: '/brand/whatsapp_logo.png',
     Dropbox: '/brand/dropbox_logo.png',
     'One Drive': '/brand/onedrive_logo.png',
     'Wolters Kluwer': '/brand/wolters_logo.png',
     Hubspot: '/brand/hubspot_logo.png',
     'Microsoft Teams': '/brand/teams_logo.png',
+    'Google Drive': '/brand/drive_logo.png',
   };
 
   const [stage, setStage] = useState<'email' | 'storage' | 'success'>(initialStage);
@@ -663,16 +665,18 @@ function IntegrationsStep({
                     key={integration.name}
                     className="flex min-h-[50px] items-center gap-2 rounded-2xl border border-[#dde4f3] bg-white px-2 py-1.5 shadow-[0_10px_24px_rgba(12,32,72,0.05)]"
                   >
-                    <div
-                      className="flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold text-white"
-                      style={{ background: integration.color }}
-                    >
-                      {logoSrc ? (
-                        <img src={logoSrc} alt={integration.name} className="h-6.5 w-6.5 rounded-lg bg-white" />
-                      ) : (
-                        integration.icon
-                      )}
-                    </div>
+                    {logoSrc ? (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white">
+                        <img src={logoSrc} alt={integration.name} className="h-9 w-9 rounded-lg" />
+                      </span>
+                    ) : (
+                      <div
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[9px] font-semibold text-white"
+                        style={{ background: integration.color }}
+                      >
+                        {integration.icon}
+                      </div>
+                    )}
                     <p className="text-[10px] font-semibold text-[#0a1f44] leading-tight">{integration.name}</p>
                   </div>
                 );
@@ -776,8 +780,11 @@ function IntegrationPanel({
 }) {
   const logoSrcByProviderValue: Record<string, string> = {
     gmail: '/brand/gmail_logo.png',
+    outlook: '/brand/outlook_logo.png',
+    drive: '/brand/drive_logo.png',
     onedrive: '/brand/onedrive_logo.png',
-    'other-storage': '/brand/dropbox_logo.png',
+    'other-email': '/brand/others_logo.png',
+    'other-storage': '/brand/others_logo.png',
   };
 
   return (
@@ -805,18 +812,18 @@ function IntegrationPanel({
                 onClick={() => onSelect(option.value)}
               >
                 <div className="flex items-center gap-2.5">
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-xl text-[11px] font-semibold ${
-                      logoSrc ? 'bg-white' : 'text-white'
-                    }`}
-                    style={logoSrc ? undefined : { background: option.accent }}
-                  >
-                    {logoSrc ? (
-                      <img src={logoSrc} alt={option.label} className="h-7 w-7 rounded-xl" />
-                    ) : (
-                      option.icon
-                    )}
-                  </div>
+                  {logoSrc ? (
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white">
+                      <img src={logoSrc} alt={option.label} className="h-9 w-9 rounded-lg" />
+                    </span>
+                  ) : (
+                    <div
+                      className="flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold text-white"
+                      style={{ background: option.accent }}
+                    >
+                      {option.icon}
+                    </div>
+                  )}
                   <p className="text-[13px] font-semibold text-[#0a1f44]">{option.label}</p>
                 </div>
               </button>
