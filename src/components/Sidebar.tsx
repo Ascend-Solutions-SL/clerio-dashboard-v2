@@ -54,9 +54,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
             key={item.label} 
             href={item.href} 
             className={`flex items-center p-3 my-1 rounded-lg relative ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'bg-blue-700' : 'hover:bg-blue-700'}`}>
-            <div className="w-6">
+            <div className="flex w-6 items-center justify-center">
               {typeof item.icon === 'string' ? (
-                <img src={item.icon} alt={item.label} className="h-5 w-5" />
+                <span
+                  aria-label={item.label}
+                  className="block h-5 w-5 bg-current"
+                  style={{
+                    WebkitMaskImage: `url(${item.icon})`,
+                    maskImage: `url(${item.icon})`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                  }}
+                />
               ) : (
                 <item.icon size={20} />
               )}
