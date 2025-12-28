@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import {
@@ -40,18 +41,43 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div className="h-20 flex items-center px-8">
-        <span className={`font-bold text-2xl transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>Clerio</span>
-        <span className={`font-bold text-2xl transition-opacity duration-200 ${!isOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>C</span>
+      <div className="h-20 grid grid-cols-[80px_1fr] items-center">
+        <div className="flex items-center justify-center">
+          <div className="relative h-8 w-8">
+            <Image
+              src="/brand/IMAGO_BLANCO.png"
+              alt="Clerio"
+              fill
+              sizes="32px"
+              className="object-contain"
+              priority
+            />
+          </div>
+        </div>
+        {isOpen ? (
+          <div className="pr-6">
+            <span className="font-bold text-2xl whitespace-nowrap">Clerio</span>
+          </div>
+        ) : null}
       </div>
 
-      <nav className="flex-grow flex flex-col px-4">
+      <nav className="flex-grow flex flex-col">
         {navItems.map((item) => (
+          (() => {
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
           <Link 
             key={item.label} 
             href={item.href} 
-            className={`flex items-center p-3 my-1 rounded-lg relative ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'bg-blue-700' : 'hover:bg-blue-700'}`}>
-            <div className="flex w-6 items-center justify-center">
+            className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center"
+          >
+            <div
+              className={`pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors ${
+                isActive ? 'bg-blue-700' : 'bg-transparent group-hover:bg-blue-700'
+              }`}
+            />
+
+            <div className="relative z-10 h-12 flex items-center justify-center">
               {typeof item.icon === 'string' ? (
                 <span
                   aria-label={item.label}
@@ -71,21 +97,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
                 <item.icon size={20} />
               )}
             </div>
-            <span className={`ml-3 whitespace-nowrap transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
+            {isOpen ? (
+              <span className="relative z-10 pr-4 whitespace-nowrap">{item.label}</span>
+            ) : (
+              <span className="sr-only">{item.label}</span>
+            )}
           </Link>
+            );
+          })()
         ))}
       </nav>
 
-      <div className="p-4 flex items-center">
-        <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold flex-shrink-0">
-          {initials}
+      <div className="grid grid-cols-[80px_1fr] items-center py-4">
+        <div className="flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold flex-shrink-0 border border-white/70">
+            {initials}
+          </div>
         </div>
-        <div className={`ml-3 overflow-hidden transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
-          <p className="font-semibold whitespace-nowrap">
-            {isLoading ? 'Cargando…' : displayName}
-          </p>
-          <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
-        </div>
+        {isOpen ? (
+          <div className="pr-4 overflow-hidden">
+            <p className="font-semibold whitespace-nowrap">
+              {isLoading ? 'Cargando…' : displayName}
+            </p>
+            <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
