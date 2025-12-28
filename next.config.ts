@@ -27,11 +27,6 @@ const nextConfig: NextConfig = {
         destination: '/dashboard/integraciones',
         permanent: true,
       },
-      {
-        source: '/cleriochat',
-        destination: '/dashboard/cleriochat',
-        permanent: true,
-      },
     ];
   },
 };

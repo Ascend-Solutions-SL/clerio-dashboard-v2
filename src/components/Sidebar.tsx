@@ -3,14 +3,12 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useNotifications } from '@/context/NotificationContext';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import {
   Home,
   ArrowUpCircle,
   ArrowDownCircle,
   Link as LinkIcon,
-  MessageSquare,
 } from 'lucide-react';
 
 const navItems = [
@@ -18,7 +16,7 @@ const navItems = [
   { href: '/dashboard/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
   { href: '/dashboard/gastos', icon: ArrowDownCircle, label: 'Gastos' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
-  { href: '/dashboard/cleriochat', icon: '/brand/cleria_logo.png', label: 'ClerioChat', isNotification: true },
+  { href: '/dashboard/cleria', icon: '/brand/cleria_logo.png', label: 'Cler IA' },
 ];
 
 interface SidebarProps {
@@ -28,7 +26,6 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
   const pathname = usePathname();
-  const { notificationCount } = useNotifications();
   const { user, isLoading } = useDashboardSession();
 
   const displayName = user?.firstName
@@ -75,14 +72,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
               )}
             </div>
             <span className={`ml-3 whitespace-nowrap transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>{item.label}</span>
-            {item.isNotification && (
-              <span className={`ml-auto bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0'}`}>
-                {notificationCount}
-              </span>
-            )}
-            {!isOpen && item.isNotification && (
-              <span className="absolute top-1 right-1 bg-red-500 w-2 h-2 rounded-full"></span>
-            )}
           </Link>
         ))}
       </nav>

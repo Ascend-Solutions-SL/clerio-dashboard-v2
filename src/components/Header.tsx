@@ -4,11 +4,9 @@ import { useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardSession } from '@/context/dashboard-session-context';
-import { useNotifications } from '@/context/NotificationContext';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
-  const { notificationCount } = useNotifications();
   const [isPending, startTransition] = useTransition();
 
   const handleLogout = () => {
@@ -28,10 +26,7 @@ const Header = () => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-gray-500">
-            Hola {user?.firstName ?? 'usuario'}! Tienes {notificationCount} mensaje{notificationCount !== 1 ? 's' : ''}.{' '}
-            <a href="/dashboard/cleriochat" className="text-blue-600 font-semibold hover:underline">
-              Ver
-            </a>
+            Hola {user?.firstName ?? 'usuario'}!
           </p>
           <h1 className="text-3xl font-bold text-gray-800 mt-2">
             {user?.businessName ? `Dashboard de ${user.businessName}` : 'Dashboard' }

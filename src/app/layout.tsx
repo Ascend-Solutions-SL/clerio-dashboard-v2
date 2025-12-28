@@ -5,7 +5,6 @@ import './globals.css'
 import LayoutWrapper from '@/components/LayoutWrapper'
 import { DashboardSessionProvider } from '@/context/dashboard-session-context'
 import { ThemeProvider } from '@/components/theme-provider'
-import { NotificationProvider } from '@/context/NotificationContext'
 import { InvoiceProvider } from '@/context/InvoiceContext'
 import { FinancialDataProvider } from '@/context/FinancialDataContext'
 import { Toaster } from '@/components/ui/toaster'
@@ -36,18 +35,16 @@ export default function RootLayout({
     <html lang="es" suppressHydrationWarning>
       <body className={`${manrope.variable} ${robotoMono.variable} antialiased`}>
         <DashboardSessionProvider>
-          <NotificationProvider>
-            <FinancialDataProvider>
-              <InvoiceProvider>
-                <ThemeProvider>
-                  <LayoutWrapper>
-                    {children}
-                  </LayoutWrapper>
-                  <Toaster />
-                </ThemeProvider>
-              </InvoiceProvider>
-            </FinancialDataProvider>
-          </NotificationProvider>
+          <FinancialDataProvider>
+            <InvoiceProvider>
+              <ThemeProvider>
+                <LayoutWrapper>
+                  {children}
+                </LayoutWrapper>
+                <Toaster />
+              </ThemeProvider>
+            </InvoiceProvider>
+          </FinancialDataProvider>
         </DashboardSessionProvider>
       </body>
     </html>

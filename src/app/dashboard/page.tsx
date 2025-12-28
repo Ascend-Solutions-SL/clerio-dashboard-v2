@@ -4,7 +4,6 @@ import Header from '@/components/Header';
 import StatCard from '@/components/StatCard';
 import BalanceChart from '@/components/BalanceChart';
 import Integrations from '@/components/Integrations';
-import ClerioChat from '@/components/ClerioChat';
 import { FileText, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
 import { useFinancialData } from '@/context/FinancialDataContext';
 
@@ -61,7 +60,6 @@ export default function DashboardHome() {
             </div>
             <div>
               <Integrations />
-              <ClerioChat />
             </div>
           </div>
         </div>
