@@ -5,17 +5,12 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useDashboardSession } from '@/context/dashboard-session-context';
-import {
-  Home,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  Link as LinkIcon,
-} from 'lucide-react';
+import { Link as LinkIcon } from 'lucide-react';
 
 const navItems = [
-  { href: '/dashboard', icon: Home, label: 'Inicio' },
-  { href: '/dashboard/ingresos', icon: ArrowUpCircle, label: 'Ingresos' },
-  { href: '/dashboard/gastos', icon: ArrowDownCircle, label: 'Gastos' },
+  { href: '/dashboard', icon: '/sidebar/inicio_logo.png', label: 'Inicio' },
+  { href: '/dashboard/ingresos', icon: '/sidebar/ingresos_logo.png', label: 'Ingresos' },
+  { href: '/dashboard/gastos', icon: '/sidebar/gastos_logo.png', label: 'Gastos' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
   { href: '/dashboard/cleria', icon: '/brand/cleria_logo.png', label: 'Cler IA' },
 ];
@@ -82,20 +77,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
 
             <div className="relative z-10 h-12 flex items-center justify-center">
               {typeof item.icon === 'string' ? (
-                <span
-                  aria-label={item.label}
-                  className="block h-5 w-5 bg-current"
-                  style={{
-                    WebkitMaskImage: `url(${item.icon})`,
-                    maskImage: `url(${item.icon})`,
-                    WebkitMaskRepeat: 'no-repeat',
-                    maskRepeat: 'no-repeat',
-                    WebkitMaskPosition: 'center',
-                    maskPosition: 'center',
-                    WebkitMaskSize: 'contain',
-                    maskSize: 'contain',
-                  }}
-                />
+                item.icon.startsWith('/sidebar/') ? (
+                  <div className="relative h-5 w-5">
+                    <img
+                      src={item.icon}
+                      alt={item.label}
+                      className="h-5 w-5 object-contain"
+                    />
+                  </div>
+                ) : (
+                  <span
+                    aria-label={item.label}
+                    className="block h-5 w-5 bg-current"
+                    style={{
+                      WebkitMaskImage: `url(${item.icon})`,
+                      maskImage: `url(${item.icon})`,
+                      WebkitMaskRepeat: 'no-repeat',
+                      maskRepeat: 'no-repeat',
+                      WebkitMaskPosition: 'center',
+                      maskPosition: 'center',
+                      WebkitMaskSize: 'contain',
+                      maskSize: 'contain',
+                    }}
+                  />
+                )
               ) : (
                 <item.icon size={20} />
               )}
