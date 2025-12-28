@@ -64,7 +64,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       <nav className="flex-grow flex flex-col">
         {navItems.map((item) => (
           (() => {
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const isActive =
+              item.href === '/dashboard'
+                ? pathname === '/dashboard'
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
           <Link 
             key={item.label} 
@@ -110,18 +113,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
 
       <div className="grid grid-cols-[80px_1fr] items-center py-4">
         <div className="flex items-center justify-center">
-          <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold flex-shrink-0 border border-white/70">
+          <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold border border-white/70">
             {initials}
           </div>
         </div>
-        {isOpen ? (
-          <div className="pr-4 overflow-hidden">
-            <p className="font-semibold whitespace-nowrap">
-              {isLoading ? 'Cargando…' : displayName}
-            </p>
-            <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
-          </div>
-        ) : null}
+        <div className={`pr-4 overflow-hidden ${isOpen ? '' : 'invisible'}`}>
+          <p className="font-semibold whitespace-nowrap">
+            {isLoading ? 'Cargando…' : displayName}
+          </p>
+          <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
+        </div>
       </div>
     </aside>
   );
