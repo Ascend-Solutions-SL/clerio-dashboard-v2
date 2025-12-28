@@ -24,6 +24,9 @@ const robotoMono = Roboto_Mono({
 export const metadata: Metadata = {
   title: 'Clerio Dashboard',
   description: 'Panel de control de Clerio',
+  icons: {
+    icon: '/brand/favicon_azul.ico',
+  },
 }
 
 export default function RootLayout({
