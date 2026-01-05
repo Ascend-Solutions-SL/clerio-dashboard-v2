@@ -3,16 +3,21 @@
 import React, { useEffect, useRef } from 'react';
 import StatCard from '@/components/StatCard';
 import { IncomeTable } from '@/components/IncomeTable';
-import { ArrowUpCircle, FileText, Link2, RefreshCw } from 'lucide-react';
+import { ArrowUpCircle, FileText, Link2, Loader2, RefreshCw } from 'lucide-react';
 import { useInvoices } from '@/context/InvoiceContext';
 import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
+import { triggerN8nAction } from '@/lib/n8n';
 
 const IngresosPage = () => {
   const { setIncomeData } = useInvoices();
   const [totalIncome, setTotalIncome] = React.useState<number>(0);
   const [invoiceCount, setInvoiceCount] = React.useState<number>(0);
   const [tableRefreshKey, setTableRefreshKey] = React.useState<number>(0);
+  const [n8nLoadingAction, setN8nLoadingAction] = React.useState<string | null>(null);
   const prevData = useRef({ total: 0, count: 0 });
+  const { toast } = useToast();
 
   useEffect(() => {
     if (prevData.current.total !== totalIncome || prevData.current.count !== invoiceCount) {
@@ -26,6 +31,27 @@ const IngresosPage = () => {
     if (valueStr.length > 10) return 'text-xs';
     if (valueStr.length > 8) return 'text-sm';
     return 'text-base';
+  };
+
+  const handleTriggerN8n = async (action: string) => {
+    if (n8nLoadingAction) return;
+
+    setN8nLoadingAction(action);
+    try {
+      await triggerN8nAction(action);
+      toast({
+        title: 'Workflow lanzado',
+        description: `Se ha disparado la acción ${action} en n8n.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'No se pudo lanzar el workflow',
+        description: error instanceof Error ? error.message : 'Intenta nuevamente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setN8nLoadingAction(null);
+    }
   };
 
   return (
@@ -72,7 +98,65 @@ const IngresosPage = () => {
                   <RefreshCw className="h-4 w-4" />
                   <span>Último escaneo hace 22 min</span>
                 </div>
-                <InvoiceUploadDialog type="Ingresos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    className="border border-green-800 bg-gray-50 text-gray-900 shadow-sm transition hover:bg-gray-100 hover:shadow-md active:translate-y-[1px]"
+                    onClick={() => handleTriggerN8n('lectura_gmail')}
+                    disabled={Boolean(n8nLoadingAction)}
+                  >
+                    {n8nLoadingAction === 'lectura_gmail' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Trigger
+                    <img
+                      src="/brand/tab_integraciones/gmail_logo.png"
+                      alt="Gmail"
+                      className="h-5 w-5 object-contain opacity-80"
+                    />
+                  </Button>
+                  <Button
+                    type="button"
+                    className="border border-green-800 bg-gray-50 text-gray-900 shadow-sm transition hover:bg-gray-100 hover:shadow-md active:translate-y-[1px]"
+                    onClick={() => handleTriggerN8n('lectura_onedrive')}
+                    disabled={Boolean(n8nLoadingAction)}
+                  >
+                    {n8nLoadingAction === 'lectura_onedrive' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Trigger
+                    <img
+                      src="/brand/tab_integraciones/onedrive_logo.png"
+                      alt="OneDrive"
+                      className="h-5 w-5 object-contain opacity-80"
+                    />
+                  </Button>
+                  <Button
+                    type="button"
+                    className="border border-green-800 bg-gray-50 text-gray-900 shadow-sm transition hover:bg-gray-100 hover:shadow-md active:translate-y-[1px]"
+                    onClick={() => handleTriggerN8n('lectura_outlook')}
+                    disabled={Boolean(n8nLoadingAction)}
+                  >
+                    {n8nLoadingAction === 'lectura_outlook' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Trigger
+                    <img
+                      src="/brand/tab_integraciones/outlook_logo.png"
+                      alt="Outlook"
+                      className="h-5 w-5 object-contain opacity-80"
+                    />
+                  </Button>
+                  <Button
+                    type="button"
+                    className="border border-green-800 bg-gray-50 text-gray-900 shadow-sm transition hover:bg-gray-100 hover:shadow-md active:translate-y-[1px]"
+                    onClick={() => handleTriggerN8n('lectura_drive')}
+                    disabled={Boolean(n8nLoadingAction)}
+                  >
+                    {n8nLoadingAction === 'lectura_drive' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Trigger
+                    <img
+                      src="/brand/tab_integraciones/drive_logo.png"
+                      alt="Google Drive"
+                      className="h-5 w-5 object-contain opacity-80"
+                    />
+                  </Button>
+                  <InvoiceUploadDialog type="Ingresos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
+                </div>
               </div>
               <IncomeTable
                 onTotalIncomeChange={setTotalIncome}
