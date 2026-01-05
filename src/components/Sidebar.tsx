@@ -12,7 +12,7 @@ const navItems = [
   { href: '/dashboard/ingresos', icon: '/sidebar/ingresos_logo.png', label: 'Ingresos' },
   { href: '/dashboard/gastos', icon: '/sidebar/gastos_logo.png', label: 'Gastos' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
-  { href: '/dashboard/cleria', icon: '/brand/cleria_logo.png', label: 'Cler IA' },
+  { href: '/dashboard/cleria', icon: '/brand/tab_cleria/cleria_logo.png', label: 'Cler IA' },
 ];
 
 interface SidebarProps {
@@ -115,6 +115,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           })()
         ))}
       </nav>
+
+      <div className="mx-3 border-t border-white/20" />
 
       <div className="grid grid-cols-[80px_1fr] items-center py-4">
         <div className="flex items-center justify-center">

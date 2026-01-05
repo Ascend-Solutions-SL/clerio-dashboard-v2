@@ -67,7 +67,7 @@ const BalanceChart = () => {
 
   if (loading) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-sm">
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-lg font-bold text-gray-800">Balance actual</h2>
@@ -83,7 +83,7 @@ const BalanceChart = () => {
 
   if (error || !data) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-sm">
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <div>
             <h2 className="text-lg font-bold text-gray-800">Error</h2>
@@ -103,7 +103,7 @@ const BalanceChart = () => {
   }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm">
+    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
       <div className="flex justify-between items-center mb-4">
         <div>
           <h2 className="text-lg font-bold text-gray-800">Datos mensuales</h2>

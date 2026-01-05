@@ -15,7 +15,7 @@ const WELCOME_MESSAGE: ChatMessage = {
   content: '¡Hola! Soy Cler, ¿en qué puedo ayudarte?',
 };
 
-export default function ClerioChat() {
+export default function Cleria() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -61,7 +61,7 @@ export default function ClerioChat() {
       <div className="flex flex-col items-center text-center">
         <div className="relative h-14 w-14">
           <Image
-            src="/brand/cleria_color_logo.png"
+            src="/brand/tab_cleria/cleria_color_logo.png"
             alt="Cler IA"
             fill
             sizes="56px"
@@ -98,23 +98,15 @@ export default function ClerioChat() {
                       </div>
                     ) : null}
 
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed border shadow-sm ${
-                        isAssistant
-                          ? 'relative overflow-hidden text-white border-blue-700/20 bg-[linear-gradient(180deg,#1C63F2_0%,#0E4AD8_55%,#0A3AA6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-10px_30px_rgba(0,0,0,0.10),0_10px_30px_rgba(15,23,42,0.12)]'
-                          : 'text-gray-900 border-gray-200 bg-[radial-gradient(120%_120%_at_0%_0%,rgba(255,255,255,0.95)_0%,rgba(255,255,255,0.55)_28%,rgba(255,255,255,0.00)_60%),linear-gradient(135deg,#FFFFFF_0%,#F7FAFF_45%,#EEF2FF_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_10px_30px_rgba(15,23,42,0.08)]'
-                      }`}
-                    >
-                      {isAssistant ? (
-                        <>
-                          <div className="cler-ia-shimmer pointer-events-none absolute -left-1/2 top-[-35%] h-[170%] w-[120%] rotate-12 bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.20)_18%,rgba(255,255,255,0.08)_40%,rgba(255,255,255,0)_60%)] opacity-70 blur-[0.2px]" />
-                          <div className="pointer-events-none absolute left-0 top-0 h-full w-full bg-[radial-gradient(120%_90%_at_25%_10%,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0)_55%)]" />
-                          <span className="relative z-10">{m.content}</span>
-                        </>
-                      ) : (
-                        m.content
-                      )}
-                    </div>
+                    {isAssistant ? (
+                      <div className="max-w-[85%] text-sm leading-relaxed text-gray-700">{m.content}</div>
+                    ) : (
+                      <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed border shadow-sm relative overflow-hidden text-white border-blue-700/20 bg-[linear-gradient(180deg,#1C63F2_0%,#0E4AD8_55%,#0A3AA6_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.16),inset_0_-10px_30px_rgba(0,0,0,0.10),0_10px_30px_rgba(15,23,42,0.12)]">
+                        <div className="cler-ia-shimmer pointer-events-none absolute -left-1/2 top-[-35%] h-[170%] w-[120%] rotate-12 bg-[linear-gradient(90deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.20)_18%,rgba(255,255,255,0.08)_40%,rgba(255,255,255,0)_60%)] opacity-70 blur-[0.2px]" />
+                        <div className="pointer-events-none absolute left-0 top-0 h-full w-full bg-[radial-gradient(120%_90%_at_25%_10%,rgba(255,255,255,0.22)_0%,rgba(255,255,255,0)_55%)]" />
+                        <span className="relative z-10">{m.content}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -4,7 +4,7 @@ import { LucideProps } from 'lucide-react';
 
 interface StatCardProps {
   title: string;
-  value: string;
+  value: React.ReactNode;
   percentage?: number;
   Icon: React.ComponentType<LucideProps>;
   statusText?: string;
@@ -44,9 +44,12 @@ const StatCard: React.FC<StatCardProps> = ({
       ? 'text-4xl md:text-5xl'
       : size === 'md'
         ? 'text-3xl md:text-4xl'
-        : 'text-lg md:text-xl';
+        : 'text-xl md:text-2xl';
+
+  const valueWeightClasses = size === 'compact' ? 'font-semibold' : 'font-light';
 
   const iconSize = size === 'lg' ? 26 : size === 'md' ? 22 : 18;
+  const iconWrapperOffsetClasses = size === 'compact' ? '-mt-2' : '';
 
   const variantClasses = {
     default: 'bg-white text-gray-700',
@@ -75,7 +78,7 @@ const StatCard: React.FC<StatCardProps> = ({
       <span className="text-sm md:text-base font-light text-gray-600 tracking-wide break-words">{title}</span>
 
       <div className="flex items-center justify-between">
-        <p className={`${valueClasses} font-light tracking-tight ${valueColorClasses[variant]}`}>{value}</p>
+        <div className={`${valueClasses} ${valueWeightClasses} tracking-tight ${valueColorClasses[variant]}`}>{value}</div>
         <div className="flex items-center gap-3">
           {hasPercentage && (
             <span className={`text-sm md:text-base font-light tracking-wide ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
@@ -86,7 +89,9 @@ const StatCard: React.FC<StatCardProps> = ({
             <span className="text-sm md:text-base font-light tracking-wide text-green-500">{statusText}</span>
           )}
           {showIcon && (
-            <div className={`p-3 rounded-full border ${iconColor ? 'border-transparent' : 'border-blue-100'} ${iconColor ? '' : 'bg-blue-50'}`}>
+            <div
+              className={`p-3 rounded-full border ${iconColor ? 'border-transparent' : 'border-blue-100'} ${iconColor ? '' : 'bg-blue-50'} ${iconWrapperOffsetClasses}`}
+            >
               <Icon size={iconSize} className={iconColor || 'text-blue-600'} />
             </div>
           )}

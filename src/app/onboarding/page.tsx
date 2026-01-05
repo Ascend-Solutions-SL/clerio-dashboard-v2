@@ -396,14 +396,14 @@ function DiscoveryStep({
         {reachOptions.map((option) => {
           const isSelected = selectedChannel === option.label;
           const logoSrcByLabel: Record<string, string> = {
-            LinkedIn: '/brand/linkedin_logo.png',
-            Email: '/brand/gmail_logo.png',
-            Instagram: '/brand/instagram_logo.png',
-            'Twitter/X': '/brand/x_logo.png',
-            Amigos: '/brand/mouth_logo.png',
-            TikTok: '/brand/tiktok_logo.png',
-            Internet: '/brand/internet_logo.png',
-            Otro: '/brand/others_logo.png',
+            LinkedIn: '/brand/onboarding/linkedin_logo.png',
+            Email: '/brand/onboarding/gmail_logo.png',
+            Instagram: '/brand/onboarding/instagram_logo.png',
+            'Twitter/X': '/brand/onboarding/x_logo.png',
+            Amigos: '/brand/onboarding/mouth_logo.png',
+            TikTok: '/brand/onboarding/tiktok_logo.png',
+            Internet: '/brand/onboarding/internet_logo.png',
+            Otro: '/brand/onboarding/others_logo.png',
           };
           const logoSrc = logoSrcByLabel[option.label] ?? null;
           return (
@@ -515,15 +515,15 @@ function IntegrationsStep({
   onComplete: () => void;
 }) {
   const logoSrcByIntegrationName: Record<string, string> = {
-    Gmail: '/brand/gmail_logo.png',
-    Outlook: '/brand/outlook_logo.png',
-    WhatsApp: '/brand/whatsapp_logo.png',
-    Dropbox: '/brand/dropbox_logo.png',
-    'One Drive': '/brand/onedrive_logo.png',
-    'Wolters Kluwer': '/brand/wolters_logo.png',
-    Hubspot: '/brand/hubspot_logo.png',
-    'Microsoft Teams': '/brand/teams_logo.png',
-    'Google Drive': '/brand/drive_logo.png',
+    Gmail: '/brand/onboarding/gmail_logo.png',
+    Outlook: '/brand/onboarding/outlook_logo.png',
+    WhatsApp: '/brand/onboarding/whatsapp_logo.png',
+    Dropbox: '/brand/onboarding/dropbox_logo.png',
+    'One Drive': '/brand/onboarding/onedrive_logo.png',
+    'Wolters Kluwer': '/brand/onboarding/wolters_logo.png',
+    Hubspot: '/brand/onboarding/hubspot_logo.png',
+    'Microsoft Teams': '/brand/onboarding/teams_logo.png',
+    'Google Drive': '/brand/onboarding/drive_logo.png',
   };
 
   const [stage, setStage] = useState<'email' | 'storage' | 'success'>(initialStage);
@@ -779,12 +779,12 @@ function IntegrationPanel({
   action?: ReactNode;
 }) {
   const logoSrcByProviderValue: Record<string, string> = {
-    gmail: '/brand/gmail_logo.png',
-    outlook: '/brand/outlook_logo.png',
-    drive: '/brand/drive_logo.png',
-    onedrive: '/brand/onedrive_logo.png',
-    'other-email': '/brand/others_logo.png',
-    'other-storage': '/brand/others_logo.png',
+    gmail: '/brand/onboarding/gmail_logo.png',
+    outlook: '/brand/onboarding/outlook_logo.png',
+    drive: '/brand/onboarding/drive_logo.png',
+    onedrive: '/brand/onboarding/onedrive_logo.png',
+    'other-email': '/brand/onboarding/others_logo.png',
+    'other-storage': '/brand/onboarding/others_logo.png',
   };
 
   return (

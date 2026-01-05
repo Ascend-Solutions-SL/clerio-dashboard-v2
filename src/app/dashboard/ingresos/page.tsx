@@ -3,9 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import StatCard from '@/components/StatCard';
 import { IncomeTable } from '@/components/IncomeTable';
-import Integrations from '@/components/Integrations';
-import PageBanner from '@/components/PageBanner';
-import { ArrowUpCircle, FileText, RefreshCw } from 'lucide-react';
+import { ArrowUpCircle, FileText, Link2, RefreshCw } from 'lucide-react';
 import { useInvoices } from '@/context/InvoiceContext';
 import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 
@@ -34,27 +32,38 @@ const IngresosPage = () => {
     <div className="-m-8">
       <div className="bg-white pt-8 pb-10">
         <div className="max-w-7xl mx-auto px-6">
-          <PageBanner title="Ingresos" color="green" />
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,6fr)] gap-6">
-            <div className="flex flex-col gap-4 self-start sticky top-4">
+          <div className="flex flex-col gap-6">
+            <div className="flex flex-col md:flex-row md:justify-between gap-4 md:gap-6 max-w-5xl mx-auto">
               <StatCard
                 title="Ingresos"
                 value={`${totalIncome.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`}
                 Icon={ArrowUpCircle}
                 size="compact"
-                variant="green"
-                showIcon={false}
-                className={`${getIncomeFontSize(totalIncome)} flex-shrink-0`}
+                className={`md:w-[250px] ${getIncomeFontSize(totalIncome)}`}
               />
               <StatCard
-                title="Nº Facturas"
+                title="Facturas procesadas"
                 value={invoiceCount.toString()}
                 Icon={FileText}
                 size="compact"
-                showIcon={false}
-                className="text-sm flex-shrink-0"
+                className="md:w-[250px]"
               />
-              <Integrations />
+              <StatCard
+                title="Conexiones"
+                value={
+                  <div className="flex items-center gap-3 -mt-2">
+                    <img src="/brand/tab_ingresos/holded_logo.png" alt="Holded" className="h-8 w-8" />
+                    <div className="flex flex-col leading-tight">
+                      <span className="text-sm md:text-base font-semibold text-inherit">Holded</span>
+                      <span className="text-sm font-light text-green-500">Connected</span>
+                    </div>
+                  </div>
+                }
+                Icon={Link2}
+                size="compact"
+                showIcon={false}
+                className="md:w-[250px]"
+              />
             </div>
 
             <div>

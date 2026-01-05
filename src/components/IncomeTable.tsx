@@ -479,7 +479,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
               activeDateRange={dateRange}
               className="flex-1"
             />
-            <Button variant="outline" size="sm" className="h-8 border-dashed" disabled>
+            <Button variant="outline" size="sm" className="h-8" disabled>
               <Download className="h-4 w-4" />
             </Button>
           </div>

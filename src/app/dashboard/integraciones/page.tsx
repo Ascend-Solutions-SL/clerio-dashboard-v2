@@ -7,25 +7,6 @@ import { GmailConnectButton } from '@/features/integrations/gmail/components/Gma
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
-import {
-  SiAmazon,
-  SiAsana,
-  SiDropbox,
-  SiGmail,
-  SiGoogledrive,
-  SiHubspot,
-  SiNotion,
-  SiSage,
-  SiShopify,
-  SiSlack,
-  SiTrello,
-  SiWhatsapp,
-  SiXero,
-  SiZendesk,
-} from 'react-icons/si';
-import { FaMicrosoft, FaCloud } from 'react-icons/fa';
-import { PiCubeFocusBold } from 'react-icons/pi';
-import { TbDeviceAnalytics } from 'react-icons/tb';
 
 type IntegrationCategory = 'popular' | 'ingresos' | 'gastos';
 type IntegrationStatus = 'connected' | 'disconnected';
@@ -55,7 +36,7 @@ const integrations: Integration[] = [
       'Conecta tu cuenta para que Clerio detecte automáticamente tus facturas y las clasifique en el portal.',
     status: 'disconnected',
     categories: ['popular', 'ingresos', 'gastos'],
-    icon: <SiGmail className="text-red-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/gmail_logo.png" alt="Gmail" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'drive',
@@ -64,7 +45,7 @@ const integrations: Integration[] = [
       'Sincroniza las carpetas compartidas de tu empresa para mantener todo el respaldo documental al día.',
     status: 'connected',
     categories: ['popular', 'ingresos', 'gastos'],
-    icon: <SiGoogledrive className="text-green-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/drive_logo.png" alt="Drive" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'outlook',
@@ -72,7 +53,7 @@ const integrations: Integration[] = [
     description: 'Detecta facturas recibidas por correo y súbelas automáticamente a tu biblioteca digital.',
     status: 'disconnected',
     categories: ['popular', 'ingresos'],
-    icon: <FaMicrosoft className="text-sky-600" size={24} />,
+    icon: <img src="/brand/tab_integraciones/outlook_logo.png" alt="Outlook" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'onedrive',
@@ -80,7 +61,7 @@ const integrations: Integration[] = [
     description: 'Conecta tu repositorio de archivos corporativos y comparte documentación segura.',
     status: 'disconnected',
     categories: ['ingresos', 'gastos'],
-    icon: <FaCloud className="text-sky-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/onedrive_logo.png" alt="OneDrive" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'holded',
@@ -88,7 +69,7 @@ const integrations: Integration[] = [
     description: 'Sincroniza productos, contactos y facturas de tu cuenta Holded con Clerio sin duplicados.',
     status: 'disconnected',
     categories: ['popular', 'gastos'],
-    icon: <PiCubeFocusBold className="text-rose-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/holded_logo.png" alt="Holded" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'whatsapp',
@@ -96,7 +77,7 @@ const integrations: Integration[] = [
     description: 'Envía fotos o PDFs y deja que Clerio los convierta en facturas clasificadas al instante.',
     status: 'disconnected',
     categories: ['ingresos', 'gastos'],
-    icon: <SiWhatsapp className="text-emerald-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/whatsapp_logo.png" alt="WhatsApp" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'xero',
@@ -104,7 +85,7 @@ const integrations: Integration[] = [
     description: 'Sincroniza la contabilidad y reduce el tiempo de reconciliación de tus cuentas bancarias.',
     status: 'disconnected',
     categories: ['ingresos', 'gastos'],
-    icon: <SiXero className="text-sky-400" size={24} />,
+    icon: <img src="/brand/tab_integraciones/xero_logo.png" alt="Xero" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'sage',
@@ -112,7 +93,7 @@ const integrations: Integration[] = [
     description: 'Automatiza la generación de asientos y mantén tus balances actualizados en tiempo real.',
     status: 'connected',
     categories: ['popular', 'ingresos', 'gastos'],
-    icon: <SiSage className="text-emerald-600" size={24} />,
+    icon: <img src="/brand/tab_integraciones/sage_logo.png" alt="Sage" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'amazon',
@@ -120,7 +101,7 @@ const integrations: Integration[] = [
     description: 'Recibe todas las facturas de tus compras con el IVA correctamente desglosado.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiAmazon className="text-black" size={24} />,
+    icon: <img src="/brand/tab_integraciones/amazon_logo.png" alt="Amazon" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'dropbox',
@@ -128,7 +109,7 @@ const integrations: Integration[] = [
     description: 'Conecta tus carpetas compartidas para que el equipo contable tenga todo sincronizado.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiDropbox className="text-blue-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/dropbox_logo.png" alt="Dropbox" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'wolters',
@@ -136,7 +117,7 @@ const integrations: Integration[] = [
     description: 'Integra los envíos a A3 para agilizar la presentación de impuestos sin errores.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <TbDeviceAnalytics className="text-lime-600" size={24} />,
+    icon: <img src="/brand/tab_integraciones/wolters_logo.png" alt="Wolters Kluwer" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'shopify',
@@ -144,7 +125,7 @@ const integrations: Integration[] = [
     description: 'Sincroniza pedidos e ingresos de tu ecommerce sin hojas de cálculo intermedias.',
     status: 'disconnected',
     categories: ['ingresos'],
-    icon: <SiShopify className="text-emerald-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/shopify_logo.png" alt="Shopify" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'slack',
@@ -152,7 +133,7 @@ const integrations: Integration[] = [
     description: 'Activa alertas automáticas sobre nuevas facturas o incidencias directamente en tus canales.',
     status: 'connected',
     categories: ['popular', 'ingresos', 'gastos'],
-    icon: <SiSlack className="text-purple-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/slack_logo.png" alt="Slack" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'notion',
@@ -160,7 +141,7 @@ const integrations: Integration[] = [
     description: 'Vuelca los resúmenes contables en tus wikis para compartirlos con todo el equipo.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiNotion className="text-gray-900" size={24} />,
+    icon: <img src="/brand/tab_integraciones/notion_logo.png" alt="Notion" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'trello',
@@ -168,7 +149,7 @@ const integrations: Integration[] = [
     description: 'Genera tarjetas automáticamente cuando falten documentos o existan incidencias.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiTrello className="text-sky-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/trello_logo.png" alt="Trello" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'hubspot',
@@ -176,7 +157,7 @@ const integrations: Integration[] = [
     description: 'Sincroniza contactos y oportunidades para anticipar los ingresos que vienen en camino.',
     status: 'connected',
     categories: ['popular', 'ingresos'],
-    icon: <SiHubspot className="text-orange-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/hubspot_logo.png" alt="HubSpot" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'asana',
@@ -184,7 +165,7 @@ const integrations: Integration[] = [
     description: 'Crea tareas automáticas para revisar gastos críticos y mantener los procesos al día.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiAsana className="text-rose-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/asana_logo.png" alt="Asana" className="h-8 w-8 object-contain" />,
   },
   {
     id: 'zendesk',
@@ -192,7 +173,7 @@ const integrations: Integration[] = [
     description: 'Conecta tus tickets de soporte para adjuntar facturas o documentación del cliente.',
     status: 'disconnected',
     categories: ['gastos'],
-    icon: <SiZendesk className="text-emerald-500" size={24} />,
+    icon: <img src="/brand/tab_integraciones/zendesk_logo.png" alt="Zendesk" className="h-8 w-8 object-contain" />,
   },
 ];
 
@@ -278,6 +259,7 @@ const IntegracionesPage = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredIntegrations.map((integration) => {
               const isConnected = integration.status === 'connected';
+              const integrationAction = connectedActions[integration.id];
 
               return (
                 <div
@@ -286,7 +268,7 @@ const IntegracionesPage = () => {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center">
+                      <div className="h-14 w-14 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
                         {integration.icon}
                       </div>
                       <div>
@@ -296,7 +278,13 @@ const IntegracionesPage = () => {
                         </p>
                       </div>
                     </div>
-                    <div>{connectedActions[integration.id] ?? null}</div>
+                    <div>
+                      {integrationAction ?? (
+                        <span className="inline-flex select-none items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                          Próximamente
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="text-sm text-gray-500 leading-relaxed">{integration.description}</p>

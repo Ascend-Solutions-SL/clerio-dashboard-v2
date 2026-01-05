@@ -103,7 +103,7 @@ export function TableFilters({
           <Button
             variant="outline"
             size="sm"
-            className={cn('h-8 border-dashed', className)}
+            className={cn('h-8', className)}
             onClick={() => setIsOpen(!isOpen)}
           >
             <Filter className="h-4 w-4 mr-2" />

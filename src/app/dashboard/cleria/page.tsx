@@ -1,22 +1,8 @@
 "use client";
 
-import ClerioChat from '@/components/ClerioChat';
+import Cleria from '@/components/Cleria';
 import { Edit3, Search } from 'lucide-react';
-
-const mockChats = [
-  'Resumen de ingresos del mes',
-  'Gastos deducibles Q4',
-  'Facturación mensual pymes',
-  'IVA: diferencias y alertas',
-  'Conciliación bancaria',
-  'Top proveedores y variación',
-  'Previsión de tesorería',
-  'Margen bruto por línea',
-  'Cobros pendientes',
-  'Comparativa año anterior',
-  'Alertas de desviaciones',
-  'Impuestos próximos',
-];
+import { CLERIA_CHAT_HISTORY } from '@/lib/cleria-chat-history';
 
 export default function ClerIAPage() {
   return (
@@ -47,7 +33,7 @@ export default function ClerIAPage() {
 
           <div className="flex-1 overflow-y-auto px-2 pb-3">
             <div className="space-y-1">
-              {mockChats.map((title) => (
+              {CLERIA_CHAT_HISTORY.map((title) => (
                 <button
                   key={title}
                   type="button"
@@ -61,7 +47,7 @@ export default function ClerIAPage() {
         </aside>
 
         <main className="h-full overflow-hidden p-6">
-          <ClerioChat />
+          <Cleria />
         </main>
       </div>
     </div>

@@ -1,113 +1,43 @@
 import React from 'react';
 import { Nunito } from 'next/font/google';
 import Link from 'next/link';
-import {
-  SiGmail,
-  SiWhatsapp,
-  SiGoogledrive,
-  SiXero,
-  SiSlack,
-  SiNotion,
-  SiDropbox,
-  SiTrello,
-} from 'react-icons/si';
+import Image from 'next/image';
+import { CLERIA_CHAT_HISTORY } from '@/lib/cleria-chat-history';
 
 const nunito = Nunito({ subsets: ['latin'], weight: ['600','700','800'] });
 
-type Tile = {
-  icon: React.ReactNode;
-  name: string;
-  status: string;
-  statusColor: string;
-  helper?: string;
-};
-
-const tiles: Tile[] = [
-  {
-    icon: <SiGoogledrive className="text-green-500" size={18} />,
-    name: 'Drive',
-    status: 'Conectado',
-    statusColor: 'text-green-600',
-  },
-  {
-    icon: <SiGmail className="text-red-500" size={18} />,
-    name: 'Gmail',
-    status: 'Conectado',
-    statusColor: 'text-green-600',
-  },
-  {
-    icon: <SiWhatsapp className="text-green-500" size={18} />,
-    name: 'WhatsApp',
-    status: 'No conectado',
-    statusColor: 'text-gray-400',
-  },
-  {
-    icon: <SiXero className="text-sky-500" size={18} />,
-    name: 'Xero',
-    status: 'No conectado',
-    statusColor: 'text-gray-400',
-  },
-  {
-    icon: <SiSlack className="text-purple-500" size={18} />,
-    name: 'Slack',
-    status: 'Conectado',
-    statusColor: 'text-green-600',
-  },
-  {
-    icon: <SiNotion className="text-gray-800" size={18} />,
-    name: 'Notion',
-    status: 'Sin configurar',
-    statusColor: 'text-gray-400',
-  },
-  {
-    icon: <SiDropbox className="text-blue-500" size={18} />,
-    name: 'Dropbox',
-    status: 'Conectado',
-    statusColor: 'text-green-600',
-  },
-  {
-    icon: <SiTrello className="text-sky-500" size={18} />,
-    name: 'Trello',
-    status: 'No conectado',
-    statusColor: 'text-gray-400',
-  },
-];
-
 const Integrations = () => {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className={`text-gray-800 text-sm font-semibold ${nunito.className}`}>Conexiones</h3>
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-200">
+        <h3 className={`text-gray-800 text-base font-semibold ${nunito.className} flex items-center gap-2`}>
+          <span className="relative h-5 w-5">
+            <Image
+              src="/brand/tab_cleria/cleria_color_logo.png"
+              alt="Cler IA"
+              fill
+              sizes="20px"
+              className="object-contain"
+            />
+          </span>
+          ClerIA
+        </h3>
         <Link
-          href="/dashboard/integraciones"
+          href="/dashboard/cleria"
           className="inline-flex items-center px-1 py-0.5 text-[10px] font-medium text-blue-600 transition-all duration-200 rounded hover:text-blue-700 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 focus-visible:ring-offset-1 focus-visible:ring-offset-white"
         >
-          Gestionar
+          Abrir
         </Link>
       </div>
-      <div className="max-h-46 overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 gap-2.5 auto-rows-min">
-          {tiles.map((tile) => (
+      <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
+        <div className="space-y-1">
+          {CLERIA_CHAT_HISTORY.map((title) => (
             <Link
-              key={tile.name}
-              href="/dashboard/integraciones"
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 flex flex-col gap-1.5 hover:border-blue-300 hover:shadow-sm transition"
+              key={title}
+              href="/dashboard/cleria"
+              className="w-full block text-left rounded-2xl px-3 py-2 text-[13px] text-gray-700 hover:bg-gray-100 transition"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-7 h-7 rounded-full bg-gray-50 border flex items-center justify-center">
-                  {tile.icon}
-                </div>
-                <div
-                  className={`text-sm font-semibold text-gray-800 leading-tight ${nunito.className} truncate flex-1`}
-                  title={tile.name}
-                >
-                  {tile.name}
-                </div>
-              </div>
-              <div className={`text-[11px] font-medium ${tile.statusColor}`}>
-                {tile.status}
-              </div>
-              {tile.helper && <div className="text-[11px] text-gray-400">{tile.helper}</div>}
+              <span className="block truncate">{title}</span>
             </Link>
           ))}
         </div>
