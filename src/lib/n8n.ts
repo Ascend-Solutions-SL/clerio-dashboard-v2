@@ -7,7 +7,7 @@ const N8N_WEBHOOK_URLS = [
 
 type N8nActionPayload = {
   email: string;
-  user_id: string;
+  user_uid: string;
   action: string;
 };
 
@@ -29,7 +29,7 @@ export async function triggerN8nAction(action: string): Promise<Response> {
 
   const payload: N8nActionPayload = {
     email,
-    user_id: user.id,
+    user_uid: user.id,
     action,
   };
 
