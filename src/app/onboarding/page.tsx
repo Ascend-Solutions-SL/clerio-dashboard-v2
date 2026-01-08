@@ -497,9 +497,9 @@ function WorkspaceStep({
         <Field label="Nombre de la empresa">
           <input
             placeholder="Ascend Solutions SL"
-            className={`field-input workspace-field ${
-              businessNameLocked ? 'bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed' : ''
-            }`}
+            className={
+              'field-input workspace-field disabled:opacity-100 disabled:cursor-not-allowed disabled:!bg-gray-100 disabled:!text-gray-500 disabled:!border-gray-200'
+            }
             value={businessName}
             onChange={(event) => onBusinessNameChange(event.target.value)}
             disabled={businessNameLocked}
