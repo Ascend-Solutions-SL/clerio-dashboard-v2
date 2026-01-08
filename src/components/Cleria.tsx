@@ -89,7 +89,7 @@ export default function Cleria() {
                     {isAssistant ? (
                       <div className="relative h-9 w-9 flex-shrink-0">
                         <Image
-                          src="/brand/cleria_color_logo.png"
+                          src="/brand/tab_cleria/cleria_color_logo.png"
                           alt="Cler IA"
                           fill
                           sizes="36px"

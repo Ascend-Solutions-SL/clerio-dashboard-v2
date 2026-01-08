@@ -7,6 +7,9 @@ import {
 } from '@/lib/google/driveOAuth';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+const N8N_DRIVE_INTEGRATION_WEBHOOK_URL =
+  'https://v-ascendsolutions.app.n8n.cloud/webhook-test/drive-integration';
+
 const buildRedirectUrl = (origin: string, path: string, status: 'success' | 'error', reason?: string) => {
   const url = new URL(path, origin);
   url.searchParams.set('drive', status);
@@ -80,6 +83,7 @@ export async function GET(request: NextRequest) {
       refresh_token: refreshToken,
       expires_at: expiresAt,
       scopes,
+      drive_root_folder_id: '',
       updated_at: new Date().toISOString(),
     };
 
@@ -89,6 +93,20 @@ export async function GET(request: NextRequest) {
 
     if (upsertResult.error) {
       throw upsertResult.error;
+    }
+
+    try {
+      await fetch(N8N_DRIVE_INTEGRATION_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_uid: userUid,
+          google_email: driveProfile.email,
+          google_user_id: driveProfile.sub,
+        }),
+      });
+    } catch (webhookError) {
+      console.error('Failed to trigger n8n drive integration webhook', webhookError);
     }
 
     const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');
