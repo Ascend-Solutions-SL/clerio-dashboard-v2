@@ -108,7 +108,8 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
   }, [open]);
 
   const tipoLabel = useMemo(() => (type === "Ingresos" ? "ingreso" : "gasto"), [type]);
-  const isDisabled = !empresaId;
+  const businessName = user?.businessName?.trim() || '';
+  const isDisabled = !businessName;
 
   const handleInputChange = (
     field: keyof InvoiceFormState,
@@ -155,6 +156,7 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
         fecha: isoDate,
         tipo: type,
         empresa_id: empresaId,
+        user_businessname: businessName,
         cliente_proveedor: form.cliente_proveedor.trim(),
         concepto: form.concepto.trim() || null,
         importe_sin_iva: Number.isFinite(importeSinIva) ? importeSinIva : null,

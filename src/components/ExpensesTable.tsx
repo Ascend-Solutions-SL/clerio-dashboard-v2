@@ -325,15 +325,16 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     endDate: '' 
   });
 
+  const businessName = user?.businessName?.trim() || '';
+
   // Load data and calculate total expenses
   React.useEffect(() => {
-    if (!user?.empresaId) return;
-
     const loadData = async () => {
+      if (!businessName) return;
       const { data: facturas, error } = await supabase
         .from('facturas')
         .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
-        .eq('empresa_id', user.empresaId)
+        .eq('user_businessname', businessName)
         .eq('tipo', 'Gastos')
         .order('fecha', { ascending: false });
 
@@ -386,7 +387,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     };
 
     void loadData();
-  }, [user?.empresaId, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
+  }, [businessName, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
 
   // Apply date range filter
   React.useEffect(() => {
@@ -394,9 +395,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       return;
     }
 
-    const empresaId = user?.empresaId ? Number(user.empresaId) : null;
-
-    if (!empresaId) {
+    if (!businessName) {
       setData([]);
       return;
     }
@@ -407,7 +406,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       let query = supabase
         .from('facturas')
         .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
-        .eq('empresa_id', empresaId)
+        .eq('user_businessname', businessName)
         .eq('tipo', 'Gastos')
         .order('fecha', { ascending: false });
 
@@ -471,7 +470,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     return () => {
       isMounted = false;
     };
-  }, [isLoading, user?.empresaId, dateRange, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
+  }, [isLoading, businessName, dateRange, refreshKey]);
 
   const handleDateRangeChange = (startDate: string, endDate: string) => {
     setDateRange({ startDate, endDate });

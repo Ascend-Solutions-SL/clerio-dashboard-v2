@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 import type { SessionUser } from '@/lib/session';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
@@ -70,7 +71,23 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
   }, []);
 
   useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (!session?.user) {
+        setUser(null);
+        return;
+      }
+      void loadSession();
+    });
+
+    return () => {
+      subscription.subscription.unsubscribe();
+    };
+  }, [loadSession]);
+
+  useEffect(() => {
     if (pathname === '/login' || pathname === '/onboarding') {
+      setUser(null);
       setIsLoading(false);
       return;
     }

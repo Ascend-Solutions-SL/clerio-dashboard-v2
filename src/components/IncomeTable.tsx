@@ -300,16 +300,18 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     endDate: '' 
   });
 
+  const businessName = user?.businessName?.trim() || '';
+
 
   // Load data and calculate total income
   React.useEffect(() => {
     const loadData = async () => {
-      if (!user?.empresaId) return;
+      if (!businessName) return;
 
       const { data: facturas, error } = await supabase
         .from('facturas')
         .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
-        .eq('empresa_id', user.empresaId)
+        .eq('user_businessname', businessName)
         .eq('tipo', 'Ingresos')
         .order('fecha', { ascending: false });
 
@@ -357,7 +359,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     };
 
     void loadData();
-  }, [user?.empresaId, onTotalIncomeChange, onInvoiceCountChange, refreshKey]);
+  }, [businessName, onTotalIncomeChange, onInvoiceCountChange, refreshKey]);
 
   // Apply date range filter
   React.useEffect(() => {
@@ -365,9 +367,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       return;
     }
 
-    const empresaId = user?.empresaId ? Number(user.empresaId) : null;
-
-    if (!empresaId) {
+    if (!businessName) {
       setData([]);
       return;
     }
@@ -378,7 +378,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       let query = supabase
         .from('facturas')
         .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
-        .eq('empresa_id', empresaId)
+        .eq('user_businessname', businessName)
         .eq('tipo', 'Ingresos')
         .order('fecha', { ascending: false });
 
@@ -429,7 +429,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     return () => {
       isMounted = false;
     };
-  }, [isLoading, user?.empresaId, dateRange, refreshKey]);
+  }, [isLoading, businessName, dateRange, refreshKey]);
 
   const table = useReactTable({
     data,

@@ -4,6 +4,7 @@ import { useTransition } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 const Header = () => {
   const { user, isLoading } = useDashboardSession();
@@ -12,6 +13,8 @@ const Header = () => {
   const handleLogout = () => {
     startTransition(async () => {
       try {
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.signOut();
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch (error) {
         console.error('Error al cerrar sesión', error);

@@ -98,7 +98,9 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
           return;
         }
 
-        if (!user.empresaId) {
+        const businessName = user.businessName?.trim() || '';
+
+        if (!businessName) {
           setData(null);
           setError('No se encontró una empresa asociada a la sesión.');
           setLoading(false);
@@ -109,19 +111,17 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
           setLoading(true);
           setError(null);
 
-          const empresaId = user.empresaId;
-
           const [incomeResult, expensesResult] = await Promise.all([
             supabase
               .from('facturas')
               .select('fecha, importe_total')
-              .eq('empresa_id', empresaId)
+              .eq('user_businessname', businessName)
               .eq('tipo', 'Ingresos')
               .order('fecha', { ascending: true }),
             supabase
               .from('facturas')
               .select('fecha, importe_total')
-              .eq('empresa_id', empresaId)
+              .eq('user_businessname', businessName)
               .eq('tipo', 'Gastos')
               .order('fecha', { ascending: true }),
           ]);
