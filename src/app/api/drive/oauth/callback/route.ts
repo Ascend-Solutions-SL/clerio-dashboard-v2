@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
   } catch (callbackError) {
     const reason =
       callbackError instanceof Error ? callbackError.message : 'Drive authorization failed';
-    const redirectUrl = buildRedirectUrl(origin, '/dashboard/integraciones', 'error', reason);
+    const redirectUrl = buildRedirectUrl(origin, redirectPath, 'error', reason);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 }
