@@ -102,7 +102,8 @@ export async function GET(request: NextRequest) {
       refresh_token: refreshToken,
       expires_at: expiresAt,
       scopes,
-      drive_root_folder_id: '',
+      drive_deposit_folder_id: '',
+      drive_org_folder_id: '',
       updated_at: new Date().toISOString(),
     };
 
