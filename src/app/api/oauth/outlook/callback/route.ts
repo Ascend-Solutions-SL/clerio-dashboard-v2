@@ -26,7 +26,22 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
 
   if (error) {
-    const redirectUrl = buildRedirectUrl(origin, '/dashboard/integraciones', 'error', error);
+    let redirectPath = '/dashboard/integraciones';
+
+    if (state) {
+      try {
+        const statePayload = parseOutlookOAuthState(state);
+        redirectPath = statePayload.redirectPath ?? redirectPath;
+
+        if (redirectPath === '/onboarding') {
+          redirectPath = '/onboarding?step=3&integrationStage=email';
+        }
+      } catch {
+        // ignore state parsing errors and fallback to dashboard
+      }
+    }
+
+    const redirectUrl = buildRedirectUrl(origin, redirectPath, 'error', error);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 
@@ -41,6 +56,10 @@ export async function GET(request: NextRequest) {
     const statePayload = parseOutlookOAuthState(state);
     userUid = statePayload.userUid;
     redirectPath = statePayload.redirectPath ?? '/dashboard/integraciones';
+
+    if (redirectPath === '/onboarding') {
+      redirectPath = '/onboarding?step=3&integrationStage=email';
+    }
   } catch (stateError) {
     return NextResponse.json(
       { error: stateError instanceof Error ? stateError.message : 'Invalid state parameter' },
@@ -88,7 +107,7 @@ export async function GET(request: NextRequest) {
   } catch (callbackError) {
     const reason =
       callbackError instanceof Error ? callbackError.message : 'Outlook authorization failed';
-    const redirectUrl = buildRedirectUrl(origin, '/dashboard/integraciones', 'error', reason);
+    const redirectUrl = buildRedirectUrl(origin, redirectPath, 'error', reason);
     return NextResponse.redirect(redirectUrl, { status: 302 });
   }
 }

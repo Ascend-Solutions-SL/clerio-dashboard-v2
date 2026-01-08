@@ -212,15 +212,27 @@ function ClerioOnboardingInner() {
       return;
     }
 
-    if (gmailParam === 'success' || outlookParam === 'success') {
+    if (gmailParam) {
       setIntegrationsInitialStage('email');
-      setIntegrationsAutoAdvanceTo('storage');
+      setIntegrationsAutoAdvanceTo(gmailParam === 'success' ? 'storage' : null);
       return;
     }
 
-    if (driveParam === 'success' || onedriveParam === 'success') {
+    if (outlookParam) {
+      setIntegrationsInitialStage('email');
+      setIntegrationsAutoAdvanceTo(outlookParam === 'success' ? 'storage' : null);
+      return;
+    }
+
+    if (driveParam) {
       setIntegrationsInitialStage('storage');
-      setIntegrationsAutoAdvanceTo('success');
+      setIntegrationsAutoAdvanceTo(driveParam === 'success' ? 'success' : null);
+      return;
+    }
+
+    if (onedriveParam) {
+      setIntegrationsInitialStage('storage');
+      setIntegrationsAutoAdvanceTo(onedriveParam === 'success' ? 'success' : null);
     }
   }, [searchParams]);
 
