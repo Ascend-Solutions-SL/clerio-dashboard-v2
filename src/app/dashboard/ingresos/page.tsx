@@ -108,7 +108,7 @@ const IngresosPage = () => {
                     {n8nLoadingAction === 'lectura_gmail' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Trigger
                     <img
-                      src="/brand/tab_integraciones/gmail_logo.png"
+                      src="/brand/tab_ingresos/gmail_logo.png"
                       alt="Gmail"
                       className="h-5 w-5 object-contain opacity-80"
                     />
@@ -122,7 +122,7 @@ const IngresosPage = () => {
                     {n8nLoadingAction === 'lectura_onedrive' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Trigger
                     <img
-                      src="/brand/tab_integraciones/onedrive_logo.png"
+                      src="/brand/tab_ingresos/onedrive_logo.png"
                       alt="OneDrive"
                       className="h-5 w-5 object-contain opacity-80"
                     />
@@ -136,7 +136,7 @@ const IngresosPage = () => {
                     {n8nLoadingAction === 'lectura_outlook' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Trigger
                     <img
-                      src="/brand/tab_integraciones/outlook_logo.png"
+                      src="/brand/tab_ingresos/outlook_logo.png"
                       alt="Outlook"
                       className="h-5 w-5 object-contain opacity-80"
                     />
@@ -150,7 +150,7 @@ const IngresosPage = () => {
                     {n8nLoadingAction === 'lectura_drive' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     Trigger
                     <img
-                      src="/brand/tab_integraciones/drive_logo.png"
+                      src="/brand/tab_ingresos/drive_logo.png"
                       alt="Google Drive"
                       className="h-5 w-5 object-contain opacity-80"
                     />
