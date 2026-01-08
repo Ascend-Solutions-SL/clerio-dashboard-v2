@@ -179,7 +179,17 @@ function ClerioOnboardingInner() {
 
   useEffect(() => {
     const stepParam = searchParams.get('step');
+    const gmailParam = searchParams.get('gmail');
+    const driveParam = searchParams.get('drive');
+    const onedriveParam = searchParams.get('onedrive');
+    const outlookParam = searchParams.get('outlook');
+
     if (stepParam === '3') {
+      setActiveStep(3);
+      setIntegrationsDone(false);
+    }
+
+    if (!stepParam && (gmailParam || driveParam || onedriveParam || outlookParam)) {
       setActiveStep(3);
       setIntegrationsDone(false);
     }
@@ -199,6 +209,18 @@ function ClerioOnboardingInner() {
     ) {
       setIntegrationsInitialStage(fromParam);
       setIntegrationsAutoAdvanceTo(toParam);
+      return;
+    }
+
+    if (gmailParam === 'success' || outlookParam === 'success') {
+      setIntegrationsInitialStage('email');
+      setIntegrationsAutoAdvanceTo('storage');
+      return;
+    }
+
+    if (driveParam === 'success' || onedriveParam === 'success') {
+      setIntegrationsInitialStage('storage');
+      setIntegrationsAutoAdvanceTo('success');
     }
   }, [searchParams]);
 
