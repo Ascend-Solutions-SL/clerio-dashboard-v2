@@ -1,8 +1,18 @@
 "use client";
 
 import { Check, ChevronLeft, ChevronRight, Plug } from 'lucide-react';
-import { Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from 'react';
+
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 const steps = [
   { id: 1, label: 'Bienvenida' },
@@ -158,6 +168,8 @@ function ClerioOnboardingInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeStep, setActiveStep] = useState<StepId>(1);
+  const [workspaceBusinessName, setWorkspaceBusinessName] = useState('');
+  const [workspaceBusinessNameLocked, setWorkspaceBusinessNameLocked] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<string>('LinkedIn');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteMessage, setInviteMessage] = useState('');
@@ -189,6 +201,23 @@ function ClerioOnboardingInner() {
       setIntegrationsAutoAdvanceTo(toParam);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const loadUserDefaults = async () => {
+      const supabase = createSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) return;
+
+      const metadata = data.user.user_metadata as Record<string, unknown>;
+      const businessName = typeof metadata.user_businessname === 'string' ? metadata.user_businessname.trim() : '';
+      if (!businessName) return;
+
+      setWorkspaceBusinessName(businessName);
+      setWorkspaceBusinessNameLocked(true);
+    };
+
+    void loadUserDefaults();
+  }, []);
 
   const isFirst = activeStep === 1;
   const isLast = activeStep === steps.length;
@@ -286,7 +315,13 @@ function ClerioOnboardingInner() {
           {activeStep === 1 && (
             <DiscoveryStep selectedChannel={selectedChannel} onSelectChannel={setSelectedChannel} />
           )}
-          {activeStep === 2 && <WorkspaceStep />}
+          {activeStep === 2 && (
+            <WorkspaceStep
+              businessName={workspaceBusinessName}
+              businessNameLocked={workspaceBusinessNameLocked}
+              onBusinessNameChange={setWorkspaceBusinessName}
+            />
+          )}
           {activeStep === 3 && (
             <IntegrationsStep
               items={integrations}
@@ -438,7 +473,15 @@ function DiscoveryStep({
   );
 }
 
-function WorkspaceStep() {
+function WorkspaceStep({
+  businessName,
+  businessNameLocked,
+  onBusinessNameChange,
+}: {
+  businessName: string;
+  businessNameLocked: boolean;
+  onBusinessNameChange: (value: string) => void;
+}) {
   return (
     <div className="flex flex-col items-center text-center">
       <div className="max-w-2xl">
@@ -452,7 +495,13 @@ function WorkspaceStep() {
       </div>
       <form className="mt-8 grid w-full max-w-3xl gap-4 text-left sm:grid-cols-2 sm:gap-x-[6rem]">
         <Field label="Nombre de la empresa">
-          <input placeholder="Ascend Solutions SL" className="field-input workspace-field" />
+          <input
+            placeholder="Ascend Solutions SL"
+            className="field-input workspace-field"
+            value={businessName}
+            onChange={(event) => onBusinessNameChange(event.target.value)}
+            disabled={businessNameLocked}
+          />
         </Field>
         <Field label="¿Qué te gustaría hacer con Clerio?">
           <select className="field-input workspace-field">
