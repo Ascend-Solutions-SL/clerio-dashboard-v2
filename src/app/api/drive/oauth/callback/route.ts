@@ -8,7 +8,7 @@ import {
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 const N8N_DRIVE_INTEGRATION_WEBHOOK_URL =
-  'https://v-ascendsolutions.app.n8n.cloud/webhook-test/drive-integration';
+  'https://v-ascendsolutions.app.n8n.cloud/webhook/drive-integration';
 
 const buildRedirectUrl = (origin: string, path: string, status: 'success' | 'error', reason?: string) => {
   const url = new URL(path, origin);
