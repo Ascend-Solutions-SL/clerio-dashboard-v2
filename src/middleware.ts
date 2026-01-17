@@ -2,6 +2,12 @@ import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { assertEnv } from '@/lib/config';
+import {
+  AUTH_ACTIVITY_COOKIE_NAME,
+  decodeAuthActivityCookie,
+  encodeAuthActivityCookie,
+  getAuthActivityConfig,
+} from '@/lib/auth-activity';
 import { createSupabaseMiddlewareClient } from '@/lib/supabase/middleware';
 
 const isStaticAsset = (pathname: string) =>
@@ -35,6 +41,12 @@ const buildLoginRedirectUrl = (request: NextRequest) => {
   const url = request.nextUrl.clone();
   url.pathname = '/login';
   url.searchParams.set('redirect', redirect);
+  return url;
+};
+
+const buildLoginRedirectUrlWithReason = (request: NextRequest, reason: string) => {
+  const url = buildLoginRedirectUrl(request);
+  url.searchParams.set('reason', reason);
   return url;
 };
 
@@ -97,6 +109,34 @@ export async function middleware(request: NextRequest) {
     }
 
     return redirectTo(request, '/onboarding');
+  }
+
+  const { idleTimeoutSeconds, maxSessionSeconds } = getAuthActivityConfig();
+  const now = Date.now();
+  const activityCookie = request.cookies.get(AUTH_ACTIVITY_COOKIE_NAME)?.value;
+  const activityPayload = activityCookie ? await decodeAuthActivityCookie(activityCookie) : null;
+
+  if (activityPayload) {
+    const isIdleExpired = now - activityPayload.la > idleTimeoutSeconds * 1000;
+    const isMaxExpired = now - activityPayload.ss > maxSessionSeconds * 1000;
+
+    if (isIdleExpired || isMaxExpired) {
+      const redirectUrl = buildLoginRedirectUrlWithReason(request, 'expired');
+      const redirectResponse = NextResponse.redirect(redirectUrl);
+      redirectResponse.cookies.delete(AUTH_ACTIVITY_COOKIE_NAME);
+      return redirectResponse;
+    }
+  }
+
+  if (!activityPayload) {
+    const encoded = await encodeAuthActivityCookie({ la: now, ss: now });
+    response.cookies.set(AUTH_ACTIVITY_COOKIE_NAME, encoded, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: maxSessionSeconds,
+    });
   }
 
   if (pathname === '/login' || pathname === '/onboarding') {

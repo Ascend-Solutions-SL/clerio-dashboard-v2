@@ -22,6 +22,32 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const touchAuthActivity = useCallback(async () => {
+    try {
+      await fetch('/api/auth/touch', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const throttledTouch = useMemo(() => {
+    let last = 0;
+    return () => {
+      const now = Date.now();
+      if (now - last < 30_000) {
+        return;
+      }
+      last = now;
+      void touchAuthActivity();
+    };
+  }, [touchAuthActivity]);
+
   const loadSession = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -37,6 +63,8 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
         setUser(null);
         return;
       }
+
+      throttledTouch();
 
       const { data: profile, error: profileError } = await supabase
         .schema('public')
@@ -68,7 +96,7 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [throttledTouch]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -93,6 +121,42 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
     }
     void loadSession();
   }, [loadSession, pathname]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    if (pathname === '/login' || pathname === '/onboarding') {
+      return;
+    }
+
+    const handler = () => throttledTouch();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        throttledTouch();
+      }
+    };
+
+    window.addEventListener('click', handler, { passive: true });
+    window.addEventListener('keydown', handler);
+    window.addEventListener('scroll', handler, { passive: true });
+    window.addEventListener('mousemove', handler, { passive: true });
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const interval = window.setInterval(() => {
+      throttledTouch();
+    }, 5 * 60 * 1000);
+
+    return () => {
+      window.removeEventListener('click', handler);
+      window.removeEventListener('keydown', handler);
+      window.removeEventListener('scroll', handler);
+      window.removeEventListener('mousemove', handler);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(interval);
+    };
+  }, [pathname, throttledTouch, user]);
 
   const value = useMemo<DashboardSessionState>(
     () => ({

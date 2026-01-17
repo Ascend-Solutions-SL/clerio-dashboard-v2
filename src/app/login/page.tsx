@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { assertEnv } from '@/lib/config';
@@ -21,6 +21,8 @@ assertEnv();
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const reason = useMemo(() => searchParams.get('reason'), [searchParams]);
 
   const redirectPath = useMemo(() => {
     const redirect = searchParams.get('redirect');
@@ -55,6 +57,20 @@ function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (reason !== 'expired') {
+      return;
+    }
+
+    const clear = async () => {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+      await fetch('/api/auth/touch', { method: 'DELETE', credentials: 'include' });
+    };
+
+    void clear();
+  }, [reason]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
