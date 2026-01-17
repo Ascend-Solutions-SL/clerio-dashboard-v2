@@ -53,6 +53,7 @@ function LoginForm() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [businessCif, setBusinessCif] = useState('');
   const [accountType, setAccountType] = useState<'empresa' | 'asesoria'>('empresa');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -83,8 +84,8 @@ function LoginForm() {
         return;
       }
 
-      if (!firstName.trim() || !lastName.trim() || !businessName.trim()) {
-        setError('Completa nombre, apellidos y empresa');
+      if (!firstName.trim() || !lastName.trim() || !businessName.trim() || !businessCif.trim()) {
+        setError('Completa nombre, apellidos, empresa y CIF');
         return;
       }
     }
@@ -116,7 +117,27 @@ function LoginForm() {
       const trimmedFirstName = firstName.trim();
       const trimmedLastName = lastName.trim();
       const trimmedBusiness = businessName.trim();
+      const trimmedCif = businessCif.trim();
       const userInitials = buildUserInitials(trimmedFirstName, trimmedLastName);
+
+      const cifCheck = await fetch('/api/public/check-cif', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ cif: trimmedCif }),
+      });
+
+      if (cifCheck.status === 409) {
+        setError('Ya existe una cuenta con ese CIF. Si es tu empresa, contacta con soporte.');
+        return;
+      }
+
+      if (!cifCheck.ok) {
+        setError('No se pudo validar el CIF. Inténtalo de nuevo.');
+        return;
+      }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -129,6 +150,9 @@ function LoginForm() {
             last_name: trimmedLastName,
             user_initials: userInitials,
             user_businessname: trimmedBusiness,
+            user_business_cif: trimmedCif,
+            user_phone: '',
+            phone: '',
             user_businesstype: accountType,
             email_verified: false,
             phone_verified: false,
@@ -249,6 +273,21 @@ function LoginForm() {
                   onChange={(event) => setBusinessName(event.target.value)}
                   className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Empresa SL"
+                />
+              </div>
+
+              <div className="space-y-2 w-full max-w-sm">
+                <label className="block text-sm font-medium text-slate-300" htmlFor="businessCif">
+                  CIF
+                </label>
+                <input
+                  id="businessCif"
+                  type="text"
+                  required
+                  value={businessCif}
+                  onChange={(event) => setBusinessCif(event.target.value)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="B12345678"
                 />
               </div>
 
@@ -394,6 +433,7 @@ function LoginForm() {
               setFirstName('');
               setLastName('');
               setBusinessName('');
+              setBusinessCif('');
               setConfirmPassword('');
             }}
             className="font-semibold text-blue-400 hover:text-blue-300"
