@@ -72,6 +72,13 @@ export async function DELETE(request: NextRequest) {
 
   const response = NextResponse.json({ ok: true });
   response.cookies.delete(AUTH_ACTIVITY_COOKIE_NAME);
+  response.cookies.set(AUTH_ACTIVITY_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
 
   const supabase = createSupabaseRouteClient(request, response);
   await supabase.auth.signOut();

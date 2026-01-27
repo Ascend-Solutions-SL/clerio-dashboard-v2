@@ -156,6 +156,13 @@ export async function middleware(request: NextRequest) {
       const redirectUrl = buildLoginRedirectUrlWithReason(request, 'expired');
       const redirectResponse = NextResponse.redirect(redirectUrl);
       redirectResponse.cookies.delete(AUTH_ACTIVITY_COOKIE_NAME);
+      redirectResponse.cookies.set(AUTH_ACTIVITY_COOKIE_NAME, '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 0,
+      });
       return redirectResponse;
     }
   }

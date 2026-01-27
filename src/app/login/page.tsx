@@ -139,6 +139,8 @@ function LoginForm() {
           return;
         }
 
+        await fetch('/api/auth/touch', { method: 'POST', credentials: 'include' });
+
         if (isMasterEmail) {
           router.replace('/master');
           return;
