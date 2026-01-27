@@ -243,10 +243,24 @@ function ClerioOnboardingInner() {
       if (error || !data.user) return;
 
       const metadata = data.user.user_metadata as Record<string, unknown>;
-      const businessName = typeof metadata.user_businessname === 'string' ? metadata.user_businessname.trim() : '';
-      if (!businessName) return;
+      const metadataBusinessName =
+        typeof metadata.user_businessname === 'string' ? metadata.user_businessname.trim() : '';
+      let resolvedBusinessName = metadataBusinessName;
 
-      setWorkspaceBusinessName(businessName);
+      if (!resolvedBusinessName) {
+        const { data: profile } = await supabase
+          .schema('public')
+          .from('auth_users')
+          .select('user_businessname')
+          .eq('user_uid', data.user.id)
+          .maybeSingle();
+        resolvedBusinessName =
+          typeof profile?.user_businessname === 'string' ? profile.user_businessname.trim() : '';
+      }
+
+      if (!resolvedBusinessName) return;
+
+      setWorkspaceBusinessName(resolvedBusinessName);
       setWorkspaceBusinessNameLocked(true);
     };
 
