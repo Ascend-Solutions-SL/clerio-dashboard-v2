@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: response.headers });
   }
 
-  const { idleTimeoutSeconds, maxSessionSeconds } = getAuthActivityConfig();
+  const { maxSessionSeconds } = getAuthActivityConfig();
 
   const now = Date.now();
   const currentCookie = request.cookies.get(AUTH_ACTIVITY_COOKIE_NAME)?.value;

@@ -11,25 +11,67 @@ type IntegrationRow = {
   email: string;
 };
 
-const mapGoogle = (rows: any[] | null, field: 'google_email'): IntegrationRow[] =>
+type AuthUserSummary = {
+  first_name: string | null;
+  last_name: string | null;
+  user_businessname: string | null;
+};
+
+type DriveAccountRow = {
+  user_uid: string;
+  google_email: string;
+  auth_users: AuthUserSummary | null;
+};
+
+type GmailAccountRow = {
+  user_uid: string;
+  google_email: string;
+  auth_users: AuthUserSummary | null;
+};
+
+type OneDriveAccountRow = {
+  user_uid: string;
+  account_email: string;
+};
+
+type OutlookAccountRow = {
+  user_uid: string;
+  account_email: string;
+};
+
+type ProfileRow = {
+  user_uid: string;
+  first_name: string | null;
+  last_name: string | null;
+  user_businessname: string | null;
+};
+
+const mapDrive = (rows: DriveAccountRow[] | null): IntegrationRow[] =>
   (rows ?? []).map((r) => ({
     user_uid: r.user_uid,
     first_name: r.auth_users?.first_name ?? '',
     last_name: r.auth_users?.last_name ?? '',
     user_businessname: r.auth_users?.user_businessname ?? '',
-    email: r[field] ?? '',
+    email: r.google_email ?? '',
   }));
 
-const mapAccount = (rows: any[] | null, field: 'account_email'): IntegrationRow[] =>
+const mapGmail = (rows: GmailAccountRow[] | null): IntegrationRow[] =>
   (rows ?? []).map((r) => ({
     user_uid: r.user_uid,
     first_name: r.auth_users?.first_name ?? '',
     last_name: r.auth_users?.last_name ?? '',
     user_businessname: r.auth_users?.user_businessname ?? '',
-    email: r[field] ?? '',
+    email: r.google_email ?? '',
   }));
 
-const mapAccountWithProfiles = (rows: any[] | null, profiles: Record<string, any>, field: 'account_email'): IntegrationRow[] =>
+const buildProfileMap = (profiles: ProfileRow[] | null): Record<string, ProfileRow> =>
+  Object.fromEntries((profiles ?? []).map((p) => [p.user_uid, p]));
+
+const mapAccountWithProfiles = (
+  rows: Array<OneDriveAccountRow | OutlookAccountRow> | null,
+  profiles: Record<string, ProfileRow>,
+  field: 'account_email'
+): IntegrationRow[] =>
   (rows ?? []).map((r) => ({
     user_uid: r.user_uid,
     first_name: profiles[r.user_uid]?.first_name ?? '',
@@ -37,9 +79,6 @@ const mapAccountWithProfiles = (rows: any[] | null, profiles: Record<string, any
     user_businessname: profiles[r.user_uid]?.user_businessname ?? '',
     email: r[field] ?? '',
   }));
-
-const buildProfileMap = (profiles: any[] | null) =>
-  Object.fromEntries((profiles ?? []).map((p) => [p.user_uid, p]));
 
 export async function GET() {
   const guard = await requireMasterUser();
@@ -89,11 +128,14 @@ export async function GET() {
     return NextResponse.json({ error: outlookError.message }, { status: 500 });
   }
 
+  const typedOneDriveRows = (onedriveRows as unknown as OneDriveAccountRow[] | null) ?? null;
+  const typedOutlookRows = (outlookRows as unknown as OutlookAccountRow[] | null) ?? null;
+
   const accountUserUids = Array.from(
-    new Set([...(onedriveRows ?? []), ...(outlookRows ?? [])].map((row: any) => row.user_uid).filter(Boolean))
+    new Set([...(typedOneDriveRows ?? []), ...(typedOutlookRows ?? [])].map((row) => row.user_uid).filter(Boolean))
   );
 
-  let profileMap: Record<string, any> = {};
+  let profileMap: Record<string, ProfileRow> = {};
 
   if (accountUserUids.length > 0) {
     const { data: profiles, error: profilesError } = await supabaseAdmin
@@ -105,13 +147,13 @@ export async function GET() {
       return NextResponse.json({ error: profilesError.message }, { status: 500 });
     }
 
-    profileMap = buildProfileMap(profiles as any);
+    profileMap = buildProfileMap(profiles as unknown as ProfileRow[] | null);
   }
 
   return NextResponse.json({
-    drive: mapGoogle(driveRows as any, 'google_email'),
-    gmail: mapGoogle(gmailRows as any, 'google_email'),
-    onedrive: mapAccountWithProfiles(onedriveRows as any, profileMap, 'account_email'),
-    outlook: mapAccountWithProfiles(outlookRows as any, profileMap, 'account_email'),
+    drive: mapDrive(driveRows as unknown as DriveAccountRow[] | null),
+    gmail: mapGmail(gmailRows as unknown as GmailAccountRow[] | null),
+    onedrive: mapAccountWithProfiles(typedOneDriveRows, profileMap, 'account_email'),
+    outlook: mapAccountWithProfiles(typedOutlookRows, profileMap, 'account_email'),
   });
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { PostgrestError } from '@supabase/supabase-js';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
@@ -36,9 +37,11 @@ export async function GET() {
     email,
     userEmailRaw: user.email ?? null,
     masterRow,
-    masterError: masterError ? { message: masterError.message, code: (masterError as any).code } : null,
+    masterError: masterError ? { message: masterError.message, code: (masterError as PostgrestError).code } : null,
     adminMasterRow,
-    adminMasterError: adminMasterError ? { message: adminMasterError.message, code: (adminMasterError as any).code } : null,
+    adminMasterError: adminMasterError
+      ? { message: adminMasterError.message, code: (adminMasterError as PostgrestError).code }
+      : null,
     isMaster: !!masterRow?.id,
   });
 }

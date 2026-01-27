@@ -3,6 +3,20 @@ import { NextResponse } from 'next/server';
 import { requireMasterUser } from '@/lib/master';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
 
+type SolicitudJoinRow = {
+  id: string;
+  created_at: string;
+  herramienta: string;
+  nivel_necesidad: string;
+  comentarios: string | null;
+  user_uid: string;
+  auth_users: {
+    first_name: string | null;
+    last_name: string | null;
+    user_businessname: string | null;
+  } | null;
+};
+
 export async function GET() {
   const guard = await requireMasterUser();
   if (!guard.ok) {
@@ -23,7 +37,7 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const solicitudes = (data ?? []).map((row: any) => ({
+  const solicitudes = ((data as unknown as SolicitudJoinRow[] | null) ?? []).map((row) => ({
     id: row.id,
     created_at: row.created_at,
     herramienta: row.herramienta,

@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
