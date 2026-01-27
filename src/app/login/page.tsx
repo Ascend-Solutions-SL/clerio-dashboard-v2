@@ -37,15 +37,6 @@ function LoginForm() {
     return redirect;
   }, [searchParams]);
 
-  const emailRedirectTo = useMemo(() => {
-    if (!ENV.APP_BASE_URL) {
-      return '';
-    }
-    const url = new URL('/auth/confirm', ENV.APP_BASE_URL);
-    url.searchParams.set('redirect', '/onboarding');
-    return url.toString();
-  }, []);
-
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,8 +47,18 @@ function LoginForm() {
   const [businessCif, setBusinessCif] = useState('');
   const [accountType, setAccountType] = useState<'empresa' | 'asesoria'>('empresa');
   const [isLoading, setIsLoading] = useState(false);
+  const [isMasterEmail, setIsMasterEmail] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const emailRedirectTo = useMemo(() => {
+    if (!ENV.APP_BASE_URL) {
+      return '';
+    }
+    const url = new URL('/auth/confirm', ENV.APP_BASE_URL);
+    url.searchParams.set('redirect', isMasterEmail ? '/master' : '/onboarding');
+    return url.toString();
+  }, [isMasterEmail]);
 
   useEffect(() => {
     if (reason !== 'expired') {
@@ -73,6 +74,34 @@ function LoginForm() {
     void clear();
   }, [reason]);
 
+  useEffect(() => {
+    const check = async () => {
+      const normalized = email.trim().toLowerCase();
+      if (!normalized) {
+        setIsMasterEmail(false);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/public/is-master-email', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: normalized }),
+        });
+
+        const payload = (await res.json().catch(() => ({}))) as { isMaster?: boolean };
+        setIsMasterEmail(res.ok && payload.isMaster === true);
+      } catch {
+        setIsMasterEmail(false);
+      }
+    };
+
+    void check();
+  }, [email, mode]);
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
@@ -84,7 +113,7 @@ function LoginForm() {
         return;
       }
 
-      if (!firstName.trim() || !lastName.trim() || !businessName.trim() || !businessCif.trim()) {
+      if (!firstName.trim() || !lastName.trim() || (!isMasterEmail && (!businessName.trim() || !businessCif.trim()))) {
         setError('Completa nombre, apellidos, empresa y CIF');
         return;
       }
@@ -110,6 +139,11 @@ function LoginForm() {
           return;
         }
 
+        if (isMasterEmail) {
+          router.replace('/master');
+          return;
+        }
+
         router.replace(redirectPath);
         return;
       }
@@ -120,23 +154,31 @@ function LoginForm() {
       const trimmedCif = businessCif.trim();
       const userInitials = buildUserInitials(trimmedFirstName, trimmedLastName);
 
-      const cifCheck = await fetch('/api/public/check-cif', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ cif: trimmedCif }),
-      });
+      const resolvedBusinessName = isMasterEmail ? 'Master' : trimmedBusiness;
+      const resolvedCif = isMasterEmail
+        ? `MASTER-${email.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'DEFAULT'}`
+        : trimmedCif;
+      const resolvedAccountType: 'empresa' | 'asesoria' = isMasterEmail ? 'empresa' : accountType;
 
-      if (cifCheck.status === 409) {
-        setError('Ya existe una cuenta con ese CIF. Si es tu empresa, contacta con soporte.');
-        return;
-      }
+      if (!isMasterEmail) {
+        const cifCheck = await fetch('/api/public/check-cif', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ cif: resolvedCif }),
+        });
 
-      if (!cifCheck.ok) {
-        setError('No se pudo validar el CIF. Inténtalo de nuevo.');
-        return;
+        if (cifCheck.status === 409) {
+          setError('Ya existe una cuenta con ese CIF. Si es tu empresa, contacta con soporte.');
+          return;
+        }
+
+        if (!cifCheck.ok) {
+          setError('No se pudo validar el CIF. Inténtalo de nuevo.');
+          return;
+        }
       }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -149,11 +191,11 @@ function LoginForm() {
             first_name: trimmedFirstName,
             last_name: trimmedLastName,
             user_initials: userInitials,
-            user_businessname: trimmedBusiness,
-            user_business_cif: trimmedCif,
+            user_businessname: resolvedBusinessName,
+            user_business_cif: resolvedCif,
             user_phone: '',
             phone: '',
-            user_businesstype: accountType,
+            user_businesstype: resolvedAccountType,
             email_verified: false,
             phone_verified: false,
           },
@@ -182,7 +224,7 @@ function LoginForm() {
         return;
       }
 
-      router.replace(redirectPath);
+      router.replace(isMasterEmail ? '/master' : redirectPath);
     } catch (authError) {
       const authMessage = authError instanceof Error ? authError.message : 'Error desconocido';
       setError(authMessage);
@@ -261,35 +303,39 @@ function LoginForm() {
                 />
               </div>
 
-              <div className="space-y-2 w-full max-w-sm">
-                <label className="block text-sm font-medium text-slate-300" htmlFor="businessName">
-                  Nombre de empresa
-                </label>
-                <input
-                  id="businessName"
-                  type="text"
-                  required
-                  value={businessName}
-                  onChange={(event) => setBusinessName(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Empresa SL"
-                />
-              </div>
+              {!isMasterEmail ? (
+                <>
+                  <div className="space-y-2 w-full max-w-sm">
+                    <label className="block text-sm font-medium text-slate-300" htmlFor="businessName">
+                      Nombre de empresa
+                    </label>
+                    <input
+                      id="businessName"
+                      type="text"
+                      required
+                      value={businessName}
+                      onChange={(event) => setBusinessName(event.target.value)}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Empresa SL"
+                    />
+                  </div>
 
-              <div className="space-y-2 w-full max-w-sm">
-                <label className="block text-sm font-medium text-slate-300" htmlFor="businessCif">
-                  CIF
-                </label>
-                <input
-                  id="businessCif"
-                  type="text"
-                  required
-                  value={businessCif}
-                  onChange={(event) => setBusinessCif(event.target.value)}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="B12345678"
-                />
-              </div>
+                  <div className="space-y-2 w-full max-w-sm">
+                    <label className="block text-sm font-medium text-slate-300" htmlFor="businessCif">
+                      CIF
+                    </label>
+                    <input
+                      id="businessCif"
+                      type="text"
+                      required
+                      value={businessCif}
+                      onChange={(event) => setBusinessCif(event.target.value)}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="B12345678"
+                    />
+                  </div>
+                </>
+              ) : null}
 
               <div className="space-y-2 w-full max-w-sm">
                 <label className="block text-sm font-medium text-slate-300" htmlFor="firstName">
@@ -358,38 +404,40 @@ function LoginForm() {
                 />
               </div>
 
-              <div className="md:col-span-2 flex flex-col items-center space-y-2 w-full">
-                <span className="text-center text-sm font-medium text-slate-300">Tipo de cuenta</span>
-                <input type="hidden" name="accountType" value={accountType} />
-                <div className="w-full max-w-sm relative rounded-2xl border border-slate-700 bg-slate-900 p-1">
-                  <div
-                    className="absolute inset-y-1 w-1/2 rounded-xl bg-blue-500/20 transition-transform duration-300 ease-out"
-                    style={{
-                      transform: accountType === 'empresa' ? 'translateX(0)' : 'translateX(100%)',
-                    }}
-                  />
-                  <div className="relative grid grid-cols-2 gap-1 text-sm font-semibold text-slate-300">
-                    {[
-                      { value: 'empresa' as const, label: 'Empresa', helper: 'Negocios que usan Clerio' },
-                      { value: 'asesoria' as const, label: 'Asesoría', helper: 'Despachos y gestorías' },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setAccountType(option.value)}
-                        className={`flex flex-col items-center rounded-xl px-3 py-3 transition ${
-                          accountType === option.value
-                            ? 'text-white'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <span>{option.label}</span>
-                        <span className="text-xs font-normal text-slate-400">{option.helper}</span>
-                      </button>
-                    ))}
+              {!isMasterEmail ? (
+                <div className="md:col-span-2 flex flex-col items-center space-y-2 w-full">
+                  <span className="text-center text-sm font-medium text-slate-300">Tipo de cuenta</span>
+                  <input type="hidden" name="accountType" value={accountType} />
+                  <div className="w-full max-w-sm relative rounded-2xl border border-slate-700 bg-slate-900 p-1">
+                    <div
+                      className="absolute inset-y-1 w-1/2 rounded-xl bg-blue-500/20 transition-transform duration-300 ease-out"
+                      style={{
+                        transform: accountType === 'empresa' ? 'translateX(0)' : 'translateX(100%)',
+                      }}
+                    />
+                    <div className="relative grid grid-cols-2 gap-1 text-sm font-semibold text-slate-300">
+                      {[
+                        { value: 'empresa' as const, label: 'Empresa', helper: 'Negocios que usan Clerio' },
+                        { value: 'asesoria' as const, label: 'Asesoría', helper: 'Despachos y gestorías' },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setAccountType(option.value)}
+                          className={`flex flex-col items-center rounded-xl px-3 py-3 transition ${
+                            accountType === option.value
+                              ? 'text-white'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <span>{option.label}</span>
+                          <span className="text-xs font-normal text-slate-400">{option.helper}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           )}
 

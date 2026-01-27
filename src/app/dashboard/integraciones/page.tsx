@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PlugZap, Search } from 'lucide-react';
 
 import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
@@ -180,6 +180,14 @@ const integrations: Integration[] = [
 const IntegracionesPage = () => {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [requestTool, setRequestTool] = useState('');
+  const [requestNeedLevel, setRequestNeedLevel] = useState<'Urgente (uso diario)' | 'Media' | 'Baja'>('Media');
+  const [requestComments, setRequestComments] = useState('');
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastFading, setToastFading] = useState(false);
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
@@ -211,6 +219,68 @@ const IntegracionesPage = () => {
     outlook: <OutlookConnectButton redirectPath="/dashboard/integraciones" />,
     onedrive: <OneDriveConnectButton redirectPath="/dashboard/integraciones" />,
   };
+
+  const closeRequestModal = useCallback(() => {
+    setIsRequestModalOpen(false);
+    setRequestError(null);
+  }, []);
+
+  const openRequestModal = useCallback(() => {
+    setRequestError(null);
+    setRequestTool('');
+    setRequestNeedLevel('Media');
+    setRequestComments('');
+    setIsRequestModalOpen(true);
+  }, []);
+
+  const submitRequest = useCallback(async () => {
+    if (isSubmittingRequest) {
+      return;
+    }
+
+    setRequestError(null);
+
+    const herramienta = requestTool.trim();
+    if (!herramienta) {
+      setRequestError('Herramienta es obligatoria');
+      return;
+    }
+
+    setIsSubmittingRequest(true);
+    try {
+      const res = await fetch('/api/solicitudes-integracion', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          herramienta,
+          nivel_necesidad: requestNeedLevel,
+          comentarios: requestComments,
+        }),
+      });
+
+      const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+
+      if (!res.ok) {
+        setRequestError(payload?.error ?? 'No se pudo enviar la solicitud');
+        return;
+      }
+
+      setIsRequestModalOpen(false);
+      setToastMessage('Solicitud enviada. ¡Gracias!');
+      setToastFading(false);
+
+      window.setTimeout(() => setToastFading(true), 1800);
+      window.setTimeout(() => {
+        setToastMessage(null);
+        setToastFading(false);
+      }, 2400);
+    } finally {
+      setIsSubmittingRequest(false);
+    }
+  }, [isSubmittingRequest, requestComments, requestNeedLevel, requestTool]);
 
   return (
     <div className="-m-8">
@@ -303,8 +373,133 @@ const IntegracionesPage = () => {
               );
             })}
           </div>
+
+          <section className="mt-10 rounded-3xl border border-gray-200 bg-gray-50 p-6">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-gray-800">¿No ves tu herramienta?</h2>
+                <p className="text-sm text-gray-500">
+                  Solicita una integración nueva y priorizaremos su desarrollo según la necesidad.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openRequestModal}
+                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+              >
+                Solicitar integración
+              </button>
+            </div>
+          </section>
         </div>
       </div>
+
+      {isRequestModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Cerrar"
+            onClick={closeRequestModal}
+            className="absolute inset-0 bg-black/50"
+          />
+          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Solicitar integración</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Cuéntanos qué herramienta necesitas y con qué urgencia.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRequestModal}
+                className="rounded-full border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700" htmlFor="requestTool">
+                  Herramienta
+                </label>
+                <input
+                  id="requestTool"
+                  value={requestTool}
+                  onChange={(e) => setRequestTool(e.target.value)}
+                  className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Ej: Stripe, QuickBooks..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700" htmlFor="requestNeed">
+                  Nivel de necesidad
+                </label>
+                <select
+                  id="requestNeed"
+                  value={requestNeedLevel}
+                  onChange={(e) => setRequestNeedLevel(e.target.value as 'Urgente (uso diario)' | 'Media' | 'Baja')}
+                  className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="Urgente (uso diario)">Urgente (uso diario)</option>
+                  <option value="Media">Media</option>
+                  <option value="Baja">Baja</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700" htmlFor="requestComments">
+                  Comentarios
+                </label>
+                <textarea
+                  id="requestComments"
+                  value={requestComments}
+                  onChange={(e) => setRequestComments(e.target.value)}
+                  rows={4}
+                  className="w-full resize-none rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  placeholder="Describe tu caso de uso..."
+                />
+              </div>
+
+              {requestError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{requestError}</div>
+              ) : null}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeRequestModal}
+                  className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={submitRequest}
+                  disabled={isSubmittingRequest}
+                  className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {isSubmittingRequest ? 'Enviando…' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toastMessage ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div
+            className={`rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-4 text-sm font-semibold text-emerald-800 shadow-lg transition-opacity duration-500 ${
+              toastFading ? 'opacity-0' : 'opacity-100'
+            }`}
+          >
+            {toastMessage}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -34,6 +34,12 @@ const isPublicPath = (pathname: string) =>
 
 const isApiPath = (pathname: string) => pathname.startsWith('/api/');
 
+const isMasterPath = (pathname: string) => pathname === '/master' || pathname.startsWith('/master/');
+
+const isMasterApiPath = (pathname: string) => pathname.startsWith('/api/master/');
+
+const isAuthPath = (pathname: string) => pathname === '/auth' || pathname.startsWith('/auth/');
+
 const isOnboardingCompletePath = (pathname: string) => pathname === '/api/onboarding/complete';
 
 const buildLoginRedirectUrl = (request: NextRequest) => {
@@ -79,6 +85,32 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(buildLoginRedirectUrl(request));
   }
 
+  const normalizedEmail = (user.email ?? '').trim().toLowerCase();
+  const { data: masterRow, error: masterError } = await supabase
+    .schema('public')
+    .from('master_accounts')
+    .select('id')
+    .eq('master_email', normalizedEmail)
+    .maybeSingle();
+
+  if (masterError) {
+    console.error('[middleware] master_accounts check failed:', masterError);
+  }
+
+  const isMasterUser = !!masterRow?.id;
+
+  if (!isMasterUser && (isMasterPath(pathname) || isMasterApiPath(pathname))) {
+    if (isApiPath(pathname)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    return redirectTo(request, '/dashboard');
+  }
+
+  if (isMasterUser && !isMasterPath(pathname) && !isApiPath(pathname) && !isAuthPath(pathname)) {
+    return redirectTo(request, '/master');
+  }
+
   const { data: authUserRow, error: authUserError } = await supabase
     .schema('public')
     .from('auth_users')
@@ -95,7 +127,7 @@ export async function middleware(request: NextRequest) {
 
   const isOnboarded = authUserRow?.is_onboarded === true;
 
-  if (!isOnboarded) {
+  if (!isMasterUser && !isOnboarded) {
     if (pathname === '/onboarding') {
       return response;
     }
@@ -140,6 +172,14 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === '/login' || pathname === '/onboarding') {
+    return redirectTo(request, isMasterUser ? '/master' : '/dashboard');
+  }
+
+  if (isMasterUser && pathname.startsWith('/dashboard')) {
+    return redirectTo(request, '/master');
+  }
+
+  if (!isMasterUser && isMasterPath(pathname)) {
     return redirectTo(request, '/dashboard');
   }
 
