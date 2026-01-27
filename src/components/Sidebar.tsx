@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useDashboardSession } from '@/context/dashboard-session-context';
-import { Link as LinkIcon } from 'lucide-react';
+import { Link as LinkIcon, Settings } from 'lucide-react';
 
 const navItems = [
   { href: '/dashboard', icon: '/sidebar/inicio_logo.png', label: 'Inicio' },
@@ -115,6 +115,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           })()
         ))}
       </nav>
+
+      <Link
+        href="/dashboard/settings"
+        className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center"
+      >
+        <div className="pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors bg-transparent group-hover:bg-blue-700" />
+
+        <div className="relative z-10 h-12 flex items-center justify-center">
+          <Settings size={20} />
+        </div>
+        {isOpen ? (
+          <span className="relative z-10 pr-4 whitespace-nowrap">Configuración</span>
+        ) : (
+          <span className="sr-only">Configuración</span>
+        )}
+      </Link>
 
       <div className="mx-3 border-t border-white/20" />
 
