@@ -35,6 +35,8 @@ const Table = ({ children }: { children: React.ReactNode }) => (
 export default function MasterHomePage() {
   const [data, setData] = useState<SummaryPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [empresaQuery, setEmpresaQuery] = useState('');
+  const [usuarioQuery, setUsuarioQuery] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -61,7 +63,15 @@ export default function MasterHomePage() {
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div> : null}
 
       <section className="space-y-2">
-        <h2 className="text-sm font-bold text-slate-900">Empresas</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-slate-900">Empresas</h2>
+          <input
+            value={empresaQuery}
+            onChange={(e) => setEmpresaQuery(e.target.value)}
+            placeholder="Buscar"
+            className="w-full max-w-[320px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+          />
+        </div>
         <Table>
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full text-sm">
@@ -76,7 +86,19 @@ export default function MasterHomePage() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.empresas ?? []).map((row) => (
+                {(() => {
+                  const query = empresaQuery.trim().toLowerCase();
+                  const rows = [...(data?.empresas ?? [])].sort((a, b) => (a.empresa ?? '').localeCompare(b.empresa ?? ''));
+
+                  const filtered = query
+                    ? rows.filter((row) =>
+                        [row.id, row.empresa, row.cif, row.telefono, row.direccion, row.email]
+                          .map((value) => String(value ?? '').toLowerCase())
+                          .some((value) => value.includes(query))
+                      )
+                    : rows;
+
+                  return filtered.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100">
                     <td className="px-4 py-3">{row.id}</td>
                     <td className="px-4 py-3">{row.empresa}</td>
@@ -85,7 +107,8 @@ export default function MasterHomePage() {
                     <td className="px-4 py-3">{row.direccion ?? ''}</td>
                     <td className="px-4 py-3">{row.email ?? ''}</td>
                   </tr>
-                ))}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -93,7 +116,15 @@ export default function MasterHomePage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-bold text-slate-900">Usuarios</h2>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-slate-900">Usuarios</h2>
+          <input
+            value={usuarioQuery}
+            onChange={(e) => setUsuarioQuery(e.target.value)}
+            placeholder="Buscar"
+            className="w-full max-w-[320px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm"
+          />
+        </div>
         <Table>
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full text-sm">
@@ -108,7 +139,29 @@ export default function MasterHomePage() {
                 </tr>
               </thead>
               <tbody>
-                {(data?.usuarios ?? []).map((row) => (
+                {(() => {
+                  const query = usuarioQuery.trim().toLowerCase();
+                  const rows = [...(data?.usuarios ?? [])].sort((a, b) =>
+                    (a.user_businessname ?? '').localeCompare(b.user_businessname ?? '')
+                  );
+
+                  const filtered = query
+                    ? rows.filter((row) =>
+                        [
+                          row.first_name,
+                          row.last_name,
+                          row.user_email,
+                          row.user_businessname,
+                          row.user_business_cif,
+                          row.user_role,
+                          row.empresa_id,
+                        ]
+                          .map((value) => String(value ?? '').toLowerCase())
+                          .some((value) => value.includes(query))
+                      )
+                    : rows;
+
+                  return filtered.map((row) => (
                   <tr key={row.user_uid} className="border-t border-slate-100">
                     <td className="px-4 py-3">{row.first_name}</td>
                     <td className="px-4 py-3">{row.last_name}</td>
@@ -117,7 +170,8 @@ export default function MasterHomePage() {
                     <td className="px-4 py-3">{row.user_business_cif ?? ''}</td>
                     <td className="px-4 py-3">{row.user_role}</td>
                   </tr>
-                ))}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>

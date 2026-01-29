@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Herramienta requerida' }, { status: 400 });
   }
 
-  const allowed = new Set(['Urgente (uso diario)', 'Media', 'Baja']);
+  const allowed = new Set(['Urgente', 'Media', 'Baja']);
   if (!allowed.has(nivelNecesidad)) {
     return NextResponse.json({ error: 'Nivel de necesidad inválido' }, { status: 400 });
   }

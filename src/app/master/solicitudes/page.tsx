@@ -20,6 +20,31 @@ export default function MasterSolicitudesPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const formatDate = (iso: string) => {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    return date.toLocaleDateString('es-ES');
+  };
+
+  const necesidadPill = (value: string) => {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'urgente') {
+      return 'bg-orange-800 text-white';
+    }
+    if (normalized === 'alta') {
+      return 'bg-yellow-500 text-slate-900';
+    }
+    if (normalized === 'media') {
+      return 'bg-sky-300 text-slate-900';
+    }
+    if (normalized === 'baja') {
+      return 'bg-green-200 text-slate-900';
+    }
+    return 'bg-slate-200 text-slate-900';
+  };
+
   useEffect(() => {
     const load = async () => {
       setError(null);
@@ -48,7 +73,7 @@ export default function MasterSolicitudesPage() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3 w-[120px] whitespace-nowrap">Fecha</th>
                 <th className="px-4 py-3">Herramienta</th>
                 <th className="px-4 py-3">Necesidad</th>
                 <th className="px-4 py-3">Usuario</th>
@@ -59,9 +84,13 @@ export default function MasterSolicitudesPage() {
             <tbody>
               {(data?.solicitudes ?? []).map((row) => (
                 <tr key={row.id} className="border-t border-slate-100">
-                  <td className="px-4 py-3">{new Date(row.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 w-[120px] whitespace-nowrap">{formatDate(row.created_at)}</td>
                   <td className="px-4 py-3">{row.herramienta}</td>
-                  <td className="px-4 py-3">{row.nivel_necesidad}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${necesidadPill(row.nivel_necesidad)}`}>
+                      {row.nivel_necesidad}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">{row.first_name} {row.last_name}</td>
                   <td className="px-4 py-3">{row.user_businessname}</td>
                   <td className="px-4 py-3">{row.comentarios ?? ''}</td>

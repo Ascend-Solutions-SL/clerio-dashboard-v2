@@ -182,7 +182,7 @@ const IntegracionesPage = () => {
   const [search, setSearch] = useState('');
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [requestTool, setRequestTool] = useState('');
-  const [requestNeedLevel, setRequestNeedLevel] = useState<'Urgente (uso diario)' | 'Media' | 'Baja'>('Media');
+  const [requestNeedLevel, setRequestNeedLevel] = useState<'Urgente' | 'Media' | 'Baja'>('Media');
   const [requestComments, setRequestComments] = useState('');
   const [requestError, setRequestError] = useState<string | null>(null);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
@@ -440,10 +440,10 @@ const IntegracionesPage = () => {
                 <select
                   id="requestNeed"
                   value={requestNeedLevel}
-                  onChange={(e) => setRequestNeedLevel(e.target.value as 'Urgente (uso diario)' | 'Media' | 'Baja')}
+                  onChange={(e) => setRequestNeedLevel(e.target.value as 'Urgente' | 'Media' | 'Baja')}
                   className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 >
-                  <option value="Urgente (uso diario)">Urgente (uso diario)</option>
+                  <option value="Urgente">Urgente</option>
                   <option value="Media">Media</option>
                   <option value="Baja">Baja</option>
                 </select>
