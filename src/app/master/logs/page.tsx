@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
+import TruncateWithTooltip from '@/components/TruncateWithTooltip';
+
 type LogRow = {
   id: number;
   created_at: string;
@@ -238,25 +240,29 @@ export default function MasterLogsPage() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="max-h-[560px] overflow-auto">
+        <div className="max-h-[560px] overflow-y-auto overflow-x-hidden">
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="w-[90px] px-4 py-3">ID</th>
-                <th className="w-[190px] px-4 py-3">Fecha</th>
-                <th className="w-[260px] px-4 py-3">Usuario</th>
-                <th className="w-[240px] px-4 py-3">Empresa</th>
-                <th className="w-[520px] px-4 py-3">Log</th>
+                <th className="w-[6%] px-4 py-3">ID</th>
+                <th className="w-[16%] px-4 py-3">Fecha</th>
+                <th className="w-[14%] px-4 py-3">Usuario</th>
+                <th className="w-[14%] px-4 py-3">Empresa</th>
+                <th className="w-[50%] px-4 py-3">Log</th>
               </tr>
             </thead>
             <tbody>
               {(data?.logs ?? []).map((row) => (
                 <tr key={row.id} className="border-t border-slate-100 align-top">
-                  <td className="w-[90px] px-4 py-3">{row.id}</td>
-                  <td className="w-[190px] whitespace-nowrap px-4 py-3">{new Date(row.created_at).toLocaleString()}</td>
-                  <td className="w-[260px] truncate px-4 py-3">{row.user_uid ?? ''}</td>
-                  <td className="w-[240px] truncate px-4 py-3">{row.user_businessname ?? ''}</td>
-                  <td className="w-[520px] whitespace-pre-wrap font-mono text-xs text-slate-800">{row.log ?? ''}</td>
+                  <td className="w-[6%] px-4 py-3">{row.id}</td>
+                  <td className="w-[16%] whitespace-nowrap px-4 py-3">
+                    <TruncateWithTooltip value={new Date(row.created_at).toLocaleString()} />
+                  </td>
+                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.user_uid ?? ''} /></td>
+                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
+                  <td className="w-[50%] px-4 py-3">
+                    <TruncateWithTooltip value={row.log ?? ''} className="font-mono text-xs text-slate-800" />
+                  </td>
                 </tr>
               ))}
             </tbody>
