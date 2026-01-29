@@ -74,15 +74,15 @@ export default function MasterHomePage() {
         </div>
         <Table>
           <div className="max-h-[360px] overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead className="sticky top-0 bg-slate-50">
                 <tr className="text-left text-xs font-semibold text-slate-600">
-                  <th className="px-4 py-3">ID</th>
-                  <th className="px-4 py-3">Empresa</th>
-                  <th className="px-4 py-3">CIF</th>
-                  <th className="px-4 py-3">Teléfono</th>
-                  <th className="px-4 py-3">Dirección</th>
-                  <th className="px-4 py-3">Email</th>
+                  <th className="w-[80px] px-4 py-3">ID</th>
+                  <th className="w-[260px] px-4 py-3">Empresa</th>
+                  <th className="w-[140px] px-4 py-3">CIF</th>
+                  <th className="w-[150px] px-4 py-3">Teléfono</th>
+                  <th className="w-[320px] px-4 py-3">Dirección</th>
+                  <th className="w-[260px] px-4 py-3">Email</th>
                 </tr>
               </thead>
               <tbody>
@@ -100,12 +100,12 @@ export default function MasterHomePage() {
 
                   return filtered.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100">
-                    <td className="px-4 py-3">{row.id}</td>
-                    <td className="px-4 py-3">{row.empresa}</td>
-                    <td className="px-4 py-3">{row.cif ?? ''}</td>
-                    <td className="px-4 py-3">{row.telefono ?? ''}</td>
-                    <td className="px-4 py-3">{row.direccion ?? ''}</td>
-                    <td className="px-4 py-3">{row.email ?? ''}</td>
+                    <td className="w-[80px] px-4 py-3">{row.id}</td>
+                    <td className="w-[260px] truncate px-4 py-3">{row.empresa}</td>
+                    <td className="w-[140px] truncate px-4 py-3">{row.cif ?? ''}</td>
+                    <td className="w-[150px] truncate px-4 py-3">{row.telefono ?? ''}</td>
+                    <td className="w-[320px] truncate px-4 py-3">{row.direccion ?? ''}</td>
+                    <td className="w-[260px] truncate px-4 py-3">{row.email ?? ''}</td>
                   </tr>
                   ));
                 })()}
@@ -127,15 +127,15 @@ export default function MasterHomePage() {
         </div>
         <Table>
           <div className="max-h-[360px] overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full table-fixed text-sm">
               <thead className="sticky top-0 bg-slate-50">
                 <tr className="text-left text-xs font-semibold text-slate-600">
-                  <th className="px-4 py-3">Nombre</th>
-                  <th className="px-4 py-3">Apellidos</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Empresa</th>
-                  <th className="px-4 py-3">CIF</th>
-                  <th className="px-4 py-3">Rol</th>
+                  <th className="w-[180px] px-4 py-3">Nombre</th>
+                  <th className="w-[220px] px-4 py-3">Apellidos</th>
+                  <th className="w-[280px] px-4 py-3">Email</th>
+                  <th className="w-[260px] px-4 py-3">Empresa</th>
+                  <th className="w-[160px] px-4 py-3">CIF</th>
+                  <th className="w-[140px] px-4 py-3">Rol</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,12 +163,12 @@ export default function MasterHomePage() {
 
                   return filtered.map((row) => (
                   <tr key={row.user_uid} className="border-t border-slate-100">
-                    <td className="px-4 py-3">{row.first_name}</td>
-                    <td className="px-4 py-3">{row.last_name}</td>
-                    <td className="px-4 py-3">{row.user_email}</td>
-                    <td className="px-4 py-3">{row.user_businessname}</td>
-                    <td className="px-4 py-3">{row.user_business_cif ?? ''}</td>
-                    <td className="px-4 py-3">{row.user_role}</td>
+                    <td className="w-[180px] truncate px-4 py-3">{row.first_name}</td>
+                    <td className="w-[220px] truncate px-4 py-3">{row.last_name}</td>
+                    <td className="w-[280px] truncate px-4 py-3">{row.user_email}</td>
+                    <td className="w-[260px] truncate px-4 py-3">{row.user_businessname}</td>
+                    <td className="w-[160px] truncate px-4 py-3">{row.user_business_cif ?? ''}</td>
+                    <td className="w-[140px] truncate px-4 py-3">{row.user_role}</td>
                   </tr>
                   ));
                 })()}

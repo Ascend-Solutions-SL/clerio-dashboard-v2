@@ -239,24 +239,24 @@ export default function MasterLogsPage() {
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="max-h-[560px] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3">Usuario</th>
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Log</th>
+                <th className="w-[90px] px-4 py-3">ID</th>
+                <th className="w-[190px] px-4 py-3">Fecha</th>
+                <th className="w-[260px] px-4 py-3">Usuario</th>
+                <th className="w-[240px] px-4 py-3">Empresa</th>
+                <th className="w-[520px] px-4 py-3">Log</th>
               </tr>
             </thead>
             <tbody>
               {(data?.logs ?? []).map((row) => (
                 <tr key={row.id} className="border-t border-slate-100 align-top">
-                  <td className="px-4 py-3">{row.id}</td>
-                  <td className="px-4 py-3">{new Date(row.created_at).toLocaleString()}</td>
-                  <td className="px-4 py-3">{row.user_uid ?? ''}</td>
-                  <td className="px-4 py-3">{row.user_businessname ?? ''}</td>
-                  <td className="px-4 py-3 whitespace-pre-wrap font-mono text-xs text-slate-800">{row.log ?? ''}</td>
+                  <td className="w-[90px] px-4 py-3">{row.id}</td>
+                  <td className="w-[190px] whitespace-nowrap px-4 py-3">{new Date(row.created_at).toLocaleString()}</td>
+                  <td className="w-[260px] truncate px-4 py-3">{row.user_uid ?? ''}</td>
+                  <td className="w-[240px] truncate px-4 py-3">{row.user_businessname ?? ''}</td>
+                  <td className="w-[520px] whitespace-pre-wrap font-mono text-xs text-slate-800">{row.log ?? ''}</td>
                 </tr>
               ))}
             </tbody>

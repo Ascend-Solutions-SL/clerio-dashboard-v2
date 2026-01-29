@@ -35,22 +35,22 @@ const Table = ({ title, logoSrc, rows }: { title: string; logoSrc: string; rows:
       </div>
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="max-h-[240px] overflow-auto">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="px-4 py-3">Nombre</th>
-                <th className="px-4 py-3">Apellidos</th>
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Email integración</th>
+                <th className="w-[180px] px-4 py-3">Nombre</th>
+                <th className="w-[220px] px-4 py-3">Apellidos</th>
+                <th className="w-[260px] px-4 py-3">Empresa</th>
+                <th className="w-[320px] px-4 py-3">Email integración</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
                 <tr key={`${row.user_uid}-${row.email}`} className="border-t border-slate-100">
-                  <td className="px-4 py-3">{row.first_name}</td>
-                  <td className="px-4 py-3">{row.last_name}</td>
-                  <td className="px-4 py-3">{row.user_businessname}</td>
-                  <td className="px-4 py-3">{row.email}</td>
+                  <td className="w-[180px] truncate px-4 py-3">{row.first_name}</td>
+                  <td className="w-[220px] truncate px-4 py-3">{row.last_name}</td>
+                  <td className="w-[260px] truncate px-4 py-3">{row.user_businessname}</td>
+                  <td className="w-[320px] truncate px-4 py-3">{row.email}</td>
                 </tr>
               ))}
             </tbody>
