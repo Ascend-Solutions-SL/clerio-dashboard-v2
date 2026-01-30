@@ -6,12 +6,13 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
-import { FileText, LayoutDashboard, Logs, LogOut, Plug } from 'lucide-react';
+import { BarChart3, FileText, LayoutDashboard, Logs, LogOut, Plug } from 'lucide-react';
 
 const navItems = [
   { href: '/master', label: 'Inicio', icon: LayoutDashboard },
   { href: '/master/integraciones', label: 'Integraciones', icon: Plug },
   { href: '/master/solicitudes', label: 'Solicitudes', icon: FileText },
+  { href: '/master/analisis', label: 'Analisis', icon: BarChart3 },
   { href: '/master/logs', label: 'Logs', icon: Logs },
 ] as const;
 
