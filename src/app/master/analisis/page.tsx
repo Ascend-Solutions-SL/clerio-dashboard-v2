@@ -11,25 +11,27 @@ type Row = {
   factura_uid: string;
   status: 'ok' | 'warn' | 'bad' | 'missing';
   diffCount: number;
+  totalFields: number;
+  percentA: number | null;
+  percentB: number | null;
+  best: 'A' | 'B' | 'Igual' | null;
+  bestPercent: number | null;
   numero: string;
   fecha: string;
   tipo: string;
   empresa_id: number | null;
   user_businessname: string | null;
   drive_file_id: string | null;
-  importe_total_a: number | null;
-  importe_total_b: number | null;
-  delta_importe_total: number | null;
   missingSide?: 'A' | 'B';
 };
 
-type Payload = { rows: Row[] };
+type Payload = { rows: Row[]; overallPercentA: number | null; overallPercentB: number | null };
 
 const TableShell = ({ children }: { children: React.ReactNode }) => (
   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{children}</div>
 );
 
-const fmtMoney = (v: number | null) => (v === null ? '' : v.toFixed(2));
+const fmtPct = (v: number | null) => (v === null ? '—' : `${v.toFixed(0)}%`);
 
 export default function MasterAnalisisPage() {
   const [data, setData] = useState<Payload | null>(null);
@@ -75,7 +77,7 @@ export default function MasterAnalisisPage() {
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Analisis (Facturas vs Facturas_GAI)</h1>
+          <h1 className="text-xl font-semibold text-slate-900">Analisis (OCR Básico vs OCR Google AI)</h1>
           <p className="mt-1 text-sm text-slate-600">Dashboard comparativo para evaluar coincidencias y discrepancias por factura_uid.</p>
         </div>
 
@@ -114,7 +116,7 @@ export default function MasterAnalisisPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-7">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
           <div className="text-xs text-slate-500">Total</div>
           <div className="text-lg font-semibold text-slate-900">{counts.total}</div>
@@ -135,6 +137,14 @@ export default function MasterAnalisisPage() {
           <div className="text-xs text-slate-600">Falta lado</div>
           <div className="text-lg font-semibold text-slate-900">{counts.missing}</div>
         </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs text-slate-500">% OCR Básico</div>
+          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercentA ?? null)}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs text-slate-500">% OCR Google AI</div>
+          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercentB ?? null)}</div>
+        </div>
       </div>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div> : null}
@@ -144,55 +154,46 @@ export default function MasterAnalisisPage() {
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="w-[9%] px-4 py-3">Estado</th>
-                <th className="w-[8%] px-4 py-3">Diffs</th>
                 <th className="w-[18%] px-4 py-3">Factura UID</th>
+                <th className="w-[8%] px-4 py-3">Estado</th>
+                <th className="w-[6%] px-4 py-3">Diffs</th>
+                <th className="w-[8%] px-4 py-3">% A</th>
+                <th className="w-[8%] px-4 py-3">% B</th>
+                <th className="w-[7%] px-4 py-3">Mejor Herr</th>
                 <th className="w-[10%] px-4 py-3">Número</th>
-                <th className="w-[9%] px-4 py-3">Fecha</th>
-                <th className="w-[9%] px-4 py-3">Tipo</th>
-                <th className="w-[14%] px-4 py-3">Empresa</th>
-                <th className="w-[17%] px-4 py-3">Importe total (A / B)</th>
-                <th className="w-[6%] px-4 py-3 text-right">Ver</th>
+                <th className="w-[8%] px-4 py-3">Fecha</th>
+                <th className="w-[8%] px-4 py-3">Tipo</th>
+                <th className="w-[19%] px-4 py-3">Empresa</th>
+                <th className="w-[8%] px-4 py-3 text-right">Ver</th>
               </tr>
             </thead>
             <tbody>
               {(data?.rows ?? []).map((row) => (
                 <tr key={row.factura_uid} className="border-t border-slate-100">
-                  <td className="w-[9%] px-4 py-3">
-                    <StatusBadge status={row.status} />
-                  </td>
-                  <td className="w-[8%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
                   <td className="w-[18%] px-4 py-3">
                     <Link href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`} className="font-semibold text-slate-900 hover:underline">
                       <TruncateWithTooltip value={row.factura_uid} />
                     </Link>
                   </td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
-                  <td className="w-[9%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
-                  <td className="w-[9%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
-                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
-                  <td className="w-[17%] px-4 py-3">
-                    <div className="flex flex-col">
-                      <span className="font-mono text-xs text-slate-800">{fmtMoney(row.importe_total_a)} / {fmtMoney(row.importe_total_b)}</span>
-                      {row.delta_importe_total !== null ? (
-                        <span className={`font-mono text-xs ${Math.abs(row.delta_importe_total) < 0.005 ? 'text-slate-500' : row.delta_importe_total > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                          Δ {row.delta_importe_total.toFixed(2)}
-                        </span>
-                      ) : null}
-                    </div>
+                  <td className="w-[8%] px-4 py-3">
+                    <StatusBadge status={row.status} />
                   </td>
-                  <td className="w-[6%] px-4 py-3 text-right">
-                    {row.drive_file_id ? (
-                      <a
-                        href={`https://drive.google.com/file/d/${encodeURIComponent(row.drive_file_id)}/preview`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"
-                        aria-label="Abrir vista previa en Drive"
-                      >
-                        <Eye size={16} />
-                      </a>
-                    ) : null}
+                  <td className="w-[6%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
+                  <td className="w-[8%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentA)}</td>
+                  <td className="w-[8%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentB)}</td>
+                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{row.best ?? '—'}</td>
+                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
+                  <td className="w-[8%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
+                  <td className="w-[8%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
+                  <td className="w-[19%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
+                  <td className="w-[8%] px-4 py-3 text-right">
+                    <Link
+                      href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"
+                      aria-label="Ver detalle del análisis"
+                    >
+                      <Eye size={16} />
+                    </Link>
                   </td>
                 </tr>
               ))}

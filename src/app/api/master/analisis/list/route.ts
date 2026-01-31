@@ -8,33 +8,79 @@ type ListRow = {
   factura_uid: string;
   status: 'ok' | 'warn' | 'bad' | 'missing';
   diffCount: number;
+  totalFields: number;
+  percentA: number | null;
+  percentB: number | null;
+  best: 'A' | 'B' | 'Igual' | null;
+  bestPercent: number | null;
   numero: string;
   fecha: string;
   tipo: string;
   empresa_id: number | null;
   user_businessname: string | null;
   drive_file_id: string | null;
-  importe_total_a: number | null;
-  importe_total_b: number | null;
-  delta_importe_total: number | null;
   missingSide?: 'A' | 'B';
 };
 
-const toNumber = (value: unknown) => {
-  if (value === null || value === undefined) {
+const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
+type ValidationState = 'unset' | 'correct' | 'incorrect';
+
+function isValidationState(value: unknown): value is ValidationState {
+  return value === 'unset' || value === 'correct' || value === 'incorrect';
+}
+
+function sanitizeMap(value: unknown): Record<string, ValidationState> {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  const out: Record<string, ValidationState> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof k !== 'string') {
+      continue;
+    }
+    if (isValidationState(v)) {
+      out[k] = v;
+    }
+  }
+
+  return out;
+}
+
+function computePercent(
+  fields: string[],
+  validation: Record<string, ValidationState> | null,
+  totalFields: number
+): number | null {
+  if (!validation || totalFields <= 0) {
     return null;
   }
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-  if (typeof value === 'string') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-};
 
-const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+  let correct = 0;
+  for (const f of fields) {
+    if (validation[f] === 'correct') {
+      correct += 1;
+    }
+  }
+
+  return (correct / totalFields) * 100;
+}
+
+function isCompleteReview(fields: string[], validation: Record<string, ValidationState> | null): boolean {
+  if (!validation) {
+    return false;
+  }
+
+  for (const f of fields) {
+    const v = validation[f] ?? 'unset';
+    if (v === 'unset') {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export async function GET(request: NextRequest) {
   const guard = await requireMasterUser();
@@ -94,6 +140,31 @@ export async function GET(request: NextRequest) {
 
   const uids = Array.from(new Set([...mapA.keys(), ...mapB.keys()]));
 
+  const { data: reviewRowsRaw, error: reviewError } = await supabaseAdmin
+    .from('factura_comparison_reviews')
+    .select('factura_uid, tool_a, tool_b')
+    .in('factura_uid', uids);
+
+  if (reviewError) {
+    return NextResponse.json({ error: reviewError.message }, { status: 500 });
+  }
+
+  const reviewMap = new Map<
+    string,
+    { toolA: Record<string, ValidationState>; toolB: Record<string, ValidationState> }
+  >();
+
+  for (const r of (reviewRowsRaw as unknown as { factura_uid?: unknown; tool_a?: unknown; tool_b?: unknown }[]) ?? []) {
+    const factura_uid = typeof r.factura_uid === 'string' ? r.factura_uid : '';
+    if (!factura_uid) {
+      continue;
+    }
+    reviewMap.set(factura_uid, {
+      toolA: sanitizeMap(r.tool_a),
+      toolB: sanitizeMap(r.tool_b),
+    });
+  }
+
   let rows: ListRow[] = uids.map((factura_uid) => {
     const a = mapA.get(factura_uid) ?? null;
     const b = mapB.get(factura_uid) ?? null;
@@ -104,18 +175,17 @@ export async function GET(request: NextRequest) {
         factura_uid,
         status: 'missing',
         diffCount: 0,
+        totalFields: 0,
+        percentA: null,
+        percentB: null,
+        best: null,
+        bestPercent: null,
         numero: present?.numero ?? '',
         fecha: String(present?.fecha ?? ''),
         tipo: present?.tipo ?? '',
         empresa_id: present?.empresa_id ?? null,
         user_businessname: present?.user_businessname ?? null,
         drive_file_id: present?.drive_file_id ?? null,
-        importe_total_a: a?.importe_total ?? null,
-        importe_total_b: b?.importe_total ?? null,
-        delta_importe_total:
-          toNumber(b?.importe_total) !== null && toNumber(a?.importe_total) !== null
-            ? (toNumber(b?.importe_total) as number) - (toNumber(a?.importe_total) as number)
-            : null,
         missingSide: a ? 'B' : 'A',
       };
     }
@@ -123,22 +193,42 @@ export async function GET(request: NextRequest) {
     const comparison = compareFacturas(factura_uid, a, b);
     const status = computeStatus(comparison);
 
-    const totalA = toNumber(a.importe_total);
-    const totalB = toNumber(b.importe_total);
+    const totalFields = comparison.diffs.length;
+    const fields = comparison.diffs.map((d) => d.field);
+    const review = reviewMap.get(factura_uid) ?? null;
+    const percentA = computePercent(fields, review?.toolA ?? null, totalFields);
+    const percentB = computePercent(fields, review?.toolB ?? null, totalFields);
+    const completeA = isCompleteReview(fields, review?.toolA ?? null);
+    const completeB = isCompleteReview(fields, review?.toolB ?? null);
+    const best =
+      percentA === null || percentB === null
+        ? null
+        : Math.abs(percentA - percentB) < 0.00001
+          ? 'Igual'
+          : percentA > percentB
+            ? 'A'
+            : 'B';
+    const bestPercent = best === null ? null : best === 'Igual' ? percentA : best === 'A' ? percentA : percentB;
 
     return {
       factura_uid,
       status,
       diffCount: comparison.diffCount,
+      totalFields,
+      percentA,
+      percentB,
+      best,
+      bestPercent,
+      // @ts-expect-error - internal-only fields used for aggregation; not part of API type
+      completeA,
+      // @ts-expect-error - internal-only fields used for aggregation; not part of API type
+      completeB,
       numero: a.numero,
       fecha: String(a.fecha),
       tipo: a.tipo,
       empresa_id: a.empresa_id,
       user_businessname: a.user_businessname,
       drive_file_id: a.drive_file_id,
-      importe_total_a: totalA,
-      importe_total_b: totalB,
-      delta_importe_total: totalA !== null && totalB !== null ? totalB - totalA : null,
     };
   });
 
@@ -157,5 +247,29 @@ export async function GET(request: NextRequest) {
 
   rows.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.diffCount - a.diffCount);
 
-  return NextResponse.json({ rows });
+  const comparableA = rows.filter(
+    (r) =>
+      r.status !== 'missing' &&
+      r.totalFields > 0 &&
+      (r as unknown as { completeA?: boolean }).completeA === true &&
+      r.percentA !== null
+  );
+  const comparableB = rows.filter(
+    (r) =>
+      r.status !== 'missing' &&
+      r.totalFields > 0 &&
+      (r as unknown as { completeB?: boolean }).completeB === true &&
+      r.percentB !== null
+  );
+
+  const sumFieldsA = comparableA.reduce((acc, r) => acc + r.totalFields, 0);
+  const sumFieldsB = comparableB.reduce((acc, r) => acc + r.totalFields, 0);
+
+  const sumCorrectA = comparableA.reduce((acc, r) => acc + ((r.percentA as number) / 100) * r.totalFields, 0);
+  const sumCorrectB = comparableB.reduce((acc, r) => acc + ((r.percentB as number) / 100) * r.totalFields, 0);
+
+  const overallPercentA = sumFieldsA > 0 ? (sumCorrectA / sumFieldsA) * 100 : null;
+  const overallPercentB = sumFieldsB > 0 ? (sumCorrectB / sumFieldsB) * 100 : null;
+
+  return NextResponse.json({ rows, overallPercentA, overallPercentB });
 }
