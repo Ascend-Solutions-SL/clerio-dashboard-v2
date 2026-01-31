@@ -22,6 +22,11 @@ type ListRow = {
   missingSide?: 'A' | 'B';
 };
 
+type ListRowInternal = ListRow & {
+  completeA: boolean;
+  completeB: boolean;
+};
+
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 
 type ValidationState = 'unset' | 'correct' | 'incorrect';
@@ -165,7 +170,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  let rows: ListRow[] = uids.map((factura_uid) => {
+  let rows: ListRowInternal[] = uids.map((factura_uid) => {
     const a = mapA.get(factura_uid) ?? null;
     const b = mapB.get(factura_uid) ?? null;
 
@@ -180,6 +185,8 @@ export async function GET(request: NextRequest) {
         percentB: null,
         best: null,
         bestPercent: null,
+        completeA: false,
+        completeB: false,
         numero: present?.numero ?? '',
         fecha: String(present?.fecha ?? ''),
         tipo: present?.tipo ?? '',
@@ -219,9 +226,7 @@ export async function GET(request: NextRequest) {
       percentB,
       best,
       bestPercent,
-      // @ts-expect-error - internal-only fields used for aggregation; not part of API type
       completeA,
-      // @ts-expect-error - internal-only fields used for aggregation; not part of API type
       completeB,
       numero: a.numero,
       fecha: String(a.fecha),
@@ -248,18 +253,10 @@ export async function GET(request: NextRequest) {
   rows.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.diffCount - a.diffCount);
 
   const comparableA = rows.filter(
-    (r) =>
-      r.status !== 'missing' &&
-      r.totalFields > 0 &&
-      (r as unknown as { completeA?: boolean }).completeA === true &&
-      r.percentA !== null
+    (r) => r.status !== 'missing' && r.totalFields > 0 && r.completeA === true && r.percentA !== null
   );
   const comparableB = rows.filter(
-    (r) =>
-      r.status !== 'missing' &&
-      r.totalFields > 0 &&
-      (r as unknown as { completeB?: boolean }).completeB === true &&
-      r.percentB !== null
+    (r) => r.status !== 'missing' && r.totalFields > 0 && r.completeB === true && r.percentB !== null
   );
 
   const sumFieldsA = comparableA.reduce((acc, r) => acc + r.totalFields, 0);
@@ -271,5 +268,7 @@ export async function GET(request: NextRequest) {
   const overallPercentA = sumFieldsA > 0 ? (sumCorrectA / sumFieldsA) * 100 : null;
   const overallPercentB = sumFieldsB > 0 ? (sumCorrectB / sumFieldsB) * 100 : null;
 
-  return NextResponse.json({ rows, overallPercentA, overallPercentB });
+  const payloadRows: ListRow[] = rows.map(({ completeA: _a, completeB: _b, ...rest }) => rest);
+
+  return NextResponse.json({ rows: payloadRows, overallPercentA, overallPercentB });
 }
