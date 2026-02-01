@@ -28,7 +28,7 @@ const tabs = [
   { id: 'connected', label: 'Conectados' },
 ];
 
-const integrations: Integration[] = [
+const baseIntegrations: Integration[] = [
   {
     id: 'gmail',
     name: 'Gmail',
@@ -178,6 +178,7 @@ const integrations: Integration[] = [
 ];
 
 const IntegracionesPage = () => {
+  const [integrations, setIntegrations] = useState<Integration[]>(baseIntegrations);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -207,7 +208,67 @@ const IntegracionesPage = () => {
 
       return matchesTab && matchesSearch;
     });
-  }, [activeTab, search]);
+  }, [activeTab, integrations, search]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchStatuses = async () => {
+      const endpoints: Partial<Record<Integration['id'], string>> = {
+        gmail: '/api/gmail/status',
+        drive: '/api/drive/status',
+        outlook: '/api/oauth/outlook/status',
+        onedrive: '/api/oauth/onedrive/status',
+      };
+
+      const entries = Object.entries(endpoints) as Array<[Integration['id'], string]>;
+
+      const results = await Promise.all(
+        entries.map(async ([id, url]) => {
+          try {
+            const response = await fetch(url, {
+              method: 'GET',
+              credentials: 'include',
+              cache: 'no-store',
+            });
+
+            if (!response.ok) {
+              return [id, false] as const;
+            }
+
+            const payload = (await response.json()) as { connected?: boolean };
+            return [id, Boolean(payload.connected)] as const;
+          } catch {
+            return [id, false] as const;
+          }
+        })
+      );
+
+      if (!isMounted) return;
+
+      const connectedMap = Object.fromEntries(results) as Partial<Record<Integration['id'], boolean>>;
+
+      setIntegrations((prev) =>
+        prev.map((integration) => {
+          const isConnected = connectedMap[integration.id];
+          if (typeof isConnected !== 'boolean') {
+            return integration;
+          }
+
+          return {
+            ...integration,
+            status: isConnected ? 'connected' : 'disconnected',
+          };
+        })
+      );
+    };
+
+    void fetchStatuses();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     setActiveTab('all');

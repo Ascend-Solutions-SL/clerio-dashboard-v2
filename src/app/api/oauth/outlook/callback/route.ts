@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       throw new Error('Microsoft did not return a refresh token. Repite la conexión con consentimiento.');
     }
 
-    const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
+    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
     const profile = await fetchOutlookProfile(tokenResponse.access_token);
     const accountEmail = profile.mail ?? profile.userPrincipalName ?? '';
 
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     const { error: upsertError } = await supabaseAdmin.from('outlook_accounts').upsert(
       {
         user_uid: userUid,
-        account_email: accountEmail,
+        onedrive_email: accountEmail,
         access_token: tokenResponse.access_token,
         refresh_token: refreshToken,
         expires_at: expiresAt,

@@ -112,6 +112,33 @@ export const exchangeOneDriveCodeForTokens = async (params: { code: string; redi
   return (await response.json()) as OneDriveTokenResponse;
 };
 
+export const refreshOneDriveAccessToken = async (refreshToken: string) => {
+  assertMicrosoftCredentials();
+
+  const body = new URLSearchParams({
+    client_id: process.env.ONEDRIVE_CLIENT_ID!,
+    client_secret: process.env.ONEDRIVE_CLIENT_SECRET!,
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken,
+    scope: ONEDRIVE_SCOPES.join(' '),
+  });
+
+  const response = await fetch(MICROSOFT_TOKEN_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to refresh OneDrive access token: ${errorBody}`);
+  }
+
+  return (await response.json()) as OneDriveTokenResponse;
+};
+
 export interface OneDriveUserProfile {
   id: string;
   displayName?: string;

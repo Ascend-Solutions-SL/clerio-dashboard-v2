@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const supabaseAdmin = getSupabaseAdminClient();
 
   const select =
-    'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total';
+    'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_type, drive_file_name, user_businessname, factura_uid, importe_total';
 
   const [{ data: aRowRaw, error: aError }, { data: bRowRaw, error: bError }] = await Promise.all([
     supabaseAdmin.from('facturas').select(select).eq('factura_uid', facturaUid).maybeSingle(),

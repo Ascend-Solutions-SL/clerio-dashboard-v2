@@ -31,12 +31,12 @@ type GmailAccountRow = {
 
 type OneDriveAccountRow = {
   user_uid: string;
-  account_email: string;
+  onedrive_email: string;
 };
 
 type OutlookAccountRow = {
   user_uid: string;
-  account_email: string;
+  onedrive_email: string;
 };
 
 type ProfileRow = {
@@ -67,17 +67,17 @@ const mapGmail = (rows: GmailAccountRow[] | null): IntegrationRow[] =>
 const buildProfileMap = (profiles: ProfileRow[] | null): Record<string, ProfileRow> =>
   Object.fromEntries((profiles ?? []).map((p) => [p.user_uid, p]));
 
-const mapAccountWithProfiles = (
-  rows: Array<OneDriveAccountRow | OutlookAccountRow> | null,
+const mapAccountWithProfiles = <T extends { user_uid: string }, K extends keyof T>(
+  rows: T[] | null,
   profiles: Record<string, ProfileRow>,
-  field: 'account_email'
+  field: K
 ): IntegrationRow[] =>
   (rows ?? []).map((r) => ({
     user_uid: r.user_uid,
     first_name: profiles[r.user_uid]?.first_name ?? '',
     last_name: profiles[r.user_uid]?.last_name ?? '',
     user_businessname: profiles[r.user_uid]?.user_businessname ?? '',
-    email: r[field] ?? '',
+    email: String(r[field] ?? ''),
   }));
 
 export async function GET() {
@@ -110,7 +110,7 @@ export async function GET() {
 
   const { data: onedriveRows, error: onedriveError } = await supabaseAdmin
     .from('onedrive_accounts')
-    .select('user_uid, account_email')
+    .select('user_uid, onedrive_email')
     .order('created_at', { ascending: false })
     .limit(500);
 
@@ -120,7 +120,7 @@ export async function GET() {
 
   const { data: outlookRows, error: outlookError } = await supabaseAdmin
     .from('outlook_accounts')
-    .select('user_uid, account_email')
+    .select('user_uid, onedrive_email')
     .order('created_at', { ascending: false })
     .limit(500);
 
@@ -153,7 +153,7 @@ export async function GET() {
   return NextResponse.json({
     drive: mapDrive(driveRows as unknown as DriveAccountRow[] | null),
     gmail: mapGmail(gmailRows as unknown as GmailAccountRow[] | null),
-    onedrive: mapAccountWithProfiles(typedOneDriveRows, profileMap, 'account_email'),
-    outlook: mapAccountWithProfiles(typedOutlookRows, profileMap, 'account_email'),
+    onedrive: mapAccountWithProfiles(typedOneDriveRows, profileMap, 'onedrive_email'),
+    outlook: mapAccountWithProfiles(typedOutlookRows, profileMap, 'onedrive_email'),
   });
 }

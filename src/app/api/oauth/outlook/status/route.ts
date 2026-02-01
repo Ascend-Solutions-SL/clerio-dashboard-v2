@@ -16,7 +16,7 @@ export async function GET() {
 
   const { data, error } = await supabaseAdmin
     .from('outlook_accounts')
-    .select('id, account_email, updated_at')
+    .select('id, onedrive_email, updated_at')
     .eq('user_uid', user.id)
     .maybeSingle();
 
@@ -32,7 +32,7 @@ export async function GET() {
     connected: true,
     account: {
       id: data.id,
-      email: data.account_email,
+      email: data.onedrive_email,
       updatedAt: data.updated_at,
     },
   });

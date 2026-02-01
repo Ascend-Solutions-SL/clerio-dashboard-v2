@@ -8,6 +8,9 @@ import {
 } from '@/lib/onedrive/onedriveOAuth';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+const N8N_ONEDRIVE_INTEGRATION_WEBHOOK_URL =
+  'https://v-ascendsolutions.app.n8n.cloud/webhook/outlook-integration';
+
 const buildRedirectUrl = (origin: string, path: string, status: 'success' | 'error', reason?: string) => {
   const url = new URL(path, origin);
   url.searchParams.set('onedrive', status);
@@ -60,27 +63,27 @@ export async function GET(request: NextRequest) {
       throw new Error('Microsoft did not return a refresh token. Repite la conexión con consentimiento.');
     }
 
-    const expiresAt = Date.now() + tokenResponse.expires_in * 1000;
+    const expiresAt = new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString();
     const profile = await fetchOneDriveProfile(tokenResponse.access_token);
     const driveInfo = await fetchOneDriveDriveInfo(tokenResponse.access_token);
 
-    const accountEmail = profile.mail ?? profile.userPrincipalName ?? '';
+    const onedriveEmail = profile.mail ?? profile.userPrincipalName ?? '';
 
-    if (!accountEmail) {
+    if (!onedriveEmail) {
       throw new Error('No se pudo obtener el email principal de la cuenta OneDrive');
     }
 
     const { error: upsertError } = await supabaseAdmin.from('onedrive_accounts').upsert(
       {
         user_uid: userUid,
-        account_email: accountEmail,
-        drive_id: driveInfo.id ?? null,
-        drive_name: driveInfo.name ?? null,
-        drive_type: driveInfo.driveType ?? null,
+        onedrive_email: onedriveEmail,
+        onedrive_id: driveInfo.id ?? null,
         drive_created_at: driveInfo.createdDateTime ?? null,
         access_token: tokenResponse.access_token,
         refresh_token: refreshToken,
         expires_at: expiresAt,
+        onedrive_org_folder_id: null,
+        onedrive_deposit_folder_id: null,
       },
       {
         onConflict: 'user_uid',
@@ -89,6 +92,20 @@ export async function GET(request: NextRequest) {
 
     if (upsertError) {
       throw upsertError;
+    }
+
+    try {
+      await fetch(N8N_ONEDRIVE_INTEGRATION_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_uid: userUid,
+          onedrive_email: onedriveEmail,
+          onedrive_id: driveInfo.id ?? null,
+        }),
+      });
+    } catch (webhookError) {
+      console.error('Failed to trigger n8n onedrive integration webhook', webhookError);
     }
 
     const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');

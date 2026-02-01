@@ -33,6 +33,8 @@ import { supabase } from '@/lib/supabase';
 import { TableFilters } from '@/components/ui/table-filters';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+type DriveType = 'googledrive' | 'onedrive';
+
 const buildDriveDownloadUrl = (driveFileId?: string | null) =>
   driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
 const buildDrivePreviewUrl = (driveFileId?: string | null) =>
@@ -73,6 +75,7 @@ type FacturaRow = {
   importe_sin_iva: number | string | null;
   importe_total: number | string | null;
   drive_file_id?: string | null;
+  drive_type?: DriveType | string | null;
 };
 
 export type Income = {
@@ -87,6 +90,7 @@ export type Income = {
   subtotalValue?: number;
   totalValue?: number;
   driveFileId?: string | null;
+  driveType?: DriveType | null;
 };
 
 export const columns: ColumnDef<Income>[] = [
@@ -249,38 +253,70 @@ export const columns: ColumnDef<Income>[] = [
   {
     id: 'actions',
     cell: ({ row }) => {
-      const downloadUrl = buildDriveDownloadUrl(row.original.driveFileId);
-      const previewUrl = buildDrivePreviewUrl(row.original.driveFileId);
+      const driveFileId = row.original.driveFileId;
+      const driveType = row.original.driveType;
+
+      const resolveUrl = async (kind: 'preview' | 'download') => {
+        if (!driveFileId || !driveType) {
+          return null;
+        }
+
+        if (driveType === 'googledrive') {
+          return kind === 'preview' ? buildDrivePreviewUrl(driveFileId) ?? null : buildDriveDownloadUrl(driveFileId) ?? null;
+        }
+
+        const url = new URL('/api/files/link', window.location.origin);
+        url.searchParams.set('drive_type', driveType);
+        url.searchParams.set('drive_file_id', driveFileId);
+        url.searchParams.set('kind', kind);
+
+        const res = await fetch(url.toString(), { credentials: 'include' });
+        const payload = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+        if (!res.ok) {
+          return null;
+        }
+        return payload?.url ?? null;
+      };
 
       const handleDownload = () => {
-        if (!downloadUrl) return;
-        window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+        void resolveUrl('download').then((resolved) => {
+          if (!resolved) {
+            return;
+          }
+          window.open(resolved, '_blank', 'noopener,noreferrer');
+        });
       };
 
       const handlePreview = () => {
-        if (!previewUrl) return;
-        window.open(previewUrl, '_blank', 'noopener,noreferrer');
+        void resolveUrl('preview').then((resolved) => {
+          if (!resolved) {
+            return;
+          }
+          window.open(resolved, '_blank', 'noopener,noreferrer');
+        });
       };
+
+      const canOpen = Boolean(driveFileId && driveType);
 
       return (
         <div className="flex items-center space-x-2">
           <Button
             variant="ghost"
             size="icon"
-            className={previewUrl ? '' : 'text-gray-400'}
-            disabled={!previewUrl}
+            className={canOpen ? '' : 'text-gray-400'}
+            disabled={!canOpen}
             onClick={handlePreview}
-            aria-label={previewUrl ? 'Ver factura' : 'Vista previa no disponible'}
+            aria-label={canOpen ? 'Ver factura' : 'Vista previa no disponible'}
           >
             <Eye className="h-4 w-4" />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className={downloadUrl ? '' : 'text-gray-400'}
-            disabled={!downloadUrl}
+            className={canOpen ? '' : 'text-gray-400'}
+            disabled={!canOpen}
             onClick={handleDownload}
-            aria-label={downloadUrl ? 'Descargar factura' : 'Archivo no disponible'}
+            aria-label={canOpen ? 'Descargar factura' : 'Archivo no disponible'}
           >
             <Download className="h-4 w-4" />
           </Button>
@@ -310,7 +346,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
 
       const { data: facturas, error } = await supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id, drive_type')
         .eq('user_businessname', businessName)
         .eq('tipo', 'Ingresos')
         .order('fecha', { ascending: false });
@@ -352,6 +388,9 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           subtotalValue,
           totalValue,
           driveFileId: row.drive_file_id ?? null,
+          driveType: (row.drive_type === 'onedrive' || row.drive_type === 'googledrive'
+            ? row.drive_type
+            : 'googledrive') as DriveType,
         };
       });
 

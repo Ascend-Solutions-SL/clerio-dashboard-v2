@@ -312,6 +312,103 @@ export default function MasterAnalisisDetailPage() {
     return data.comparison.diffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
   }, [data, draftB]);
 
+  const driveType = useMemo(() => {
+    if (!data || !('comparison' in data)) {
+      return null;
+    }
+
+    const raw = (data.comparison.a.drive_type ?? data.comparison.b.drive_type ?? '').toString().trim().toLowerCase();
+    if (raw === 'googledrive' || raw === 'onedrive') {
+      return raw;
+    }
+
+    const fileId = data.comparison.a.drive_file_id ?? data.comparison.b.drive_file_id;
+    return fileId ? 'googledrive' : null;
+  }, [data]);
+
+  const empresaId = useMemo(() => {
+    if (!data || !('comparison' in data)) {
+      return null;
+    }
+    return data.comparison.a.empresa_id ?? data.comparison.b.empresa_id ?? null;
+  }, [data]);
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [embedUrl, setEmbedUrl] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!data || !('comparison' in data)) {
+      setPreviewUrl(null);
+      setEmbedUrl(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    const fileId = data.comparison.a.drive_file_id ?? data.comparison.b.drive_file_id;
+    if (!fileId) {
+      setPreviewUrl(null);
+      setEmbedUrl(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    if (!driveType) {
+      setPreviewUrl(null);
+      setEmbedUrl(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    if (driveType === 'googledrive') {
+      const url = `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
+      setPreviewUrl(url);
+      setEmbedUrl(url);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    if (!empresaId) {
+      setPreviewUrl(null);
+      setEmbedUrl(null);
+      setIsPreviewLoading(false);
+      return;
+    }
+
+    const resolve = async () => {
+      setIsPreviewLoading(true);
+      try {
+        const base = new URL('/api/master/files/link', window.location.origin);
+        base.searchParams.set('drive_type', 'onedrive');
+        base.searchParams.set('drive_file_id', fileId);
+        base.searchParams.set('empresa_id', String(empresaId));
+
+        const p = new URL(base.toString());
+        p.searchParams.set('kind', 'preview');
+        const e = new URL(base.toString());
+        e.searchParams.set('kind', 'embed');
+
+        const [resP, resE] = await Promise.all([
+          fetch(p.toString(), { credentials: 'include' }),
+          fetch(e.toString(), { credentials: 'include' }),
+        ]);
+
+        const payloadP = (await resP.json().catch(() => null)) as { url?: string } | null;
+        const payloadE = (await resE.json().catch(() => null)) as { url?: string } | null;
+
+        setPreviewUrl(resP.ok ? payloadP?.url ?? null : null);
+        setEmbedUrl(resE.ok ? payloadE?.url ?? null : null);
+      } catch {
+        setPreviewUrl(null);
+        setEmbedUrl(null);
+      } finally {
+        setIsPreviewLoading(false);
+      }
+    };
+
+    void resolve();
+  }, [data, driveType, empresaId]);
+
   const percentA = useMemo(() => {
     if (totalFields <= 0) {
       return null;
@@ -341,13 +438,13 @@ export default function MasterAnalisisDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold text-slate-900">Detalle Analisis</h1>
-          {data && 'comparison' in data && data.comparison.a.drive_file_id ? (
+          {previewUrl ? (
             <a
-              href={`https://drive.google.com/file/d/${encodeURIComponent(data.comparison.a.drive_file_id)}/preview`}
+              href={previewUrl}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"
-              aria-label="Abrir vista previa en Drive"
+              aria-label="Abrir vista previa"
               title="Ver factura"
             >
               <Eye size={18} />
@@ -575,33 +672,37 @@ export default function MasterAnalisisDetailPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-bold text-slate-900">Vista previa</div>
-                {data.comparison.a.drive_file_id ? (
+                {previewUrl ? (
                   <a
-                    href={`https://drive.google.com/file/d/${encodeURIComponent(data.comparison.a.drive_file_id)}/preview`}
+                    href={previewUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"
-                    aria-label="Abrir vista previa en Drive"
-                    title="Abrir en Drive"
+                    aria-label="Abrir vista previa"
+                    title="Abrir"
                   >
                     <Eye size={18} />
                   </a>
                 ) : null}
               </div>
 
-              {data.comparison.a.drive_file_id ? (
+              {embedUrl ? (
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-1">
                   <iframe
                     title="Vista previa factura"
-                    src={`https://drive.google.com/file/d/${encodeURIComponent(data.comparison.a.drive_file_id)}/preview`}
+                    src={embedUrl}
                     className="block h-[72vh] w-full rounded-lg bg-white"
                     allow="autoplay"
                     style={{ border: 0 }}
                   />
                 </div>
+              ) : isPreviewLoading ? (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  Cargando vista previa...
+                </div>
               ) : (
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  No hay drive_file_id para esta factura.
+                  No hay vista previa disponible para esta factura.
                 </div>
               )}
             </div>

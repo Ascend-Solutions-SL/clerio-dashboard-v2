@@ -11,6 +11,7 @@ export type FacturaRow = {
   estado_pago: string;
   estado_proces: string | null;
   drive_file_id: string | null;
+  drive_type?: string | null;
   drive_file_name: string | null;
   user_businessname: string | null;
   factura_uid: string | null;
