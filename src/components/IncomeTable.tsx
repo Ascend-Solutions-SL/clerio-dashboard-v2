@@ -256,66 +256,57 @@ export const columns: ColumnDef<Income>[] = [
       const driveFileId = row.original.driveFileId;
       const driveType = row.original.driveType;
 
-      const resolveUrl = async (kind: 'preview' | 'download') => {
-        if (!driveFileId || !driveType) {
-          return null;
-        }
+      const previewHref =
+        driveFileId && driveType
+          ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
+              driveFileId
+            )}&kind=preview`
+          : undefined;
 
-        if (driveType === 'googledrive') {
-          return kind === 'preview' ? buildDrivePreviewUrl(driveFileId) ?? null : buildDriveDownloadUrl(driveFileId) ?? null;
-        }
-
-        const url = new URL('/api/files/link', window.location.origin);
-        url.searchParams.set('drive_type', driveType);
-        url.searchParams.set('drive_file_id', driveFileId);
-        url.searchParams.set('kind', kind);
-
-        const res = await fetch(url.toString(), { credentials: 'include' });
-        const payload = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
-        if (!res.ok) {
-          return null;
-        }
-        return payload?.url ?? null;
-      };
+      const downloadHref =
+        driveFileId && driveType
+          ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
+              driveFileId
+            )}&kind=download`
+          : undefined;
 
       const handleDownload = () => {
-        void resolveUrl('download').then((resolved) => {
-          if (!resolved) {
-            return;
-          }
-          window.open(resolved, '_blank', 'noopener,noreferrer');
-        });
-      };
+        if (!driveFileId || !driveType) {
+          return;
+        }
 
-      const handlePreview = () => {
-        void resolveUrl('preview').then((resolved) => {
-          if (!resolved) {
-            return;
-          }
-          window.open(resolved, '_blank', 'noopener,noreferrer');
-        });
+        if (!downloadHref) {
+          return;
+        }
+
+        window.open(downloadHref, '_blank', 'noopener,noreferrer');
       };
 
       const canOpen = Boolean(driveFileId && driveType);
 
       return (
         <div className="flex items-center space-x-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className={canOpen ? '' : 'text-gray-400'}
-            disabled={!canOpen}
-            onClick={handlePreview}
+          <a
+            href={previewHref ?? '#'}
+            target={previewHref ? '_blank' : undefined}
+            rel={previewHref ? 'noopener,noreferrer' : undefined}
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${canOpen ? '' : 'text-gray-400 pointer-events-none'}`}
             aria-label={canOpen ? 'Ver factura' : 'Vista previa no disponible'}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
           >
             <Eye className="h-4 w-4" />
-          </Button>
+          </a>
           <Button
             variant="ghost"
             size="icon"
             className={canOpen ? '' : 'text-gray-400'}
             disabled={!canOpen}
-            onClick={handleDownload}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDownload();
+            }}
             aria-label={canOpen ? 'Descargar factura' : 'Archivo no disponible'}
           >
             <Download className="h-4 w-4" />
@@ -416,7 +407,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     const loadData = async () => {
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total')
+        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id, drive_type')
         .eq('user_businessname', businessName)
         .eq('tipo', 'Ingresos')
         .order('fecha', { ascending: false });
@@ -457,6 +448,9 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           subtotalValue: Number.isNaN(subtotalValue) ? 0 : subtotalValue,
           totalValue: Number.isNaN(totalValue) ? 0 : totalValue,
           driveFileId: row.drive_file_id ?? null,
+          driveType: (row.drive_type === 'onedrive' || row.drive_type === 'googledrive'
+            ? row.drive_type
+            : 'googledrive') as DriveType,
         };
       });
 
