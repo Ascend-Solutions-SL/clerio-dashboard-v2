@@ -16,6 +16,23 @@ const buildUserInitials = (firstName: string, lastName: string) => {
   return `${firstInitial}${lastInitial}`.toUpperCase();
 };
 
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
+const normalizeTitleCase = (value: string) => {
+  const cleaned = value.trim().toLowerCase();
+  if (!cleaned) return '';
+
+  return cleaned
+    .split(/\s+/)
+    .map((word) => {
+      const initial = word.charAt(0);
+      return initial ? `${initial.toUpperCase()}${word.slice(1)}` : '';
+    })
+    .join(' ');
+};
+
+const normalizeCif = (value: string) => value.trim().toUpperCase();
+
 assertEnv();
 
 function LoginForm() {
@@ -107,6 +124,8 @@ function LoginForm() {
     setError(null);
     setMessage(null);
 
+    const normalizedEmail = normalizeEmail(email);
+
     if (mode === 'register') {
       if (password !== confirmPassword) {
         setError('Las contraseñas no coinciden');
@@ -126,7 +145,7 @@ function LoginForm() {
 
       if (mode === 'login') {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
 
@@ -154,12 +173,15 @@ function LoginForm() {
       const trimmedLastName = lastName.trim();
       const trimmedBusiness = businessName.trim();
       const trimmedCif = businessCif.trim();
-      const userInitials = buildUserInitials(trimmedFirstName, trimmedLastName);
+
+      const resolvedFirstName = normalizeTitleCase(trimmedFirstName);
+      const resolvedLastName = normalizeTitleCase(trimmedLastName);
+      const userInitials = buildUserInitials(resolvedFirstName, resolvedLastName);
 
       const resolvedBusinessName = isMasterEmail ? 'Master' : trimmedBusiness;
       const resolvedCif = isMasterEmail
-        ? `MASTER-${email.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'DEFAULT'}`
-        : trimmedCif;
+        ? `MASTER-${normalizedEmail.replace(/[^a-z0-9]/g, '').slice(0, 16) || 'DEFAULT'}`
+        : normalizeCif(trimmedCif);
       const resolvedAccountType: 'empresa' | 'asesoria' = isMasterEmail ? 'empresa' : accountType;
 
       if (!isMasterEmail) {
@@ -184,14 +206,14 @@ function LoginForm() {
       }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
           ...(emailRedirectTo ? { emailRedirectTo } : {}),
           data: {
-            email,
-            first_name: trimmedFirstName,
-            last_name: trimmedLastName,
+            email: normalizedEmail,
+            first_name: resolvedFirstName,
+            last_name: resolvedLastName,
             user_initials: userInitials,
             user_businessname: resolvedBusinessName,
             user_business_cif: resolvedCif,
