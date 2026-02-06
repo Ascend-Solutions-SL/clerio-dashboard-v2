@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard', icon: '/sidebar/inicio_logo.png', label: 'Inicio' },
   { href: '/dashboard/ingresos', icon: '/sidebar/ingresos_logo.png', label: 'Ingresos' },
   { href: '/dashboard/gastos', icon: '/sidebar/gastos_logo.png', label: 'Gastos' },
+  { href: '/dashboard/revisiones', icon: '/sidebar/gastos_logo.png', label: 'Revisiones' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
   { href: '/dashboard/cleria', icon: '/brand/tab_cleria/cleria_logo.png', label: 'Cler IA' },
 ];
