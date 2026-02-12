@@ -22,8 +22,12 @@ type Row = {
   empresa_id: number | null;
   user_businessname: string | null;
   drive_file_id: string | null;
+  importe_total_a: number | null;
+  importe_total_b: number | null;
   missingSide?: 'A' | 'B';
 };
+
+const fmtMoney = (v: number | null) => (v === null ? '—' : v.toFixed(2));
 
 type Payload = { rows: Row[]; overallPercentA: number | null; overallPercentB: number | null };
 
@@ -154,39 +158,37 @@ export default function MasterAnalisisPage() {
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="w-[18%] px-4 py-3">Factura UID</th>
-                <th className="w-[8%] px-4 py-3">Estado</th>
-                <th className="w-[6%] px-4 py-3">Diffs</th>
-                <th className="w-[8%] px-4 py-3">% A</th>
-                <th className="w-[8%] px-4 py-3">% B</th>
-                <th className="w-[7%] px-4 py-3">Mejor Herr</th>
-                <th className="w-[10%] px-4 py-3">Número</th>
-                <th className="w-[8%] px-4 py-3">Fecha</th>
-                <th className="w-[8%] px-4 py-3">Tipo</th>
-                <th className="w-[19%] px-4 py-3">Empresa</th>
-                <th className="w-[8%] px-4 py-3 text-right">Ver</th>
+                <th className="w-[7%] px-4 py-3">Estado</th>
+                <th className="w-[5%] px-4 py-3">Diffs</th>
+                <th className="w-[7%] px-4 py-3">% A</th>
+                <th className="w-[7%] px-4 py-3">% B</th>
+                <th className="w-[7%] px-4 py-3">Mejor</th>
+                <th className="w-[12%] px-4 py-3">Número</th>
+                <th className="w-[10%] px-4 py-3">Fecha</th>
+                <th className="w-[7%] px-4 py-3">Tipo</th>
+                <th className="w-[9%] px-4 py-3">Total (A)</th>
+                <th className="w-[9%] px-4 py-3">Total (B)</th>
+                <th className="w-[14%] px-4 py-3">Empresa</th>
+                <th className="w-[6%] px-4 py-3 text-right">Ver</th>
               </tr>
             </thead>
             <tbody>
               {(data?.rows ?? []).map((row) => (
                 <tr key={row.factura_uid} className="border-t border-slate-100">
-                  <td className="w-[18%] px-4 py-3">
-                    <Link href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`} className="font-semibold text-slate-900 hover:underline">
-                      <TruncateWithTooltip value={row.factura_uid} />
-                    </Link>
-                  </td>
-                  <td className="w-[8%] px-4 py-3">
+                  <td className="w-[7%] px-4 py-3">
                     <StatusBadge status={row.status} />
                   </td>
-                  <td className="w-[6%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
-                  <td className="w-[8%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentA)}</td>
-                  <td className="w-[8%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentB)}</td>
+                  <td className="w-[5%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
+                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentA)}</td>
+                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentB)}</td>
                   <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{row.best ?? '—'}</td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
-                  <td className="w-[8%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
-                  <td className="w-[8%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
-                  <td className="w-[19%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
-                  <td className="w-[8%] px-4 py-3 text-right">
+                  <td className="w-[12%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
+                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
+                  <td className="w-[7%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
+                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total_a)}</td>
+                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total_b)}</td>
+                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
+                  <td className="w-[6%] px-4 py-3 text-right">
                     <Link
                       href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"

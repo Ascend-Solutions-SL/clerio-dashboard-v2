@@ -19,6 +19,8 @@ type ListRow = {
   empresa_id: number | null;
   user_businessname: string | null;
   drive_file_id: string | null;
+  importe_total_a: number | null;
+  importe_total_b: number | null;
   missingSide?: 'A' | 'B';
 };
 
@@ -193,6 +195,8 @@ export async function GET(request: NextRequest) {
         empresa_id: present?.empresa_id ?? null,
         user_businessname: present?.user_businessname ?? null,
         drive_file_id: present?.drive_file_id ?? null,
+        importe_total_a: a?.importe_total ?? null,
+        importe_total_b: b?.importe_total ?? null,
         missingSide: a ? 'B' : 'A',
       };
     }
@@ -234,6 +238,8 @@ export async function GET(request: NextRequest) {
       empresa_id: a.empresa_id,
       user_businessname: a.user_businessname,
       drive_file_id: a.drive_file_id,
+      importe_total_a: a.importe_total,
+      importe_total_b: b.importe_total,
     };
   });
 

@@ -8,7 +8,6 @@ import { Eye } from 'lucide-react';
 import ComparisonFieldRow from '@/components/master/ComparisonFieldRow';
 import type { ValidationState } from '@/components/master/ComparisonFieldRow';
 import StatusBadge from '@/components/master/StatusBadge';
-import TruncateWithTooltip from '@/components/TruncateWithTooltip';
 import { formatValue, type FacturaComparison } from '@/lib/master/facturaComparison';
 
 type PayloadOk = {
@@ -288,29 +287,42 @@ export default function MasterAnalisisDetailPage() {
     return () => document.removeEventListener('click', onDocumentClick, true);
   }, [isDirty, saveReview]);
 
-  const totalFields = useMemo(() => {
-    if (!data || !('comparison' in data)) {
-      return 0;
-    }
+  const VISIBLE_FIELDS = useMemo(
+    () =>
+      new Set([
+        'numero',
+        'tipo',
+        'nombre_comprador',
+        'cif_comprador',
+        'nombre_vendedor',
+        'cif_vendedor',
+        'cliente_proveedor',
+        'iva',
+        'importe_sin_iva',
+        'importe_total',
+        'fecha',
+        'concepto',
+        'user_businessname',
+      ]),
+    []
+  );
 
-    return data.comparison.diffs.length;
-  }, [data]);
+  const filteredDiffs = useMemo(() => {
+    if (!data || !('comparison' in data)) {
+      return [];
+    }
+    return data.comparison.diffs.filter((d) => VISIBLE_FIELDS.has(d.field));
+  }, [data, VISIBLE_FIELDS]);
+
+  const totalFields = useMemo(() => filteredDiffs.length, [filteredDiffs]);
 
   const correctCountA = useMemo(() => {
-    if (!data || !('comparison' in data)) {
-      return 0;
-    }
-
-    return data.comparison.diffs.reduce((acc, d) => acc + (draftA[d.field] === 'correct' ? 1 : 0), 0);
-  }, [data, draftA]);
+    return filteredDiffs.reduce((acc, d) => acc + (draftA[d.field] === 'correct' ? 1 : 0), 0);
+  }, [filteredDiffs, draftA]);
 
   const correctCountB = useMemo(() => {
-    if (!data || !('comparison' in data)) {
-      return 0;
-    }
-
-    return data.comparison.diffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
-  }, [data, draftB]);
+    return filteredDiffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
+  }, [filteredDiffs, draftB]);
 
   const driveType = useMemo(() => {
     if (!data || !('comparison' in data)) {
@@ -484,60 +496,21 @@ export default function MasterAnalisisDetailPage() {
                     <span className="font-semibold text-slate-900">{data.comparison.diffCount}</span> diferencias detectadas
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                  <span>A = OCR Básico</span>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold text-slate-900">OCR Básico (A)</span>
+                    <span className="font-mono text-xs">{percentA === null ? '—' : `${percentA.toFixed(0)}%`}</span>
+                  </span>
                   <span className="text-slate-300">|</span>
-                  <span>B = OCR Google AI</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="font-semibold text-slate-900">OCR Google AI (B)</span>
+                    <span className="font-mono text-xs">{percentB === null ? '—' : `${percentB.toFixed(0)}%`}</span>
+                  </span>
                   {bestMethod ? (
                     <span className="ml-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
                       Mejor: {bestMethod}
                     </span>
                   ) : null}
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-slate-900">OCR Básico (A)</div>
-                    <div className="text-xs font-semibold text-slate-600">{percentA === null ? '—' : `${percentA.toFixed(0)}%`}</div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="text-slate-500">Número</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={data.comparison.a.numero} /></div>
-                    <div className="text-slate-500">Fecha</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={String(data.comparison.a.fecha)} /></div>
-                    <div className="text-slate-500">Tipo</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={data.comparison.a.tipo} /></div>
-                    <div className="text-slate-500">Total</div>
-                    <div className="font-mono text-sm text-slate-900">{formatValue(data.comparison.a.importe_total)}</div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-slate-900">OCR Google AI (B)</div>
-                    <div className="text-xs font-semibold text-slate-600">{percentB === null ? '—' : `${percentB.toFixed(0)}%`}</div>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    <div className="text-slate-500">Número</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={data.comparison.b.numero} /></div>
-                    <div className="text-slate-500">Fecha</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={String(data.comparison.b.fecha)} /></div>
-                    <div className="text-slate-500">Tipo</div>
-                    <div className="font-semibold text-slate-900"><TruncateWithTooltip value={data.comparison.b.tipo} /></div>
-                    <div className="text-slate-500">Total</div>
-                    <div className="font-mono text-sm text-slate-900">{formatValue(data.comparison.b.importe_total)}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="text-sm font-bold text-slate-900">Resumen automático</div>
-                <div className="mt-2 space-y-1 text-sm text-slate-700">
-                  {data.summary.map((s) => (
-                    <div key={s}>- {s}</div>
-                  ))}
                 </div>
               </div>
 
@@ -582,13 +555,13 @@ export default function MasterAnalisisDetailPage() {
                               label="A"
                               counter={`${correctCountA}/${totalFields}`}
                               state={
-                                data.comparison.diffs.length
-                                  ? deriveHeaderState(data.comparison.diffs.map((d) => draftA[d.field] ?? 'unset'))
+                                filteredDiffs.length
+                                  ? deriveHeaderState(filteredDiffs.map((d) => draftA[d.field] ?? 'unset'))
                                   : 'unset'
                               }
                               onChange={(state) => {
                                 const next: ValidationMap = {};
-                                for (const d of data.comparison.diffs) {
+                                for (const d of filteredDiffs) {
                                   next[d.field] = state;
                                 }
                                 setDraftA(next);
@@ -603,13 +576,13 @@ export default function MasterAnalisisDetailPage() {
                               label="B"
                               counter={`${correctCountB}/${totalFields}`}
                               state={
-                                data.comparison.diffs.length
-                                  ? deriveHeaderState(data.comparison.diffs.map((d) => draftB[d.field] ?? 'unset'))
+                                filteredDiffs.length
+                                  ? deriveHeaderState(filteredDiffs.map((d) => draftB[d.field] ?? 'unset'))
                                   : 'unset'
                               }
                               onChange={(state) => {
                                 const next: ValidationMap = {};
-                                for (const d of data.comparison.diffs) {
+                                for (const d of filteredDiffs) {
                                   next[d.field] = state;
                                 }
                                 setDraftB(next);
@@ -621,7 +594,7 @@ export default function MasterAnalisisDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.comparison.diffs.map((d) => (
+                      {filteredDiffs.map((d) => (
                         <ComparisonFieldRow
                           key={d.field}
                           field={d.field}
