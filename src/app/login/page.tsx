@@ -260,7 +260,7 @@ function LoginForm() {
   return (
     <main className="min-h-screen bg-white flex">
       {/* ── Left Panel ── */}
-      <div className="w-full lg:w-1/2 flex flex-col relative px-6 py-8 overflow-y-auto">
+      <div className="w-full lg:w-1/2 flex flex-col relative px-6 pt-2 pb-8 lg:py-8 overflow-y-auto">
         {/* Logo - absolute top left */}
         <div className="pl-2 pt-2 mb-0">
           <img
@@ -270,7 +270,7 @@ function LoginForm() {
           />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center">
+        <div className="flex-1 flex flex-col items-center justify-start lg:justify-center pt-20 lg:pt-0">
         <div className="w-full max-w-[340px] flex flex-col items-center">
 
           {mode === 'login' ? (
