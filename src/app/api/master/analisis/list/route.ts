@@ -29,6 +29,26 @@ type ListRowInternal = ListRow & {
   completeB: boolean;
 };
 
+const DETAIL_VISIBLE_FIELDS = [
+  'numero',
+  'tipo',
+  'buyer_name',
+  'buyer_tax_id',
+  'seller_name',
+  'seller_tax_id',
+  'iva',
+  'importe_sin_iva',
+  'importe_total',
+  'fecha',
+  'invoice_concept',
+  'invoice_reason',
+  'user_businessname',
+] as const;
+
+const DETAIL_SCORING_FIELDS = DETAIL_VISIBLE_FIELDS.filter(
+  (f) => f !== 'invoice_concept' && f !== 'invoice_reason'
+) as readonly string[];
+
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 
 type ValidationState = 'unset' | 'correct' | 'incorrect';
@@ -101,11 +121,13 @@ export async function GET(request: NextRequest) {
 
   const supabaseAdmin = getSupabaseAdminClient();
 
+  const select =
+    'id, numero, fecha, tipo, empresa_id, source, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, invoice_reason, importe_sin_iva, iva, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total';
+
   const { data: aRowsRaw, error: aError } = await supabaseAdmin
     .from('facturas')
-    .select(
-      'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total'
-    )
+    .select(select)
+    .eq('source', 'ocr')
     .order('id', { ascending: false })
     .limit(800);
 
@@ -114,10 +136,9 @@ export async function GET(request: NextRequest) {
   }
 
   const { data: bRowsRaw, error: bError } = await supabaseAdmin
-    .from('facturas_GAI')
-    .select(
-      'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total'
-    )
+    .from('facturas')
+    .select(select)
+    .eq('source', 'gai')
     .order('id', { ascending: false })
     .limit(800);
 
@@ -190,7 +211,7 @@ export async function GET(request: NextRequest) {
         completeA: false,
         completeB: false,
         numero: present?.numero ?? '',
-        fecha: String(present?.fecha ?? ''),
+        fecha: present?.fecha ? String(present.fecha) : '',
         tipo: present?.tipo ?? '',
         empresa_id: present?.empresa_id ?? null,
         user_businessname: present?.user_businessname ?? null,
@@ -202,15 +223,21 @@ export async function GET(request: NextRequest) {
     }
 
     const comparison = compareFacturas(factura_uid, a, b);
-    const status = computeStatus(comparison);
 
-    const totalFields = comparison.diffs.length;
-    const fields = comparison.diffs.map((d) => d.field);
+    const visibleDiffs = comparison.diffs.filter((d) => (DETAIL_VISIBLE_FIELDS as readonly string[]).includes(d.field));
+    const scoringDiffs = visibleDiffs.filter((d) => (DETAIL_SCORING_FIELDS as readonly string[]).includes(d.field));
+
+    const totalFields = scoringDiffs.length;
+    const diffCount = scoringDiffs.filter((d) => !d.equal).length;
+    const fields = scoringDiffs.map((d) => d.field);
     const review = reviewMap.get(factura_uid) ?? null;
     const percentA = computePercent(fields, review?.toolA ?? null, totalFields);
     const percentB = computePercent(fields, review?.toolB ?? null, totalFields);
     const completeA = isCompleteReview(fields, review?.toolA ?? null);
     const completeB = isCompleteReview(fields, review?.toolB ?? null);
+
+    const hasTotalDiff = scoringDiffs.some((d) => d.field === 'importe_total' && !d.equal);
+    const status = computeStatus({ ...comparison, diffs: scoringDiffs, diffCount, hasDiffs: diffCount > 0, hasTotalDiff });
     const best =
       percentA === null || percentB === null
         ? null
@@ -224,7 +251,7 @@ export async function GET(request: NextRequest) {
     return {
       factura_uid,
       status,
-      diffCount: comparison.diffCount,
+      diffCount,
       totalFields,
       percentA,
       percentB,
@@ -233,7 +260,7 @@ export async function GET(request: NextRequest) {
       completeA,
       completeB,
       numero: a.numero,
-      fecha: String(a.fecha),
+      fecha: a.fecha ? String(a.fecha) : '',
       tipo: a.tipo,
       empresa_id: a.empresa_id,
       user_businessname: a.user_businessname,

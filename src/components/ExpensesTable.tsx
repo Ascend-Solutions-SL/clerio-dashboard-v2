@@ -70,8 +70,8 @@ type FacturaRow = {
   id: number;
   numero: string;
   fecha: string;
-  cliente_proveedor: string;
-  concepto: string | null;
+  seller_tax_id: string | null;
+  invoice_concept: string | null;
   importe_sin_iva: number | string | null;
   importe_total: number | string | null;
   drive_file_id?: string | null;
@@ -353,17 +353,27 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
   });
 
   const businessName = user?.businessName?.trim() || '';
+  const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
   // Load data and calculate total expenses
   React.useEffect(() => {
     const loadData = async () => {
-      if (!businessName) return;
-      const { data: facturas, error } = await supabase
+      if (!businessName && empresaId == null) return;
+
+      let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id, drive_type')
-        .eq('user_businessname', businessName)
+        .select('id, numero, fecha, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type')
         .eq('tipo', 'Gastos')
+        .eq('source', 'ocr')
         .order('fecha', { ascending: false });
+
+      if (empresaId != null && businessName) {
+        query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
+      } else {
+        query = empresaId != null ? query.eq('empresa_id', empresaId) : query.eq('user_businessname', businessName);
+      }
+
+      const { data: facturas, error } = await query;
 
       if (error) {
         console.error('Error fetching expenses:', error);
@@ -400,8 +410,8 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           date: formatDate(row.fecha),
           rawDate: row.fecha,
           invoice: row.numero,
-          provider: row.cliente_proveedor,
-          description: row.concepto || '',
+          provider: row.seller_tax_id ?? '',
+          description: row.invoice_concept || '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
           subtotalValue,
@@ -417,7 +427,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     };
 
     void loadData();
-  }, [businessName, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
+  }, [businessName, empresaId, onTotalExpensesChange, onInvoiceCountChange, refreshKey]);
 
   // Apply date range filter
   React.useEffect(() => {
@@ -425,7 +435,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       return;
     }
 
-    if (!businessName) {
+    if (!businessName && empresaId == null) {
       setData([]);
       return;
     }
@@ -435,10 +445,16 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     const loadData = async () => {
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, cliente_proveedor, concepto, importe_sin_iva, importe_total, drive_file_id, drive_type')
-        .eq('user_businessname', businessName)
+        .select('id, numero, fecha, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type')
         .eq('tipo', 'Gastos')
+        .eq('source', 'ocr')
         .order('fecha', { ascending: false });
+
+      if (empresaId != null && businessName) {
+        query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
+      } else {
+        query = empresaId != null ? query.eq('empresa_id', empresaId) : query.eq('user_businessname', businessName);
+      }
 
       // Aplicar filtro de rango de fechas si existe
       if (dateRange.startDate && dateRange.endDate) {
@@ -473,8 +489,8 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           date: formatDate(row.fecha),
           rawDate: row.fecha,
           invoice: row.numero,
-          provider: row.cliente_proveedor,
-          description: row.concepto ?? '',
+          provider: row.seller_tax_id ?? '',
+          description: row.invoice_concept ?? '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
           subtotalValue,
@@ -503,7 +519,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     return () => {
       isMounted = false;
     };
-  }, [isLoading, businessName, dateRange, refreshKey]);
+  }, [isLoading, businessName, empresaId, dateRange, refreshKey]);
 
   const handleDateRangeChange = (startDate: string, endDate: string) => {
     setDateRange({ startDate, endDate });

@@ -37,6 +37,25 @@ const TableShell = ({ children }: { children: React.ReactNode }) => (
 
 const fmtPct = (v: number | null) => (v === null ? '—' : `${v.toFixed(0)}%`);
 
+function PctCell({ value }: { value: number | null }) {
+  if (value === null) {
+    return <span className="font-mono text-xs text-slate-800">—</span>;
+  }
+
+  const isFull = value >= 99.999;
+  const text = `${value.toFixed(0)}%`;
+
+  if (!isFull) {
+    return <span className="font-mono text-xs text-slate-800">{text}</span>;
+  }
+
+  return (
+    <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-xs font-semibold text-emerald-800">
+      {text}
+    </span>
+  );
+}
+
 export default function MasterAnalisisPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -179,8 +198,12 @@ export default function MasterAnalisisPage() {
                     <StatusBadge status={row.status} />
                   </td>
                   <td className="w-[5%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
-                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentA)}</td>
-                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{fmtPct(row.percentB)}</td>
+                  <td className="w-[7%] px-4 py-3">
+                    <PctCell value={row.percentA} />
+                  </td>
+                  <td className="w-[7%] px-4 py-3">
+                    <PctCell value={row.percentB} />
+                  </td>
                   <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{row.best ?? '—'}</td>
                   <td className="w-[12%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
                   <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>

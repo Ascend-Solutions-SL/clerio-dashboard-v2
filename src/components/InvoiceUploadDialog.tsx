@@ -148,20 +148,24 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
 
     const importeSinIva = Number.parseFloat(form.importe_sin_iva || "0");
     const iva = Number.parseFloat(form.iva || "0");
+    const importeTotal = (Number.isFinite(importeSinIva) ? importeSinIva : 0) + (Number.isFinite(iva) ? iva : 0);
 
     setSubmitting(true);
     try {
+      const counterpartTaxId = form.cliente_proveedor.trim();
       const { error } = await supabase.from("facturas").insert({
         numero: form.numero.trim(),
         fecha: isoDate,
         tipo: type,
+        source: 'manual',
         empresa_id: empresaId,
         user_businessname: businessName,
-        cliente_proveedor: form.cliente_proveedor.trim(),
-        concepto: form.concepto.trim() || null,
+        buyer_tax_id: type === 'Ingresos' ? counterpartTaxId : null,
+        seller_tax_id: type === 'Gastos' ? counterpartTaxId : null,
+        invoice_concept: form.concepto.trim() || null,
         importe_sin_iva: Number.isFinite(importeSinIva) ? importeSinIva : null,
         iva: Number.isFinite(iva) ? iva : null,
-        estado_pago: form.estado_pago,
+        importe_total: Number.isFinite(importeTotal) ? importeTotal : null,
         drive_file_id: null,
         drive_file_name: null,
       });

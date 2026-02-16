@@ -20,8 +20,9 @@ export type FacturaDetails = {
   numero: string;
   fecha: string;
   tipo: string;
-  cliente_proveedor: string;
-  concepto: string | null;
+  buyer_tax_id: string | null;
+  seller_tax_id: string | null;
+  invoice_concept: string | null;
   importe_sin_iva: number | string | null;
   iva: number | string | null;
   importe_total: number | string | null;
@@ -75,8 +76,8 @@ export function RevisionDetailsDialog({ open, onOpenChange, factura, onSaved }: 
       numero: factura.numero ?? '',
       fecha: factura.fecha ?? '',
       tipo: (TIPOS.includes(factura.tipo as (typeof TIPOS)[number]) ? factura.tipo : 'Por Revisar') as string,
-      clienteProveedor: factura.cliente_proveedor ?? '',
-      concepto: factura.concepto ?? '',
+      clienteProveedor: factura.buyer_tax_id ?? factura.seller_tax_id ?? '',
+      concepto: factura.invoice_concept ?? '',
       importeSinIva: factura.importe_sin_iva == null ? '' : String(factura.importe_sin_iva),
       iva: factura.iva == null ? '' : String(factura.iva),
       importeTotal: factura.importe_total == null ? '' : String(factura.importe_total),
@@ -216,8 +217,9 @@ export function RevisionDetailsDialog({ open, onOpenChange, factura, onSaved }: 
         numero,
         fecha,
         tipo,
-        cliente_proveedor: clienteProveedor,
-        concepto: concepto || null,
+        buyer_tax_id: clienteProveedor,
+        seller_tax_id: clienteProveedor,
+        invoice_concept: concepto || null,
         importe_sin_iva: importeSinIva,
         iva,
         importe_total: importeTotal,

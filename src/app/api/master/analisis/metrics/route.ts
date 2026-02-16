@@ -33,11 +33,11 @@ export async function GET() {
   const supabaseAdmin = getSupabaseAdminClient();
 
   const select =
-    'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total';
+    'id, numero, fecha, tipo, empresa_id, source, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, invoice_reason, importe_sin_iva, iva, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total';
 
   const [{ data: aRowsRaw, error: aError }, { data: bRowsRaw, error: bError }] = await Promise.all([
-    supabaseAdmin.from('facturas').select(select).limit(1500),
-    supabaseAdmin.from('facturas_GAI').select(select).limit(1500),
+    supabaseAdmin.from('facturas').select(select).eq('source', 'ocr').limit(1500),
+    supabaseAdmin.from('facturas').select(select).eq('source', 'gai').limit(1500),
   ]);
 
   if (aError) {

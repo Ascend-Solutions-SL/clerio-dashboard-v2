@@ -4,12 +4,15 @@ export type FacturaRow = {
   fecha: string;
   tipo: string;
   empresa_id: number | null;
-  cliente_proveedor: string;
-  concepto: string | null;
+  source: string;
+  buyer_name?: string | null;
+  buyer_tax_id: string | null;
+  seller_name?: string | null;
+  seller_tax_id: string | null;
+  invoice_concept: string | null;
+  invoice_reason?: string | null;
   importe_sin_iva: number | null;
   iva: number | null;
-  estado_pago: string;
-  estado_proces: string | null;
   drive_file_id: string | null;
   drive_type?: string | null;
   drive_file_name: string | null;
@@ -23,12 +26,15 @@ export const COMPARABLE_FACTURA_FIELDS = [
   'fecha',
   'tipo',
   'empresa_id',
-  'cliente_proveedor',
-  'concepto',
+  'source',
+  'buyer_name',
+  'buyer_tax_id',
+  'seller_name',
+  'seller_tax_id',
+  'invoice_concept',
+  'invoice_reason',
   'importe_sin_iva',
   'iva',
-  'estado_pago',
-  'estado_proces',
   'drive_file_id',
   'drive_file_name',
   'user_businessname',
@@ -176,19 +182,24 @@ export const buildAutoSummary = (comparison: FacturaComparison): string[] => {
     summary.push('Tipo (Ingresos/Gastos) no coincide');
   }
 
-  const estadoDiff = comparison.diffs.find((d) => d.field === 'estado_pago' && !d.equal);
-  if (estadoDiff) {
-    summary.push('Estado de pago no coincide');
+  const buyerDiff = comparison.diffs.find((d) => d.field === 'buyer_tax_id' && !d.equal);
+  if (buyerDiff) {
+    summary.push('CIF comprador no coincide');
   }
 
-  const counterpartDiff = comparison.diffs.find((d) => d.field === 'cliente_proveedor' && !d.equal);
-  if (counterpartDiff) {
-    summary.push('Cliente/Proveedor no coincide');
+  const sellerDiff = comparison.diffs.find((d) => d.field === 'seller_tax_id' && !d.equal);
+  if (sellerDiff) {
+    summary.push('CIF vendedor no coincide');
   }
 
-  const conceptoDiff = comparison.diffs.find((d) => d.field === 'concepto' && !d.equal);
+  const conceptoDiff = comparison.diffs.find((d) => d.field === 'invoice_concept' && !d.equal);
   if (conceptoDiff) {
     summary.push('Concepto no coincide');
+  }
+
+  const reasonDiff = comparison.diffs.find((d) => d.field === 'invoice_reason' && !d.equal);
+  if (reasonDiff) {
+    summary.push('Motivo revisión no coincide');
   }
 
   if (summary.length === 0 && comparison.hasDiffs) {

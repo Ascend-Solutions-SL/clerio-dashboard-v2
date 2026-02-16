@@ -31,6 +31,30 @@ const TableShell = ({ children }: { children: React.ReactNode }) => (
 
 type ValidationMap = Record<string, ValidationState>;
 
+function formatFieldLabel(field: string) {
+  const map: Record<string, string> = {
+    numero: 'Número',
+    tipo: 'Tipo',
+    buyer_name: 'Nombre comprador',
+    buyer_tax_id: 'CIF comprador',
+    seller_name: 'Nombre vendedor',
+    seller_tax_id: 'CIF vendedor',
+    iva: 'IVA',
+    importe_sin_iva: 'Base imponible',
+    importe_total: 'Importe total',
+    fecha: 'Fecha',
+    invoice_concept: 'Concepto',
+    invoice_reason: 'Motivo revisión',
+    user_businessname: 'Empresa (dashboard)',
+    drive_file_id: 'ID fichero',
+    drive_file_name: 'Nombre fichero',
+    factura_uid: 'Factura UID',
+    empresa_id: 'Empresa ID',
+  };
+
+  return map[field] ?? field;
+}
+
 function nextHeaderState(state: ValidationState): ValidationState {
   if (state === 'unset') {
     return 'correct';
@@ -292,18 +316,38 @@ export default function MasterAnalisisDetailPage() {
       new Set([
         'numero',
         'tipo',
-        'nombre_comprador',
-        'cif_comprador',
-        'nombre_vendedor',
-        'cif_vendedor',
-        'cliente_proveedor',
+        'buyer_name',
+        'buyer_tax_id',
+        'seller_name',
+        'seller_tax_id',
         'iva',
         'importe_sin_iva',
         'importe_total',
         'fecha',
-        'concepto',
+        'invoice_concept',
+        'invoice_reason',
         'user_businessname',
       ]),
+    []
+  );
+
+  const FIELD_ORDER = useMemo(
+    () =>
+      [
+        'numero',
+        'tipo',
+        'buyer_name',
+        'buyer_tax_id',
+        'seller_name',
+        'seller_tax_id',
+        'fecha',
+        'invoice_concept',
+        'invoice_reason',
+        'importe_sin_iva',
+        'iva',
+        'importe_total',
+        'user_businessname',
+      ] as const,
     []
   );
 
@@ -311,18 +355,30 @@ export default function MasterAnalisisDetailPage() {
     if (!data || !('comparison' in data)) {
       return [];
     }
-    return data.comparison.diffs.filter((d) => VISIBLE_FIELDS.has(d.field));
-  }, [data, VISIBLE_FIELDS]);
+    const orderIndex = new Map<string, number>(FIELD_ORDER.map((f, idx) => [f, idx]));
+    return data.comparison.diffs
+      .filter((d) => VISIBLE_FIELDS.has(d.field))
+      .slice()
+      .sort((a, b) => {
+        const ia = orderIndex.get(a.field) ?? 9_999;
+        const ib = orderIndex.get(b.field) ?? 9_999;
+        return ia - ib;
+      });
+  }, [data, FIELD_ORDER, VISIBLE_FIELDS]);
 
-  const totalFields = useMemo(() => filteredDiffs.length, [filteredDiffs]);
+  const scoringDiffs = useMemo(() => {
+    return filteredDiffs.filter((d) => d.field !== 'invoice_concept' && d.field !== 'invoice_reason');
+  }, [filteredDiffs]);
+
+  const totalFields = useMemo(() => scoringDiffs.length, [scoringDiffs]);
 
   const correctCountA = useMemo(() => {
-    return filteredDiffs.reduce((acc, d) => acc + (draftA[d.field] === 'correct' ? 1 : 0), 0);
-  }, [filteredDiffs, draftA]);
+    return scoringDiffs.reduce((acc, d) => acc + (draftA[d.field] === 'correct' ? 1 : 0), 0);
+  }, [scoringDiffs, draftA]);
 
   const correctCountB = useMemo(() => {
-    return filteredDiffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
-  }, [filteredDiffs, draftB]);
+    return scoringDiffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
+  }, [scoringDiffs, draftB]);
 
   const driveType = useMemo(() => {
     if (!data || !('comparison' in data)) {
@@ -597,7 +653,7 @@ export default function MasterAnalisisDetailPage() {
                       {filteredDiffs.map((d) => (
                         <ComparisonFieldRow
                           key={d.field}
-                          field={d.field}
+                          field={formatFieldLabel(d.field)}
                           a={formatValue(d.a)}
                           b={formatValue(d.b)}
                           equal={d.equal}

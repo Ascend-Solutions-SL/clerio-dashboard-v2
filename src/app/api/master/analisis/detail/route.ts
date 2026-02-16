@@ -2,29 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { requireMasterUser } from '@/lib/master';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
-import { buildAutoSummary, compareFacturas, computeStatus, type FacturaRow, type FieldDiff, type ComparableFacturaField } from '@/lib/master/facturaComparison';
+import { buildAutoSummary, compareFacturas, computeStatus, type FacturaRow } from '@/lib/master/facturaComparison';
 
-function deriveBuyerSeller(
-  row: FacturaRow,
-  cif: string
-): { nombre_comprador: string; cif_comprador: string; nombre_vendedor: string; cif_vendedor: string } {
-  const tipo = (row.tipo ?? '').trim().toLowerCase();
-  if (tipo === 'gastos') {
-    return {
-      nombre_comprador: row.user_businessname ?? '',
-      cif_comprador: cif,
-      nombre_vendedor: row.cliente_proveedor ?? '',
-      cif_vendedor: '11111111X',
-    };
-  }
-  // Ingresos (or any other type)
-  return {
-    nombre_comprador: row.cliente_proveedor ?? '',
-    cif_comprador: '11111111X',
-    nombre_vendedor: row.user_businessname ?? '',
-    cif_vendedor: cif,
-  };
-}
+const DETAIL_VISIBLE_FIELDS = [
+  'numero',
+  'tipo',
+  'buyer_name',
+  'buyer_tax_id',
+  'seller_name',
+  'seller_tax_id',
+  'iva',
+  'importe_sin_iva',
+  'importe_total',
+  'fecha',
+  'invoice_concept',
+  'invoice_reason',
+  'user_businessname',
+] as const;
+
+const DETAIL_SCORING_FIELDS = DETAIL_VISIBLE_FIELDS.filter(
+  (f) => f !== 'invoice_concept' && f !== 'invoice_reason'
+) as readonly string[];
 
 export async function GET(request: NextRequest) {
   const guard = await requireMasterUser();
@@ -40,11 +38,11 @@ export async function GET(request: NextRequest) {
   const supabaseAdmin = getSupabaseAdminClient();
 
   const select =
-    'id, numero, fecha, tipo, empresa_id, cliente_proveedor, concepto, importe_sin_iva, iva, estado_pago, estado_proces, drive_file_id, drive_type, drive_file_name, user_businessname, factura_uid, importe_total';
+    'id, numero, fecha, tipo, empresa_id, source, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, invoice_reason, importe_sin_iva, iva, drive_file_id, drive_type, drive_file_name, user_businessname, factura_uid, importe_total';
 
   const [{ data: aRowRaw, error: aError }, { data: bRowRaw, error: bError }] = await Promise.all([
-    supabaseAdmin.from('facturas').select(select).eq('factura_uid', facturaUid).maybeSingle(),
-    supabaseAdmin.from('facturas_GAI').select(select).eq('factura_uid', facturaUid).maybeSingle(),
+    supabaseAdmin.from('facturas').select(select).eq('factura_uid', facturaUid).eq('source', 'ocr').maybeSingle(),
+    supabaseAdmin.from('facturas').select(select).eq('factura_uid', facturaUid).eq('source', 'gai').maybeSingle(),
   ]);
 
   if (aError) {
@@ -70,42 +68,31 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const comparison = compareFacturas(facturaUid, a, b);
-  const status = computeStatus(comparison);
-  const summary = buildAutoSummary(comparison);
+  const comparisonRaw = compareFacturas(facturaUid, a, b);
+  const visibleDiffs = comparisonRaw.diffs.filter((d) => (DETAIL_VISIBLE_FIELDS as readonly string[]).includes(d.field));
 
-  // Look up CIF from auth_users by user_businessname
-  const businessName = (a.user_businessname ?? b.user_businessname ?? '').trim();
-  let cif = '';
-  if (businessName) {
-    const { data: authRow } = await supabaseAdmin
-      .from('auth_users')
-      .select('user_business_cif')
-      .eq('user_businessname', businessName)
-      .maybeSingle();
-    cif = ((authRow as { user_business_cif?: string } | null)?.user_business_cif ?? '').trim();
-  }
+  const scoringDiffs = visibleDiffs.filter((d) => (DETAIL_SCORING_FIELDS as readonly string[]).includes(d.field));
+  const diffCount = scoringDiffs.filter((d) => !d.equal).length;
+  const hasTotalDiff = scoringDiffs.some((d) => d.field === 'importe_total' && !d.equal);
 
-  // Derive buyer/seller fields for each side
-  const derivedA = deriveBuyerSeller(a, cif);
-  const derivedB = deriveBuyerSeller(b, cif);
+  const comparison = {
+    ...comparisonRaw,
+    diffs: visibleDiffs,
+    diffCount,
+    hasDiffs: diffCount > 0,
+    hasTotalDiff,
+  };
 
-  const DERIVED_FIELDS = ['nombre_comprador', 'cif_comprador', 'nombre_vendedor', 'cif_vendedor'] as const;
-  const extraDiffs: FieldDiff[] = DERIVED_FIELDS.map((field) => {
-    const av = derivedA[field];
-    const bv = derivedB[field];
-    const sa = String(av ?? '').trim().toLowerCase();
-    const sb = String(bv ?? '').trim().toLowerCase();
-    return {
-      field: field as ComparableFacturaField,
-      a: av,
-      b: bv,
-      equal: sa === sb,
-      delta: null,
-    };
-  });
+  const scoringComparison = {
+    ...comparison,
+    diffs: scoringDiffs,
+    diffCount,
+    hasDiffs: diffCount > 0,
+    hasTotalDiff,
+  };
 
-  comparison.diffs = [...comparison.diffs, ...extraDiffs];
+  const status = computeStatus(scoringComparison);
+  const summary = buildAutoSummary(scoringComparison);
 
   return NextResponse.json({ comparison, status, summary });
 }

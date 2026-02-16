@@ -32,13 +32,14 @@ type FacturaRow = {
   numero: string;
   fecha: string;
   tipo: string;
-  cliente_proveedor: string;
-  concepto: string | null;
+  buyer_tax_id: string | null;
+  seller_tax_id: string | null;
+  invoice_concept: string | null;
   importe_sin_iva: number | string | null;
   iva: number | string | null;
   importe_total: number | string | null;
   factura_uid: string | null;
-  analysis_reason: string | null;
+  invoice_reason: string | null;
   drive_file_id?: string | null;
   drive_type?: DriveType | string | null;
 };
@@ -124,13 +125,14 @@ export function RevisionsTable({
   const [detailsRefreshKey, setDetailsRefreshKey] = React.useState(0);
 
   const businessName = user?.businessName?.trim() || '';
+  const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
   React.useEffect(() => {
     if (isLoading) {
       return;
     }
 
-    if (!businessName) {
+    if (!businessName && empresaId == null) {
       setData([]);
       onPorRevisarCountChange?.(0);
       onNoFacturasCountChange?.(0);
@@ -143,11 +145,17 @@ export function RevisionsTable({
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, tipo, cliente_proveedor, concepto, importe_sin_iva, iva, importe_total, factura_uid, analysis_reason, drive_file_id, drive_type'
+          'id, numero, fecha, tipo, buyer_tax_id, seller_tax_id, invoice_concept, importe_sin_iva, iva, importe_total, factura_uid, invoice_reason, drive_file_id, drive_type'
         )
-        .eq('user_businessname', businessName)
+        .eq('source', 'ocr')
         .in('tipo', ['Por Revisar', 'No Factura'])
         .order('fecha', { ascending: false });
+
+      if (empresaId != null && businessName) {
+        query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
+      } else {
+        query = empresaId != null ? query.eq('empresa_id', empresaId) : query.eq('user_businessname', businessName);
+      }
 
       if (tipoFilter !== 'all') {
         query = query.eq('tipo', tipoFilter);
@@ -183,13 +191,13 @@ export function RevisionsTable({
           rawDate: row.fecha,
           tipo: row.tipo,
           numero: row.numero,
-          clienteProveedor: row.cliente_proveedor,
-          concepto: row.concepto ?? '',
+          clienteProveedor: row.buyer_tax_id ?? row.seller_tax_id ?? '',
+          concepto: row.invoice_concept ?? '',
           importeSinIva: row.importe_sin_iva ?? null,
           iva: row.iva ?? null,
           importeTotal: row.importe_total ?? null,
           facturaUid: row.factura_uid ?? '',
-          analysisReason: row.analysis_reason ?? '',
+          analysisReason: row.invoice_reason ?? '',
           driveFileId: row.drive_file_id ?? null,
           driveType: resolvedDriveType,
         };
@@ -204,7 +212,7 @@ export function RevisionsTable({
     return () => {
       isMounted = false;
     };
-  }, [isLoading, businessName, tipoFilter, refreshKey, detailsRefreshKey, onPorRevisarCountChange, onNoFacturasCountChange]);
+  }, [isLoading, businessName, empresaId, tipoFilter, refreshKey, detailsRefreshKey, onPorRevisarCountChange, onNoFacturasCountChange]);
 
   const resetFilters = () => {
     setTipoFilter('all');
@@ -290,8 +298,9 @@ export function RevisionsTable({
                     numero: row.original.numero,
                     fecha: row.original.rawDate,
                     tipo: row.original.tipo,
-                    cliente_proveedor: row.original.clienteProveedor,
-                    concepto: row.original.concepto,
+                    buyer_tax_id: row.original.clienteProveedor,
+                    seller_tax_id: row.original.clienteProveedor,
+                    invoice_concept: row.original.concepto,
                     importe_sin_iva: row.original.importeSinIva,
                     iva: row.original.iva,
                     importe_total: row.original.importeTotal,
