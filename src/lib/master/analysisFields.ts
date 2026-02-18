@@ -15,5 +15,5 @@ export const MASTER_ANALYSIS_VISIBLE_FIELDS = [
 ] as const;
 
 export const MASTER_ANALYSIS_SCORING_FIELDS = MASTER_ANALYSIS_VISIBLE_FIELDS.filter(
-  (f) => f !== 'invoice_concept' && f !== 'invoice_reason'
+  (f) => f !== 'invoice_concept' && f !== 'invoice_reason' && f !== 'user_businessname'
 ) as readonly string[];

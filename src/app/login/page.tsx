@@ -67,6 +67,7 @@ function LoginForm() {
   const [isMasterEmail, setIsMasterEmail] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emailChecked, setEmailChecked] = useState(false);
 
   const emailRedirectTo = useMemo(() => {
     if (!ENV.APP_BASE_URL) {
@@ -76,6 +77,44 @@ function LoginForm() {
     url.searchParams.set('redirect', isMasterEmail ? '/master' : '/onboarding');
     return url.toString();
   }, [isMasterEmail]);
+
+  const checkMasterEmail = async (emailToCheck: string) => {
+    const normalized = emailToCheck.trim().toLowerCase();
+    if (!normalized) {
+      setIsMasterEmail(false);
+      setEmailChecked(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/public/is-master-email', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: normalized }),
+      });
+
+      const payload = (await res.json().catch(() => ({}))) as { isMaster?: boolean };
+      setIsMasterEmail(res.ok && payload.isMaster === true);
+      setEmailChecked(true);
+    } catch {
+      setIsMasterEmail(false);
+      setEmailChecked(true);
+    }
+  };
+
+  const handleEmailBlur = () => {
+    if (!emailChecked) {
+      checkMasterEmail(email);
+    }
+  };
+
+  const handleEmailChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(event.target.value);
+    setEmailChecked(false); // Reset checked state when email changes
+  };
 
   useEffect(() => {
     if (reason !== 'expired') {
@@ -91,38 +130,15 @@ function LoginForm() {
     void clear();
   }, [reason]);
 
-  useEffect(() => {
-    const check = async () => {
-      const normalized = email.trim().toLowerCase();
-      if (!normalized) {
-        setIsMasterEmail(false);
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/public/is-master-email', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email: normalized }),
-        });
-
-        const payload = (await res.json().catch(() => ({}))) as { isMaster?: boolean };
-        setIsMasterEmail(res.ok && payload.isMaster === true);
-      } catch {
-        setIsMasterEmail(false);
-      }
-    };
-
-    void check();
-  }, [email, mode]);
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     setMessage(null);
+
+    // Check master email on submit if not already checked
+    if (!emailChecked) {
+      await checkMasterEmail(email);
+    }
 
     const normalizedEmail = normalizeEmail(email);
 
@@ -359,7 +375,8 @@ function LoginForm() {
                     autoComplete="email"
                     required
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={handleEmailChange}
+                    onBlur={handleEmailBlur}
                     className="!w-full !rounded-full !border !border-gray-200 !bg-white !px-4 !py-2 !text-sm !text-gray-900 !placeholder:text-gray-400 !shadow-none !text-center focus:!border-blue-500 focus:!ring-2 focus:!ring-blue-500/20"
                     placeholder="Escribe tu correo electrónico"
                   />
@@ -403,7 +420,8 @@ function LoginForm() {
                     autoComplete="email"
                     required
                     value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    onChange={handleEmailChange}
+                    onBlur={handleEmailBlur}
                     className="!w-full !rounded-full !border !border-gray-200 !bg-white !px-4 !py-2 !text-sm !text-gray-900 !placeholder:text-gray-400 !shadow-none focus:!border-blue-500 focus:!ring-2 focus:!ring-blue-500/20"
                     placeholder="nombre@empresa.com"
                   />

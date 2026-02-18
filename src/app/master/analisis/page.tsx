@@ -92,11 +92,35 @@ export default function MasterAnalisisPage() {
   }, [data]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Analisis (OCR)</h1>
-          <p className="mt-1 text-sm text-slate-600">Dashboard de revisión OCR y porcentaje de acierto por factura_uid.</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">Total</div>
+            <div className="text-lg font-semibold text-slate-900">{counts.total}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">Revisadas</div>
+            <div className="text-lg font-semibold text-slate-900">{counts.reviewed}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">100%</div>
+            <div className="text-lg font-semibold text-slate-900">{counts.perfect}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">% 100%</div>
+            <div className="text-lg font-semibold text-slate-900">{counts.reviewed > 0 ? `${((counts.perfect / counts.reviewed) * 100).toFixed(1)}%` : '0%'}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">% Acierto global</div>
+            <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercent ?? null)}</div>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -134,61 +158,80 @@ export default function MasterAnalisisPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-7">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">Total</div>
-          <div className="text-lg font-semibold text-slate-900">{counts.total}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">Revisadas</div>
-          <div className="text-lg font-semibold text-slate-900">{counts.reviewed}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">100%</div>
-          <div className="text-lg font-semibold text-slate-900">{counts.perfect}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">% Acierto global</div>
-          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercent ?? null)}</div>
-        </div>
-      </div>
-
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div> : null}
 
       <TableShell>
-        <div className="max-h-[520px] overflow-y-auto overflow-x-hidden">
+        <div className="max-h-[480px] overflow-y-auto overflow-x-hidden">
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="w-[12%] px-4 py-3">Número</th>
-                <th className="w-[10%] px-4 py-3">Fecha</th>
-                <th className="w-[7%] px-4 py-3">Tipo</th>
-                <th className="w-[14%] px-4 py-3">Comprador</th>
-                <th className="w-[10%] px-4 py-3">CIF comprador</th>
-                <th className="w-[14%] px-4 py-3">Vendedor</th>
-                <th className="w-[10%] px-4 py-3">CIF vendedor</th>
-                <th className="w-[8%] px-4 py-3">% Acierto</th>
-                <th className="w-[9%] px-4 py-3">Total</th>
-                <th className="w-[10%] px-4 py-3">Empresa</th>
+                <th className="w-[8%] px-4 py-3">Revisado</th>
+                <th className="w-[11%] px-4 py-3">Número</th>
+                <th className="w-[9%] px-4 py-3">Fecha</th>
+                <th className="w-[6%] px-4 py-3">Tipo</th>
+                <th className="w-[13%] px-4 py-3">Comprador</th>
+                <th className="w-[9%] px-4 py-3">CIF comprador</th>
+                <th className="w-[13%] px-4 py-3">Vendedor</th>
+                <th className="w-[9%] px-4 py-3">CIF vendedor</th>
+                <th className="w-[7%] px-4 py-3">% Acierto</th>
+                <th className="w-[8%] px-4 py-3">Total</th>
+                <th className="w-[9%] px-4 py-3">Empresa</th>
                 <th className="w-[6%] px-4 py-3 text-right">Ver</th>
               </tr>
             </thead>
             <tbody>
               {(data?.rows ?? []).map((row) => (
                 <tr key={row.factura_uid} className="border-t border-slate-100">
-                  <td className="w-[12%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
-                  <td className="w-[7%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
-                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.buyer_name ?? ''} /></td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.buyer_tax_id ?? ''} /></td>
-                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.seller_name ?? ''} /></td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.seller_tax_id ?? ''} /></td>
-                  <td className="w-[8%] px-4 py-3">
+                  <td className="w-[8%] px-4 py-2">
+                    <div className="flex items-center justify-center">
+                      {row.reviewedComplete ? (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                          <span className="text-[10px] font-bold">✓</span>
+                        </div>
+                      ) : (
+                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                          <span className="text-[10px] font-bold">!</span>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="w-[11%] px-4 py-2"><TruncateWithTooltip value={row.numero} /></td>
+                  <td className="w-[9%] px-4 py-2"><TruncateWithTooltip value={row.fecha} /></td>
+                  <td className="w-[6%] px-4 py-2">
+                    <div className="flex items-center justify-center">
+                      {row.tipo === 'Gastos' ? (
+                        <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-800">
+                          G
+                        </span>
+                      ) : row.tipo === 'Ingresos' ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                          I
+                        </span>
+                      ) : row.tipo === 'Por Revisar' ? (
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                          PR
+                        </span>
+                      ) : row.tipo === 'No Factura' ? (
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                          NF
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                          {row.tipo}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="w-[13%] px-4 py-2"><TruncateWithTooltip value={row.buyer_name ?? ''} /></td>
+                  <td className="w-[9%] px-4 py-2"><TruncateWithTooltip value={row.buyer_tax_id ?? ''} /></td>
+                  <td className="w-[13%] px-4 py-2"><TruncateWithTooltip value={row.seller_name ?? ''} /></td>
+                  <td className="w-[9%] px-4 py-2"><TruncateWithTooltip value={row.seller_tax_id ?? ''} /></td>
+                  <td className="w-[7%] px-4 py-2">
                     <PctCell value={row.percent} />
                   </td>
-                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total)}</td>
-                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
-                  <td className="w-[6%] px-4 py-3 text-right">
+                  <td className="w-[8%] px-4 py-2 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total)}</td>
+                  <td className="w-[9%] px-4 py-2"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
+                  <td className="w-[6%] px-4 py-2 text-right">
                     <Link
                       href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`}
                       className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"

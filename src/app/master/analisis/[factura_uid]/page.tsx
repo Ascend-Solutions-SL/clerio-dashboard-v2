@@ -37,7 +37,7 @@ function formatFieldLabel(field: string) {
     importe_total: 'Importe total',
     fecha: 'Fecha',
     invoice_concept: 'Concepto',
-    invoice_reason: 'Motivo revisión',
+    invoice_reason: 'Razonamiento GPT',
     user_businessname: 'Empresa (dashboard)',
     drive_file_id: 'ID fichero',
     drive_file_name: 'Nombre fichero',
@@ -392,8 +392,8 @@ export default function MasterAnalisisDetailPage() {
     if (!data) {
       return [];
     }
-    const orderIndex = new Map<string, number>((FIELD_ORDER as readonly string[]).map((f, idx) => [f, idx]));
-    return (FIELD_ORDER as readonly string[])
+    const orderIndex = new Map<string, number>((MASTER_ANALYSIS_VISIBLE_FIELDS as readonly string[]).map((f, idx) => [f, idx]));
+    return (MASTER_ANALYSIS_VISIBLE_FIELDS as readonly string[])
       .filter((field) => VISIBLE_FIELDS.has(field))
       .map((field) => ({ field, value: data.factura?.[field] ?? null }))
       .slice()
@@ -402,7 +402,7 @@ export default function MasterAnalisisDetailPage() {
         const ib = orderIndex.get(b.field) ?? 9_999;
         return ia - ib;
       });
-  }, [data, FIELD_ORDER, VISIBLE_FIELDS]);
+  }, [data, MASTER_ANALYSIS_VISIBLE_FIELDS, VISIBLE_FIELDS]);
 
   const scoringDiffs = useMemo(() => {
     return filteredDiffs.filter((d) => (MASTER_ANALYSIS_SCORING_FIELDS as readonly string[]).includes(d.field));
@@ -535,12 +535,6 @@ export default function MasterAnalisisDetailPage() {
               <Eye size={18} />
             </a>
           ) : null}
-          <p className="mt-1 text-sm text-slate-600">
-            Factura UID: <span className="font-mono text-slate-800">{factura_uid}</span>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
           <Link
             href="/master/analisis"
             className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
@@ -554,13 +548,16 @@ export default function MasterAnalisisDetailPage() {
             Métricas
           </Link>
         </div>
+
+        <div className="flex items-center gap-2">
+        </div>
       </div>
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div> : null}
 
       {data ? (
         <>
-          <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
+          <div className="relative gap-6 lg:grid lg:grid-cols-[0.8fr_1.2fr]">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
                 <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
@@ -568,26 +565,16 @@ export default function MasterAnalisisDetailPage() {
                     <span className="font-semibold text-slate-900">% Acierto</span>
                     <span className="font-mono text-xs">{percentA === null ? '—' : `${percentA.toFixed(0)}%`}</span>
                   </span>
-                  <span className="text-slate-300">|</span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-900">Revisado</span>
-                    <span className="font-mono text-xs">{`${correctCountA}/${totalFields}`}</span>
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                <div className="text-sm text-slate-700">
-                  {isDirty ? (
-                    <span className="font-semibold text-slate-900">Cambios sin guardar</span>
-                  ) : (
-                    <span className="text-slate-600">Sin cambios pendientes</span>
-                  )}
                   {lastSavedAt ? (
-                    <span className="ml-2 text-xs text-slate-500">(último guardado: {new Date(lastSavedAt).toLocaleString()})</span>
+                    <>
+                      <span className="text-slate-300">|</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-900">Últ. guar.</span>
+                        <span className="font-mono text-xs">{new Date(lastSavedAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '/')} {new Date(lastSavedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </span>
+                    </>
                   ) : null}
                 </div>
-
                 <div className="flex items-center gap-2">
                   {saveError ? <div className="text-sm font-semibold text-red-700">{saveError}</div> : null}
                   <button
@@ -610,10 +597,10 @@ export default function MasterAnalisisDetailPage() {
                   <table className="w-full table-fixed text-sm">
                     <thead className="sticky top-0 bg-slate-50">
                       <tr className="text-left text-xs font-semibold text-slate-600">
-                        <th className="w-[28%] px-4 py-3">Campo</th>
-                        <th className="w-[56%] px-4 py-3">Valor OCR</th>
-                        <th className="w-[16%] px-4 py-3">
-                          <div className="flex items-center justify-end">
+                        <th className="w-[30%] px-4 py-3">Campo</th>
+                        <th className="w-[45%] px-4 py-3">Valor OCR</th>
+                        <th className="w-[25%] px-4 py-3">
+                          <div className="flex items-center justify-center">
                             <ColumnHeaderToggle
                               label="OK"
                               counter={`${correctCountA}/${totalFields}`}
@@ -639,14 +626,14 @@ export default function MasterAnalisisDetailPage() {
                     <tbody>
                       {filteredDiffs.map((d) => (
                         <tr key={d.field} className="border-t border-slate-100">
-                          <td className="w-[28%] px-4 py-3 text-xs font-semibold text-slate-700">
+                          <td className="w-[30%] px-4 py-3 text-xs font-semibold text-slate-700">
                             <TruncateWithTooltip value={formatFieldLabel(d.field)} />
                           </td>
-                          <td className="w-[56%] px-4 py-3">
+                          <td className="w-[45%] px-4 py-3">
                             <TruncateWithTooltip value={formatValue(d.value)} />
                           </td>
-                          <td className="w-[16%] px-4 py-3">
-                            <div className="flex items-center justify-end">
+                          <td className="w-[25%] px-4 py-3">
+                            <div className="flex items-center justify-center">
                               {(MASTER_ANALYSIS_SCORING_FIELDS as readonly string[]).includes(d.field) ? (
                                 <ValidationToggle
                                   state={draftA[d.field] ?? 'unset'}
@@ -696,42 +683,32 @@ export default function MasterAnalisisDetailPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-bold text-slate-900">Vista previa</div>
-                {previewUrl ? (
-                  <a
-                    href={previewUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-700 shadow-sm hover:bg-slate-50"
-                    aria-label="Abrir vista previa"
-                    title="Abrir"
-                  >
-                    <Eye size={18} />
-                  </a>
-                ) : null}
-              </div>
+            <div className="absolute top-0 right-0 w-full lg:relative lg:w-auto lg:sticky lg:top-0">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold text-slate-900">Vista previa</div>
+                </div>
 
-              {embedUrl ? (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-1">
-                  <iframe
-                    title="Vista previa factura"
-                    src={embedUrl}
-                    className="block h-[72vh] w-full rounded-lg bg-white"
-                    allow="autoplay"
-                    style={{ border: 0 }}
-                  />
-                </div>
-              ) : isPreviewLoading ? (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  Cargando vista previa...
-                </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  No hay vista previa disponible para esta factura.
-                </div>
-              )}
+                {embedUrl ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                    <iframe
+                      title="Vista previa factura"
+                      src={embedUrl}
+                      className="block h-[90vh] w-full rounded-lg bg-white"
+                      allow="autoplay"
+                      style={{ border: 0 }}
+                    />
+                  </div>
+                ) : isPreviewLoading ? (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    Cargando vista previa...
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    No hay vista previa disponible para esta factura.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>
