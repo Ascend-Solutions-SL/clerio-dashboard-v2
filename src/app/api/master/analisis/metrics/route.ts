@@ -2,26 +2,25 @@ import { NextResponse } from 'next/server';
 
 import { requireMasterUser } from '@/lib/master';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
-import {
-  COMPARABLE_FACTURA_FIELDS,
-  compareFacturas,
-  type ComparableFacturaField,
-  type FacturaRow,
-} from '@/lib/master/facturaComparison';
+import { MASTER_ANALYSIS_SCORING_FIELDS } from '@/lib/master/analysisFields';
 
 type FieldMetric = {
-  field: ComparableFacturaField;
-  matchCount: number;
-  diffCount: number;
+  field: string;
+  correct: number;
+  incorrect: number;
+  unset: number;
   total: number;
-  matchPct: number;
+  reviewed: number;
+  coveragePct: number;
+  accuracyPct: number;
 };
 
 type Totals = {
-  totalPairs: number;
-  ok: number;
-  warn: number;
-  bad: number;
+  totalFacturas: number;
+  withReview: number;
+  completeReviews: number;
+  perfect: number;
+  overallAccuracyPct: number | null;
 };
 
 export async function GET() {
@@ -32,84 +31,133 @@ export async function GET() {
 
   const supabaseAdmin = getSupabaseAdminClient();
 
-  const select =
-    'id, numero, fecha, tipo, empresa_id, source, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, invoice_reason, importe_sin_iva, iva, drive_file_id, drive_file_name, user_businessname, factura_uid, importe_total';
+  const scoringFields = MASTER_ANALYSIS_SCORING_FIELDS as readonly string[];
 
-  const [{ data: aRowsRaw, error: aError }, { data: bRowsRaw, error: bError }] = await Promise.all([
-    supabaseAdmin.from('facturas').select(select).eq('source', 'ocr').limit(1500),
-    supabaseAdmin.from('facturas').select(select).eq('source', 'gai').limit(1500),
-  ]);
+  const { data: facturaRowsRaw, error: facturaError } = await supabaseAdmin
+    .from('facturas')
+    .select('factura_uid')
+    .order('id', { ascending: false })
+    .limit(2000);
 
-  if (aError) {
-    return NextResponse.json({ error: aError.message }, { status: 500 });
+  if (facturaError) {
+    return NextResponse.json({ error: facturaError.message }, { status: 500 });
   }
 
-  if (bError) {
-    return NextResponse.json({ error: bError.message }, { status: 500 });
+  const uids = Array.from(
+    new Set(
+      ((facturaRowsRaw as unknown as { factura_uid?: unknown }[] | null) ?? [])
+        .map((r) => (typeof r.factura_uid === 'string' ? r.factura_uid : ''))
+        .filter(Boolean)
+    )
+  );
+
+  const { data: reviewRowsRaw, error: reviewError } = await supabaseAdmin
+    .from('factura_comparison_reviews')
+    .select('factura_uid, tool_a')
+    .in('factura_uid', uids);
+
+  if (reviewError) {
+    return NextResponse.json({ error: reviewError.message }, { status: 500 });
   }
 
-  const aRows = (aRowsRaw as unknown as FacturaRow[] | null) ?? [];
-  const bRows = (bRowsRaw as unknown as FacturaRow[] | null) ?? [];
+  type ValidationState = 'unset' | 'correct' | 'incorrect';
+  const isValidationState = (v: unknown): v is ValidationState => v === 'unset' || v === 'correct' || v === 'incorrect';
 
-  const mapA = new Map<string, FacturaRow>();
-  const mapB = new Map<string, FacturaRow>();
-
-  for (const row of aRows) {
-    if (!row.factura_uid) {
-      continue;
+  const sanitizeMap = (value: unknown): Record<string, ValidationState> => {
+    if (!value || typeof value !== 'object') {
+      return {};
     }
-    mapA.set(row.factura_uid, row);
-  }
-
-  for (const row of bRows) {
-    if (!row.factura_uid) {
-      continue;
-    }
-    mapB.set(row.factura_uid, row);
-  }
-
-  const uids = Array.from(new Set([...mapA.keys(), ...mapB.keys()])).filter((uid) => mapA.has(uid) && mapB.has(uid));
-
-  const fieldCounts = Object.fromEntries(
-    COMPARABLE_FACTURA_FIELDS.map((f) => [f, { match: 0, diff: 0 }])
-  ) as Record<ComparableFacturaField, { match: number; diff: number }>;
-
-  const totals: Totals = { totalPairs: 0, ok: 0, warn: 0, bad: 0 };
-
-  for (const uid of uids) {
-    const a = mapA.get(uid);
-    const b = mapB.get(uid);
-    if (!a || !b) {
-      continue;
-    }
-
-    const comparison = compareFacturas(uid, a, b);
-    totals.totalPairs += 1;
-
-    if (comparison.diffCount === 0) {
-      totals.ok += 1;
-    } else if (comparison.hasTotalDiff || comparison.diffCount >= 4) {
-      totals.bad += 1;
-    } else {
-      totals.warn += 1;
-    }
-
-    for (const d of comparison.diffs) {
-      if (d.equal) {
-        fieldCounts[d.field].match += 1;
-      } else {
-        fieldCounts[d.field].diff += 1;
+    const out: Record<string, ValidationState> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (typeof k === 'string' && isValidationState(v)) {
+        out[k] = v;
       }
     }
+    return out;
+  };
+
+  const reviewMap = new Map<string, Record<string, ValidationState>>();
+  for (const r of (reviewRowsRaw as unknown as { factura_uid?: unknown; tool_a?: unknown }[]) ?? []) {
+    const uid = typeof r.factura_uid === 'string' ? r.factura_uid : '';
+    if (!uid) {
+      continue;
+    }
+    reviewMap.set(uid, sanitizeMap(r.tool_a));
   }
 
-  const fields: FieldMetric[] = COMPARABLE_FACTURA_FIELDS.map((field) => {
-    const matchCount = fieldCounts[field].match;
-    const diffCount = fieldCounts[field].diff;
-    const total = matchCount + diffCount;
-    const matchPct = total > 0 ? (matchCount / total) * 100 : 0;
-    return { field, matchCount, diffCount, total, matchPct };
-  }).sort((a, b) => a.matchPct - b.matchPct);
+  const totals: Totals = {
+    totalFacturas: uids.length,
+    withReview: 0,
+    completeReviews: 0,
+    perfect: 0,
+    overallAccuracyPct: null,
+  };
+
+  const fieldCounts = Object.fromEntries(
+    scoringFields.map((f) => [f, { correct: 0, incorrect: 0, unset: 0 }])
+  ) as Record<string, { correct: number; incorrect: number; unset: number }>;
+
+  let sumReviewed = 0;
+  let sumCorrect = 0;
+
+  for (const uid of uids) {
+    const validation = reviewMap.get(uid) ?? null;
+    if (!validation) {
+      continue;
+    }
+    totals.withReview += 1;
+
+    let allSet = true;
+    let reviewed = 0;
+    let correct = 0;
+
+    for (const f of scoringFields) {
+      const v = (validation[f] ?? 'unset') as ValidationState;
+      if (v === 'correct') {
+        fieldCounts[f].correct += 1;
+        reviewed += 1;
+        correct += 1;
+      } else if (v === 'incorrect') {
+        fieldCounts[f].incorrect += 1;
+        reviewed += 1;
+      } else {
+        fieldCounts[f].unset += 1;
+        allSet = false;
+      }
+    }
+
+    if (allSet) {
+      totals.completeReviews += 1;
+      if (reviewed > 0 && correct === reviewed) {
+        totals.perfect += 1;
+      }
+    }
+
+    sumReviewed += reviewed;
+    sumCorrect += correct;
+  }
+
+  totals.overallAccuracyPct = sumReviewed > 0 ? (sumCorrect / sumReviewed) * 100 : null;
+
+  const fields: FieldMetric[] = scoringFields
+    .map((field) => {
+      const c = fieldCounts[field];
+      const total = c.correct + c.incorrect + c.unset;
+      const reviewed = c.correct + c.incorrect;
+      const coveragePct = total > 0 ? (reviewed / total) * 100 : 0;
+      const accuracyPct = reviewed > 0 ? (c.correct / reviewed) * 100 : 0;
+      return {
+        field,
+        correct: c.correct,
+        incorrect: c.incorrect,
+        unset: c.unset,
+        total,
+        reviewed,
+        coveragePct,
+        accuracyPct,
+      };
+    })
+    .sort((a, b) => a.accuracyPct - b.accuracyPct);
 
   return NextResponse.json({ totals, fields });
 }

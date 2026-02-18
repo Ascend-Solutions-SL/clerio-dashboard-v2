@@ -5,31 +5,28 @@ import { useEffect, useMemo, useState } from 'react';
 import { Eye } from 'lucide-react';
 
 import TruncateWithTooltip from '@/components/TruncateWithTooltip';
-import StatusBadge from '@/components/master/StatusBadge';
 
 type Row = {
   factura_uid: string;
-  status: 'ok' | 'warn' | 'bad' | 'missing';
-  diffCount: number;
   totalFields: number;
-  percentA: number | null;
-  percentB: number | null;
-  best: 'A' | 'B' | 'Igual' | null;
-  bestPercent: number | null;
+  percent: number | null;
+  reviewedComplete: boolean;
   numero: string;
   fecha: string;
   tipo: string;
+  buyer_name: string | null;
+  buyer_tax_id: string | null;
+  seller_name: string | null;
+  seller_tax_id: string | null;
   empresa_id: number | null;
   user_businessname: string | null;
   drive_file_id: string | null;
-  importe_total_a: number | null;
-  importe_total_b: number | null;
-  missingSide?: 'A' | 'B';
+  importe_total: number | null;
 };
 
 const fmtMoney = (v: number | null) => (v === null ? '—' : v.toFixed(2));
 
-type Payload = { rows: Row[]; overallPercentA: number | null; overallPercentB: number | null };
+type Payload = { rows: Row[]; overallPercent: number | null };
 
 const TableShell = ({ children }: { children: React.ReactNode }) => (
   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{children}</div>
@@ -89,10 +86,8 @@ export default function MasterAnalisisPage() {
     const rows = data?.rows ?? [];
     return {
       total: rows.length,
-      ok: rows.filter((r) => r.status === 'ok').length,
-      warn: rows.filter((r) => r.status === 'warn').length,
-      bad: rows.filter((r) => r.status === 'bad').length,
-      missing: rows.filter((r) => r.status === 'missing').length,
+      reviewed: rows.filter((r) => r.reviewedComplete === true).length,
+      perfect: rows.filter((r) => r.reviewedComplete === true && (r.percent ?? 0) >= 99.999).length,
     };
   }, [data]);
 
@@ -100,8 +95,8 @@ export default function MasterAnalisisPage() {
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Analisis (OCR Básico vs OCR Google AI)</h1>
-          <p className="mt-1 text-sm text-slate-600">Dashboard comparativo para evaluar coincidencias y discrepancias por factura_uid.</p>
+          <h1 className="text-xl font-semibold text-slate-900">Analisis (OCR)</h1>
+          <p className="mt-1 text-sm text-slate-600">Dashboard de revisión OCR y porcentaje de acierto por factura_uid.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -122,7 +117,7 @@ export default function MasterAnalisisPage() {
                 }`}
               />
             </span>
-            <span>Excluir OK</span>
+            <span>Excluir 100%</span>
           </button>
           <input
             value={q}
@@ -144,29 +139,17 @@ export default function MasterAnalisisPage() {
           <div className="text-xs text-slate-500">Total</div>
           <div className="text-lg font-semibold text-slate-900">{counts.total}</div>
         </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <div className="text-xs text-emerald-700">OK</div>
-          <div className="text-lg font-semibold text-emerald-900">{counts.ok}</div>
-        </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <div className="text-xs text-amber-700">Revisar</div>
-          <div className="text-lg font-semibold text-amber-900">{counts.warn}</div>
-        </div>
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-          <div className="text-xs text-red-700">Error</div>
-          <div className="text-lg font-semibold text-red-900">{counts.bad}</div>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-xs text-slate-600">Falta lado</div>
-          <div className="text-lg font-semibold text-slate-900">{counts.missing}</div>
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs text-slate-500">Revisadas</div>
+          <div className="text-lg font-semibold text-slate-900">{counts.reviewed}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">% OCR Básico</div>
-          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercentA ?? null)}</div>
+          <div className="text-xs text-slate-500">100%</div>
+          <div className="text-lg font-semibold text-slate-900">{counts.perfect}</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="text-xs text-slate-500">% OCR Google AI</div>
-          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercentB ?? null)}</div>
+          <div className="text-xs text-slate-500">% Acierto global</div>
+          <div className="text-lg font-semibold text-slate-900">{fmtPct(data?.overallPercent ?? null)}</div>
         </div>
       </div>
 
@@ -177,40 +160,34 @@ export default function MasterAnalisisPage() {
           <table className="w-full table-fixed text-sm">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="text-left text-xs font-semibold text-slate-600">
-                <th className="w-[7%] px-4 py-3">Estado</th>
-                <th className="w-[5%] px-4 py-3">Diffs</th>
-                <th className="w-[7%] px-4 py-3">% A</th>
-                <th className="w-[7%] px-4 py-3">% B</th>
-                <th className="w-[7%] px-4 py-3">Mejor</th>
                 <th className="w-[12%] px-4 py-3">Número</th>
                 <th className="w-[10%] px-4 py-3">Fecha</th>
                 <th className="w-[7%] px-4 py-3">Tipo</th>
-                <th className="w-[9%] px-4 py-3">Total (A)</th>
-                <th className="w-[9%] px-4 py-3">Total (B)</th>
-                <th className="w-[14%] px-4 py-3">Empresa</th>
+                <th className="w-[14%] px-4 py-3">Comprador</th>
+                <th className="w-[10%] px-4 py-3">CIF comprador</th>
+                <th className="w-[14%] px-4 py-3">Vendedor</th>
+                <th className="w-[10%] px-4 py-3">CIF vendedor</th>
+                <th className="w-[8%] px-4 py-3">% Acierto</th>
+                <th className="w-[9%] px-4 py-3">Total</th>
+                <th className="w-[10%] px-4 py-3">Empresa</th>
                 <th className="w-[6%] px-4 py-3 text-right">Ver</th>
               </tr>
             </thead>
             <tbody>
               {(data?.rows ?? []).map((row) => (
                 <tr key={row.factura_uid} className="border-t border-slate-100">
-                  <td className="w-[7%] px-4 py-3">
-                    <StatusBadge status={row.status} />
-                  </td>
-                  <td className="w-[5%] px-4 py-3 font-mono text-xs text-slate-800">{row.diffCount}</td>
-                  <td className="w-[7%] px-4 py-3">
-                    <PctCell value={row.percentA} />
-                  </td>
-                  <td className="w-[7%] px-4 py-3">
-                    <PctCell value={row.percentB} />
-                  </td>
-                  <td className="w-[7%] px-4 py-3 font-mono text-xs text-slate-800">{row.best ?? '—'}</td>
                   <td className="w-[12%] px-4 py-3"><TruncateWithTooltip value={row.numero} /></td>
                   <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.fecha} /></td>
                   <td className="w-[7%] px-4 py-3"><TruncateWithTooltip value={row.tipo} /></td>
-                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total_a)}</td>
-                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total_b)}</td>
-                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
+                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.buyer_name ?? ''} /></td>
+                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.buyer_tax_id ?? ''} /></td>
+                  <td className="w-[14%] px-4 py-3"><TruncateWithTooltip value={row.seller_name ?? ''} /></td>
+                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.seller_tax_id ?? ''} /></td>
+                  <td className="w-[8%] px-4 py-3">
+                    <PctCell value={row.percent} />
+                  </td>
+                  <td className="w-[9%] px-4 py-3 font-mono text-xs text-slate-800">{fmtMoney(row.importe_total)}</td>
+                  <td className="w-[10%] px-4 py-3"><TruncateWithTooltip value={row.user_businessname ?? ''} /></td>
                   <td className="w-[6%] px-4 py-3 text-right">
                     <Link
                       href={`/master/analisis/${encodeURIComponent(row.factura_uid)}`}

@@ -7,17 +7,21 @@ import TruncateWithTooltip from '@/components/TruncateWithTooltip';
 
 type FieldMetric = {
   field: string;
-  matchCount: number;
-  diffCount: number;
+  correct: number;
+  incorrect: number;
+  unset: number;
   total: number;
-  matchPct: number;
+  reviewed: number;
+  coveragePct: number;
+  accuracyPct: number;
 };
 
 type Totals = {
-  totalPairs: number;
-  ok: number;
-  warn: number;
-  bad: number;
+  totalFacturas: number;
+  withReview: number;
+  completeReviews: number;
+  perfect: number;
+  overallAccuracyPct: number | null;
 };
 
 type Payload = { totals: Totals; fields: FieldMetric[] };
@@ -46,7 +50,7 @@ export default function MasterAnalisisMetricasPage() {
   }, []);
 
   const topWorst = useMemo(() => {
-    return [...(data?.fields ?? [])].sort((a, b) => b.diffCount - a.diffCount).slice(0, 6);
+    return [...(data?.fields ?? [])].sort((a, b) => a.accuracyPct - b.accuracyPct).slice(0, 6);
   }, [data]);
 
   return (
@@ -54,7 +58,7 @@ export default function MasterAnalisisMetricasPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Métricas de coincidencia</h1>
-          <p className="mt-1 text-sm text-slate-600">Porcentaje de coincidencia por campo y ranking de discrepancias.</p>
+          <p className="mt-1 text-sm text-slate-600">Cobertura de revisión y precisión por campo (OCR).</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -70,25 +74,32 @@ export default function MasterAnalisisMetricasPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="text-xs text-slate-500">Pares comparados</div>
-              <div className="text-lg font-semibold text-slate-900">{data.totals.totalPairs}</div>
+              <div className="text-xs text-slate-500">Facturas</div>
+              <div className="text-lg font-semibold text-slate-900">{data.totals.totalFacturas}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs text-slate-500">Con revisión</div>
+              <div className="text-lg font-semibold text-slate-900">{data.totals.withReview}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs text-slate-500">Revisión completa</div>
+              <div className="text-lg font-semibold text-slate-900">{data.totals.completeReviews}</div>
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-              <div className="text-xs text-emerald-700">OK</div>
-              <div className="text-lg font-semibold text-emerald-900">{data.totals.ok}</div>
+              <div className="text-xs text-emerald-700">100%</div>
+              <div className="text-lg font-semibold text-emerald-900">{data.totals.perfect}</div>
             </div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <div className="text-xs text-amber-700">Revisar</div>
-              <div className="text-lg font-semibold text-amber-900">{data.totals.warn}</div>
-            </div>
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
-              <div className="text-xs text-red-700">Error</div>
-              <div className="text-lg font-semibold text-red-900">{data.totals.bad}</div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs text-slate-500">Precisión global (campos revisados)</div>
+            <div className="text-lg font-semibold text-slate-900">
+              {data.totals.overallAccuracyPct === null ? '—' : `${data.totals.overallAccuracyPct.toFixed(1)}%`}
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-sm font-bold text-slate-900">Campos con más discrepancias</div>
+            <div className="text-sm font-bold text-slate-900">Campos con menor precisión</div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {topWorst.map((f) => (
                 <div key={f.field} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -96,12 +107,12 @@ export default function MasterAnalisisMetricasPage() {
                     <div className="min-w-0 text-sm font-semibold text-slate-900">
                       <TruncateWithTooltip value={f.field} />
                     </div>
-                    <div className="font-mono text-xs text-slate-700">{f.diffCount} diffs</div>
+                    <div className="font-mono text-xs text-slate-700">{f.accuracyPct.toFixed(0)}%</div>
                   </div>
                   <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200">
                     <div
-                      className="h-full bg-red-500"
-                      style={{ width: `${Math.min(100, Math.max(0, (f.diffCount / Math.max(1, f.total)) * 100))}%` }}
+                      className="h-full bg-amber-500"
+                      style={{ width: `${Math.min(100, Math.max(0, f.accuracyPct))}%` }}
                     />
                   </div>
                 </div>
@@ -115,20 +126,22 @@ export default function MasterAnalisisMetricasPage() {
                 <thead className="sticky top-0 bg-slate-50">
                   <tr className="text-left text-xs font-semibold text-slate-600">
                     <th className="w-[28%] px-4 py-3">Campo</th>
-                    <th className="w-[14%] px-4 py-3">% Match</th>
-                    <th className="w-[19%] px-4 py-3">Match</th>
-                    <th className="w-[19%] px-4 py-3">Diff</th>
-                    <th className="w-[20%] px-4 py-3">Total</th>
+                    <th className="w-[14%] px-4 py-3">Precisión</th>
+                    <th className="w-[14%] px-4 py-3">Cobertura</th>
+                    <th className="w-[14%] px-4 py-3">Correcto</th>
+                    <th className="w-[14%] px-4 py-3">Incorrecto</th>
+                    <th className="w-[16%] px-4 py-3">Sin revisar</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.fields.map((f) => (
                     <tr key={f.field} className="border-t border-slate-100">
                       <td className="w-[28%] px-4 py-3"><TruncateWithTooltip value={f.field} /></td>
-                      <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-800">{f.matchPct.toFixed(1)}%</td>
-                      <td className="w-[19%] px-4 py-3 font-mono text-xs text-slate-800">{f.matchCount}</td>
-                      <td className="w-[19%] px-4 py-3 font-mono text-xs text-slate-800">{f.diffCount}</td>
-                      <td className="w-[20%] px-4 py-3 font-mono text-xs text-slate-800">{f.total}</td>
+                      <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-800">{f.accuracyPct.toFixed(1)}%</td>
+                      <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-800">{f.coveragePct.toFixed(1)}%</td>
+                      <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-800">{f.correct}</td>
+                      <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-800">{f.incorrect}</td>
+                      <td className="w-[16%] px-4 py-3 font-mono text-xs text-slate-800">{f.unset}</td>
                     </tr>
                   ))}
                 </tbody>

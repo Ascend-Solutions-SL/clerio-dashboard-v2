@@ -91,21 +91,37 @@ export async function POST(req: NextRequest) {
   const toolA = sanitizeMap(body?.toolA);
   const toolB = sanitizeMap(body?.toolB);
 
-  const { error } = await supabase
+  const { data: existing, error: existingError } = await supabase
+    .schema('public')
+    .from('factura_comparison_reviews')
+    .select('tool_a, tool_b')
+    .eq('factura_uid', factura_uid)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
+
+  const mergedA = { ...(sanitizeMap((existing as { tool_a?: unknown } | null)?.tool_a) ?? {}), ...toolA };
+  const mergedB = { ...(sanitizeMap((existing as { tool_b?: unknown } | null)?.tool_b) ?? {}), ...toolB };
+
+  const { data, error } = await supabase
     .schema('public')
     .from('factura_comparison_reviews')
     .upsert(
       {
         factura_uid,
-        tool_a: toolA,
-        tool_b: toolB,
+        tool_a: mergedA,
+        tool_b: mergedB,
       },
       { onConflict: 'factura_uid' }
-    );
+    )
+    .select('updated_at')
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, updatedAt: data?.updated_at ?? null });
 }

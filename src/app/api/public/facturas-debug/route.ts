@@ -3,8 +3,14 @@ import type { PostgrestError } from '@supabase/supabase-js';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getSupabaseAdminClient } from '@/lib/supabaseAdmin';
+import { requireMasterUser } from '@/lib/master';
 
 export async function GET(request: Request) {
+  const guard = await requireMasterUser();
+  if (!guard.ok) {
+    return NextResponse.json({ ok: false, error: 'forbidden' }, { status: guard.status });
+  }
+
   const supabase = await createSupabaseServerClient();
 
   const {

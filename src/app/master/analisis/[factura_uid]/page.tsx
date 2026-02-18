@@ -2,28 +2,21 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye } from 'lucide-react';
 
-import ComparisonFieldRow from '@/components/master/ComparisonFieldRow';
 import type { ValidationState } from '@/components/master/ComparisonFieldRow';
-import StatusBadge from '@/components/master/StatusBadge';
-import { formatValue, type FacturaComparison } from '@/lib/master/facturaComparison';
+import { MASTER_ANALYSIS_SCORING_FIELDS, MASTER_ANALYSIS_VISIBLE_FIELDS } from '@/lib/master/analysisFields';
+import TruncateWithTooltip from '@/components/TruncateWithTooltip';
+
+type Factura = Record<string, unknown>;
 
 type PayloadOk = {
-  comparison: FacturaComparison;
-  status: 'ok' | 'warn' | 'bad';
-  summary: string[];
-};
-
-type PayloadMissing = {
   factura_uid: string;
-  a: unknown | null;
-  b: unknown | null;
-  missingSide: 'A' | 'B';
+  factura: Factura;
 };
 
-type Payload = PayloadOk | PayloadMissing | { error?: string };
+type Payload = PayloadOk | { error?: string };
 
 const TableShell = ({ children }: { children: React.ReactNode }) => (
   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">{children}</div>
@@ -65,6 +58,56 @@ function nextHeaderState(state: ValidationState): ValidationState {
   }
 
   return 'unset';
+}
+
+function formatValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  if (typeof value === 'number') {
+    return value.toFixed(2);
+  }
+  return String(value);
+}
+
+function nextState(state: ValidationState): ValidationState {
+  if (state === 'unset') {
+    return 'correct';
+  }
+  if (state === 'correct') {
+    return 'incorrect';
+  }
+  return 'unset';
+}
+
+function ValidationToggle({
+  state,
+  onChange,
+  ariaLabel,
+}: {
+  state: ValidationState;
+  onChange: (state: ValidationState) => void;
+  ariaLabel: string;
+}) {
+  const styles =
+    state === 'correct'
+      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+      : state === 'incorrect'
+        ? 'border-red-300 bg-red-50 text-red-700'
+        : 'border-slate-300 bg-white text-transparent hover:bg-slate-50';
+
+  const glyph = state === 'correct' ? '✓' : state === 'incorrect' ? '✕' : '•';
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={() => onChange(nextState(state))}
+      className={`inline-flex h-5 w-5 flex-none items-center justify-center rounded-md border text-[12px] font-bold leading-none ${styles}`}
+    >
+      {glyph}
+    </button>
+  );
 }
 
 function ColumnHeaderToggle({
@@ -125,14 +168,26 @@ export default function MasterAnalisisDetailPage() {
   const params = useParams<{ factura_uid: string }>();
   const factura_uid = useMemo(() => decodeURIComponent(params.factura_uid), [params.factura_uid]);
 
-  const [data, setData] = useState<PayloadOk | PayloadMissing | null>(null);
+  const [data, setData] = useState<PayloadOk | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftA, setDraftA] = useState<ValidationMap>({});
-  const [draftB, setDraftB] = useState<ValidationMap>({});
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
+  const draftARef = useRef<ValidationMap>({});
+  const isDirtyRef = useRef(false);
+  const saveSeqRef = useRef(0);
+  const inFlightSaveRef = useRef<Promise<boolean> | null>(null);
+
+  useEffect(() => {
+    draftARef.current = draftA;
+  }, [draftA]);
+
+  useEffect(() => {
+    isDirtyRef.current = isDirty;
+  }, [isDirty]);
 
   useEffect(() => {
     const load = async () => {
@@ -148,7 +203,7 @@ export default function MasterAnalisisDetailPage() {
         return;
       }
 
-      setData(payload as PayloadOk | PayloadMissing);
+      setData(payload as PayloadOk);
     };
 
     void load();
@@ -173,8 +228,11 @@ export default function MasterAnalisisDetailPage() {
           return;
         }
 
+        if (isDirtyRef.current) {
+          return;
+        }
+
         setDraftA(payload?.toolA ?? {});
-        setDraftB(payload?.toolB ?? {});
         setLastSavedAt(payload?.updatedAt ?? null);
         setIsDirty(false);
         setSaveError(null);
@@ -192,39 +250,56 @@ export default function MasterAnalisisDetailPage() {
         return false;
       }
 
-      if (!isDirty) {
+      if (!isDirtyRef.current) {
         return true;
       }
+
+      if (inFlightSaveRef.current) {
+        return inFlightSaveRef.current;
+      }
+
+      const seq = (saveSeqRef.current += 1);
+      const snapshotA = draftARef.current;
+      const snapshotB = {};
 
       setSaveError(null);
       setIsSaving(true);
 
-      try {
-        const res = await fetch('/api/master/analisis/review', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ factura_uid, toolA: draftA, toolB: draftB }),
-          keepalive: opts?.keepalive === true,
-        });
+      const doSave = (async () => {
+        try {
+          const res = await fetch('/api/master/analisis/review', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ factura_uid, toolA: snapshotA, toolB: snapshotB }),
+            keepalive: opts?.keepalive === true,
+          });
 
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        if (!res.ok) {
-          setSaveError(payload?.error ?? 'No se pudo guardar');
+          const payload = (await res.json().catch(() => null)) as { error?: string; updatedAt?: string | null } | null;
+          if (!res.ok) {
+            setSaveError(payload?.error ?? 'No se pudo guardar');
+            return false;
+          }
+
+          if (saveSeqRef.current === seq) {
+            setIsDirty(false);
+            setLastSavedAt(payload?.updatedAt ?? new Date().toISOString());
+          }
+
+          return true;
+        } catch {
+          setSaveError('No se pudo guardar');
           return false;
+        } finally {
+          inFlightSaveRef.current = null;
+          setIsSaving(false);
         }
+      })();
 
-        setIsDirty(false);
-        setLastSavedAt(new Date().toISOString());
-        return true;
-      } catch {
-        setSaveError('No se pudo guardar');
-        return false;
-      } finally {
-        setIsSaving(false);
-      }
+      inFlightSaveRef.current = doSave;
+      return doSave;
     },
-    [draftA, draftB, factura_uid, isDirty]
+    [factura_uid]
   );
 
   useEffect(() => {
@@ -311,53 +386,16 @@ export default function MasterAnalisisDetailPage() {
     return () => document.removeEventListener('click', onDocumentClick, true);
   }, [isDirty, saveReview]);
 
-  const VISIBLE_FIELDS = useMemo(
-    () =>
-      new Set([
-        'numero',
-        'tipo',
-        'buyer_name',
-        'buyer_tax_id',
-        'seller_name',
-        'seller_tax_id',
-        'iva',
-        'importe_sin_iva',
-        'importe_total',
-        'fecha',
-        'invoice_concept',
-        'invoice_reason',
-        'user_businessname',
-      ]),
-    []
-  );
-
-  const FIELD_ORDER = useMemo(
-    () =>
-      [
-        'numero',
-        'tipo',
-        'buyer_name',
-        'buyer_tax_id',
-        'seller_name',
-        'seller_tax_id',
-        'fecha',
-        'invoice_concept',
-        'invoice_reason',
-        'importe_sin_iva',
-        'iva',
-        'importe_total',
-        'user_businessname',
-      ] as const,
-    []
-  );
+  const VISIBLE_FIELDS = useMemo(() => new Set(MASTER_ANALYSIS_VISIBLE_FIELDS as readonly string[]), []);
 
   const filteredDiffs = useMemo(() => {
-    if (!data || !('comparison' in data)) {
+    if (!data) {
       return [];
     }
-    const orderIndex = new Map<string, number>(FIELD_ORDER.map((f, idx) => [f, idx]));
-    return data.comparison.diffs
-      .filter((d) => VISIBLE_FIELDS.has(d.field))
+    const orderIndex = new Map<string, number>((FIELD_ORDER as readonly string[]).map((f, idx) => [f, idx]));
+    return (FIELD_ORDER as readonly string[])
+      .filter((field) => VISIBLE_FIELDS.has(field))
+      .map((field) => ({ field, value: data.factura?.[field] ?? null }))
       .slice()
       .sort((a, b) => {
         const ia = orderIndex.get(a.field) ?? 9_999;
@@ -367,7 +405,7 @@ export default function MasterAnalisisDetailPage() {
   }, [data, FIELD_ORDER, VISIBLE_FIELDS]);
 
   const scoringDiffs = useMemo(() => {
-    return filteredDiffs.filter((d) => d.field !== 'invoice_concept' && d.field !== 'invoice_reason');
+    return filteredDiffs.filter((d) => (MASTER_ANALYSIS_SCORING_FIELDS as readonly string[]).includes(d.field));
   }, [filteredDiffs]);
 
   const totalFields = useMemo(() => scoringDiffs.length, [scoringDiffs]);
@@ -376,29 +414,25 @@ export default function MasterAnalisisDetailPage() {
     return scoringDiffs.reduce((acc, d) => acc + (draftA[d.field] === 'correct' ? 1 : 0), 0);
   }, [scoringDiffs, draftA]);
 
-  const correctCountB = useMemo(() => {
-    return scoringDiffs.reduce((acc, d) => acc + (draftB[d.field] === 'correct' ? 1 : 0), 0);
-  }, [scoringDiffs, draftB]);
-
   const driveType = useMemo(() => {
-    if (!data || !('comparison' in data)) {
+    if (!data) {
       return null;
     }
 
-    const raw = (data.comparison.a.drive_type ?? data.comparison.b.drive_type ?? '').toString().trim().toLowerCase();
+    const raw = (data.factura?.drive_type ?? '').toString().trim().toLowerCase();
     if (raw === 'googledrive' || raw === 'onedrive') {
       return raw;
     }
 
-    const fileId = data.comparison.a.drive_file_id ?? data.comparison.b.drive_file_id;
+    const fileId = (data.factura?.drive_file_id ?? '').toString().trim();
     return fileId ? 'googledrive' : null;
   }, [data]);
 
   const empresaId = useMemo(() => {
-    if (!data || !('comparison' in data)) {
+    if (!data) {
       return null;
     }
-    return data.comparison.a.empresa_id ?? data.comparison.b.empresa_id ?? null;
+    return data.factura?.empresa_id ?? null;
   }, [data]);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -406,14 +440,14 @@ export default function MasterAnalisisDetailPage() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   useEffect(() => {
-    if (!data || !('comparison' in data)) {
+    if (!data) {
       setPreviewUrl(null);
       setEmbedUrl(null);
       setIsPreviewLoading(false);
       return;
     }
 
-    const fileId = data.comparison.a.drive_file_id ?? data.comparison.b.drive_file_id;
+    const fileId = (data.factura?.drive_file_id ?? '').toString().trim();
     if (!fileId) {
       setPreviewUrl(null);
       setEmbedUrl(null);
@@ -484,23 +518,6 @@ export default function MasterAnalisisDetailPage() {
     return (correctCountA / totalFields) * 100;
   }, [correctCountA, totalFields]);
 
-  const percentB = useMemo(() => {
-    if (totalFields <= 0) {
-      return null;
-    }
-    return (correctCountB / totalFields) * 100;
-  }, [correctCountB, totalFields]);
-
-  const bestMethod = useMemo(() => {
-    if (percentA === null || percentB === null) {
-      return null;
-    }
-    if (Math.abs(percentA - percentB) < 0.00001) {
-      return 'Igual';
-    }
-    return percentA > percentB ? 'A' : 'B';
-  }, [percentA, percentB]);
-
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -541,32 +558,21 @@ export default function MasterAnalisisDetailPage() {
 
       {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</div> : null}
 
-      {data && 'comparison' in data ? (
+      {data ? (
         <>
           <div className="grid gap-6 lg:grid-cols-[1fr_520px]">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <StatusBadge status={data.status} />
-                  <div className="text-sm text-slate-700">
-                    <span className="font-semibold text-slate-900">{data.comparison.diffCount}</span> diferencias detectadas
-                  </div>
-                </div>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-900">OCR Básico (A)</span>
+                    <span className="font-semibold text-slate-900">% Acierto</span>
                     <span className="font-mono text-xs">{percentA === null ? '—' : `${percentA.toFixed(0)}%`}</span>
                   </span>
                   <span className="text-slate-300">|</span>
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="font-semibold text-slate-900">OCR Google AI (B)</span>
-                    <span className="font-mono text-xs">{percentB === null ? '—' : `${percentB.toFixed(0)}%`}</span>
+                    <span className="font-semibold text-slate-900">Revisado</span>
+                    <span className="font-mono text-xs">{`${correctCountA}/${totalFields}`}</span>
                   </span>
-                  {bestMethod ? (
-                    <span className="ml-2 inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
-                      Mejor: {bestMethod}
-                    </span>
-                  ) : null}
                 </div>
               </div>
 
@@ -604,44 +610,25 @@ export default function MasterAnalisisDetailPage() {
                   <table className="w-full table-fixed text-sm">
                     <thead className="sticky top-0 bg-slate-50">
                       <tr className="text-left text-xs font-semibold text-slate-600">
-                        <th className="w-[24%] px-4 py-3">Campo</th>
-                        <th className="w-[38%] px-4 py-3">
-                          <div className="flex items-center justify-between gap-2">
+                        <th className="w-[28%] px-4 py-3">Campo</th>
+                        <th className="w-[56%] px-4 py-3">Valor OCR</th>
+                        <th className="w-[16%] px-4 py-3">
+                          <div className="flex items-center justify-end">
                             <ColumnHeaderToggle
-                              label="A"
+                              label="OK"
                               counter={`${correctCountA}/${totalFields}`}
                               state={
-                                filteredDiffs.length
-                                  ? deriveHeaderState(filteredDiffs.map((d) => draftA[d.field] ?? 'unset'))
+                                scoringDiffs.length
+                                  ? deriveHeaderState(scoringDiffs.map((d) => draftA[d.field] ?? 'unset'))
                                   : 'unset'
                               }
                               onChange={(state) => {
-                                const next: ValidationMap = {};
-                                for (const d of filteredDiffs) {
+                                const next: ValidationMap = { ...draftARef.current };
+                                for (const d of scoringDiffs) {
                                   next[d.field] = state;
                                 }
+                                draftARef.current = next;
                                 setDraftA(next);
-                                setIsDirty(true);
-                              }}
-                            />
-                          </div>
-                        </th>
-                        <th className="w-[38%] px-4 py-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <ColumnHeaderToggle
-                              label="B"
-                              counter={`${correctCountB}/${totalFields}`}
-                              state={
-                                filteredDiffs.length
-                                  ? deriveHeaderState(filteredDiffs.map((d) => draftB[d.field] ?? 'unset'))
-                                  : 'unset'
-                              }
-                              onChange={(state) => {
-                                const next: ValidationMap = {};
-                                for (const d of filteredDiffs) {
-                                  next[d.field] = state;
-                                }
-                                setDraftB(next);
                                 setIsDirty(true);
                               }}
                             />
@@ -651,23 +638,34 @@ export default function MasterAnalisisDetailPage() {
                     </thead>
                     <tbody>
                       {filteredDiffs.map((d) => (
-                        <ComparisonFieldRow
-                          key={d.field}
-                          field={formatFieldLabel(d.field)}
-                          a={formatValue(d.a)}
-                          b={formatValue(d.b)}
-                          equal={d.equal}
-                          aState={draftA[d.field] ?? 'unset'}
-                          bState={draftB[d.field] ?? 'unset'}
-                          onChangeA={(state) => {
-                            setDraftA((prev) => ({ ...prev, [d.field]: state }));
-                            setIsDirty(true);
-                          }}
-                          onChangeB={(state) => {
-                            setDraftB((prev) => ({ ...prev, [d.field]: state }));
-                            setIsDirty(true);
-                          }}
-                        />
+                        <tr key={d.field} className="border-t border-slate-100">
+                          <td className="w-[28%] px-4 py-3 text-xs font-semibold text-slate-700">
+                            <TruncateWithTooltip value={formatFieldLabel(d.field)} />
+                          </td>
+                          <td className="w-[56%] px-4 py-3">
+                            <TruncateWithTooltip value={formatValue(d.value)} />
+                          </td>
+                          <td className="w-[16%] px-4 py-3">
+                            <div className="flex items-center justify-end">
+                              {(MASTER_ANALYSIS_SCORING_FIELDS as readonly string[]).includes(d.field) ? (
+                                <ValidationToggle
+                                  state={draftA[d.field] ?? 'unset'}
+                                  onChange={(state) => {
+                                    setDraftA((prev) => {
+                                      const next = { ...prev, [d.field]: state };
+                                      draftARef.current = next;
+                                      return next;
+                                    });
+                                    setIsDirty(true);
+                                  }}
+                                  ariaLabel={`Validación para ${d.field}`}
+                                />
+                              ) : (
+                                <span className="font-mono text-xs text-slate-400">—</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       ))}
                     </tbody>
                   </table>
@@ -737,13 +735,6 @@ export default function MasterAnalisisDetailPage() {
             </div>
           </div>
         </>
-      ) : null}
-
-      {data && !('comparison' in data) ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-sm font-bold text-slate-900">No hay pareja completa</div>
-          <div className="mt-1 text-sm text-slate-700">Falta el lado: {data.missingSide}</div>
-        </div>
       ) : null}
     </div>
   );
