@@ -616,8 +616,6 @@ export function RevisionsTable({
         }
         return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
       });
-
-      setDetailsRefreshKey((prev) => prev + 1);
       if (scope === 'pending') {
         if (next) {
           onSelect?.(next.id, next);
