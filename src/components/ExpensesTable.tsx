@@ -42,6 +42,127 @@ type DriveType = 'googledrive' | 'onedrive';
    y: number;
  };
 
+function ExpensesActionsCell({
+  driveFileId,
+  driveType,
+  needsReview,
+}: {
+  driveFileId: string | null;
+  driveType: DriveType;
+  needsReview: boolean;
+}) {
+  const dotRef = React.useRef<HTMLDivElement | null>(null);
+  const [pendingTooltip, setPendingTooltip] = React.useState<PendingTooltipState>({
+    open: false,
+    x: 0,
+    y: 0,
+  });
+
+  const openPendingTooltip = () => {
+    if (!dotRef.current) {
+      return;
+    }
+
+    const rect = dotRef.current.getBoundingClientRect();
+    setPendingTooltip({
+      open: true,
+      x: rect.right,
+      y: rect.bottom + 8,
+    });
+  };
+
+  const closePendingTooltip = () => {
+    setPendingTooltip((prev) => ({ ...prev, open: false }));
+  };
+
+  const previewHref =
+    driveFileId && driveType
+      ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
+          driveFileId
+        )}&kind=preview`
+      : undefined;
+
+  const downloadHref =
+    driveFileId && driveType
+      ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
+          driveFileId
+        )}&kind=download`
+      : undefined;
+
+  const handleDownload = () => {
+    if (!driveFileId || !driveType) {
+      return;
+    }
+
+    if (!downloadHref) {
+      return;
+    }
+
+    window.open(downloadHref, '_blank', 'noopener,noreferrer');
+  };
+
+  const canOpen = Boolean(driveFileId && driveType);
+
+  return (
+    <div className="flex items-center space-x-2">
+      <a
+        href={previewHref ?? '#'}
+        target={previewHref ? '_blank' : undefined}
+        rel={previewHref ? 'noopener,noreferrer' : undefined}
+        className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${canOpen ? '' : 'text-gray-400 pointer-events-none'}`}
+        aria-label={canOpen ? 'Ver factura' : 'Vista previa no disponible'}
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        <Eye className="h-4 w-4" />
+      </a>
+      <Button
+        variant="ghost"
+        size="icon"
+        className={canOpen ? '' : 'text-gray-400'}
+        disabled={!canOpen}
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDownload();
+        }}
+        aria-label={canOpen ? 'Descargar factura' : 'Archivo no disponible'}
+      >
+        <Download className="h-4 w-4" />
+      </Button>
+
+      {needsReview ? (
+        <div
+          className="relative z-10"
+          ref={dotRef}
+          onMouseEnter={openPendingTooltip}
+          onMouseLeave={closePendingTooltip}
+          onFocus={openPendingTooltip}
+          onBlur={closePendingTooltip}
+          tabIndex={0}
+        >
+          <div className="relative h-3 w-3">
+            <div className="absolute -inset-1 rounded-full bg-amber-600/12 blur-[6px] animate-pulse" />
+            <div className="absolute -inset-0.5 rounded-full bg-amber-500/16 blur-[4px] animate-pulse" />
+            <div className="absolute inset-[3px] rounded-full bg-amber-500 shadow-[0_0_0_1px_rgba(255,255,255,0.45)]" />
+          </div>
+          {pendingTooltip.open && typeof document !== 'undefined'
+            ? ReactDOM.createPortal(
+                <div
+                  className="pointer-events-none fixed z-[999999] w-max max-w-[220px] rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow"
+                  style={{ left: pendingTooltip.x - 8, top: pendingTooltip.y, transform: 'translateX(-100%)' }}
+                >
+                  Factura pendiente de validar
+                </div>,
+                document.body
+              )
+            : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const buildDriveDownloadUrl = (driveFileId?: string | null) =>
   driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
 const buildDrivePreviewUrl = (driveFileId?: string | null) =>
@@ -284,122 +405,13 @@ export const columns: ColumnDef<Expense>[] = [
   },
   {
     id: 'actions',
-    cell: ({ row }) => {
-      const driveFileId = row.original.driveFileId;
-      const driveType = row.original.driveType;
-      const needsReview = row.original.facturaRevisada === false;
-
-       const dotRef = React.useRef<HTMLDivElement | null>(null);
-       const [pendingTooltip, setPendingTooltip] = React.useState<PendingTooltipState>({
-         open: false,
-         x: 0,
-         y: 0,
-       });
-
-       const openPendingTooltip = () => {
-         if (!dotRef.current) {
-           return;
-         }
-
-         const rect = dotRef.current.getBoundingClientRect();
-         setPendingTooltip({
-           open: true,
-           x: rect.right,
-           y: rect.bottom + 8,
-         });
-       };
-
-       const closePendingTooltip = () => {
-         setPendingTooltip((prev) => ({ ...prev, open: false }));
-       };
-
-      const previewHref =
-        driveFileId && driveType
-          ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
-              driveFileId
-            )}&kind=preview`
-          : undefined;
-
-      const downloadHref =
-        driveFileId && driveType
-          ? `/api/files/open?drive_type=${encodeURIComponent(driveType)}&drive_file_id=${encodeURIComponent(
-              driveFileId
-            )}&kind=download`
-          : undefined;
-
-      const handleDownload = () => {
-        if (!driveFileId || !driveType) {
-          return;
-        }
-
-        if (!downloadHref) {
-          return;
-        }
-
-        window.open(downloadHref, '_blank', 'noopener,noreferrer');
-      };
-
-      const canOpen = Boolean(driveFileId && driveType);
-
-      return (
-        <div className="flex items-center space-x-2">
-          <a
-            href={previewHref ?? '#'}
-            target={previewHref ? '_blank' : undefined}
-            rel={previewHref ? 'noopener,noreferrer' : undefined}
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-md ${canOpen ? '' : 'text-gray-400 pointer-events-none'}`}
-            aria-label={canOpen ? 'Ver factura' : 'Vista previa no disponible'}
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            <Eye className="h-4 w-4" />
-          </a>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={canOpen ? '' : 'text-gray-400'}
-            disabled={!canOpen}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDownload();
-            }}
-            aria-label={canOpen ? 'Descargar factura' : 'Archivo no disponible'}
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-
-          {needsReview ? (
-            <div
-              className="relative z-10"
-              ref={dotRef}
-              onMouseEnter={openPendingTooltip}
-              onMouseLeave={closePendingTooltip}
-              onFocus={openPendingTooltip}
-              onBlur={closePendingTooltip}
-              tabIndex={0}
-            >
-              <div className="relative h-3 w-3">
-                <div className="absolute -inset-1 rounded-full bg-amber-600/12 blur-[6px] animate-pulse" />
-                <div className="absolute -inset-0.5 rounded-full bg-amber-500/16 blur-[4px] animate-pulse" />
-                <div className="absolute inset-[3px] rounded-full bg-amber-500 shadow-[0_0_0_1px_rgba(255,255,255,0.45)]" />
-              </div>
-              {pendingTooltip.open && typeof document !== 'undefined'
-                ? ReactDOM.createPortal(
-                    <div
-                      className="pointer-events-none fixed z-[999999] w-max max-w-[220px] rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow"
-                      style={{ left: pendingTooltip.x - 8, top: pendingTooltip.y, transform: 'translateX(-100%)' }}
-                    >
-                      Factura pendiente de validar
-                    </div>,
-                    document.body
-                  )
-                : null}
-            </div>
-          ) : null}
-        </div>
-      );
-    },
+    cell: ({ row }) => (
+      <ExpensesActionsCell
+        driveFileId={row.original.driveFileId}
+        driveType={row.original.driveType}
+        needsReview={row.original.facturaRevisada === false}
+      />
+    ),
     size: 80,
     minSize: 80,
   },
