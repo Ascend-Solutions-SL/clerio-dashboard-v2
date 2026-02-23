@@ -5,13 +5,15 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useDashboardSession } from '@/context/dashboard-session-context';
-import { Link as LinkIcon, Settings } from 'lucide-react';
+import { Link as LinkIcon, LogOut, Settings } from 'lucide-react';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { supabase } from '@/lib/supabase';
 
 const navItems = [
   { href: '/dashboard', icon: '/sidebar/inicio_logo.png', label: 'Inicio' },
   { href: '/dashboard/ingresos', icon: '/sidebar/ingresos_logo.png', label: 'Ingresos' },
   { href: '/dashboard/gastos', icon: '/sidebar/gastos_logo.png', label: 'Gastos' },
-  { href: '/dashboard/revisiones', icon: '/sidebar/gastos_logo.png', label: 'Revisiones' },
+  { href: '/dashboard/revisiones', icon: '/brand/tab_validacion/validacion_logo.png', label: 'Validación' },
   { href: '/dashboard/integraciones', icon: LinkIcon, label: 'Integraciones' },
   { href: '/dashboard/cleria', icon: '/brand/tab_cleria/cleria_logo.png', label: 'Cler IA' },
 ];
@@ -24,6 +26,50 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
   const pathname = usePathname();
   const { user, isLoading } = useDashboardSession();
+  const [pendingValidationCount, setPendingValidationCount] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
+    if (!empresaId) {
+      setPendingValidationCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      const { count } = await supabase
+        .from('facturas')
+        .select('id', { count: 'exact', head: true })
+        .eq('empresa_id', empresaId)
+        .eq('factura_revisada', false);
+
+      if (cancelled) {
+        return;
+      }
+      setPendingValidationCount(count ?? 0);
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.empresaId]);
+
+  const handleLogout = () => {
+    (async () => {
+      try {
+        const client = createSupabaseBrowserClient();
+        await client.auth.signOut();
+        await fetch('/api/auth/logout', { method: 'POST' });
+      } catch (error) {
+        console.error('Error al cerrar sesión', error);
+      } finally {
+        window.location.href = '/login';
+      }
+    })();
+  };
 
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ''}`.trim()
@@ -107,10 +153,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
               )}
             </div>
             {isOpen ? (
-              <span className="relative z-10 pr-4 whitespace-nowrap">{item.label}</span>
+              <span className="relative z-10 pr-4 whitespace-nowrap flex items-center gap-2">
+                {item.label}
+                {item.href === '/dashboard/revisiones' && pendingValidationCount > 0 ? (
+                  <span className="inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-2 h-5 min-w-[20px]">
+                    {pendingValidationCount}
+                  </span>
+                ) : null}
+              </span>
             ) : (
               <span className="sr-only">{item.label}</span>
             )}
+            {!isOpen && item.href === '/dashboard/revisiones' && pendingValidationCount > 0 ? (
+              <span className="absolute right-5 top-2 z-20 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold h-4 min-w-[16px] px-1">
+                {pendingValidationCount}
+              </span>
+            ) : null}
           </Link>
             );
           })()
@@ -132,6 +190,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           <span className="sr-only">Configuración</span>
         )}
       </Link>
+
+      <button
+        type="button"
+        onClick={handleLogout}
+        className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center text-left"
+      >
+        <div className="pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors bg-transparent group-hover:bg-blue-700" />
+
+        <div className="relative z-10 h-12 flex items-center justify-center">
+          <LogOut size={20} />
+        </div>
+        {isOpen ? (
+          <span className="relative z-10 pr-4 whitespace-nowrap">Cerrar sesión</span>
+        ) : (
+          <span className="sr-only">Cerrar sesión</span>
+        )}
+      </button>
 
       <div className="mx-3 border-t border-white/20" />
 

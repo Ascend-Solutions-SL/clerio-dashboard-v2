@@ -45,7 +45,8 @@ type FacturaRow = {
   invoice_concept: string | null;
   importe_sin_iva: number | string | null;
   iva: number | string | null;
-  desc_ret_extra?: number | string | null;
+  descuentos?: number | string | null;
+  retenciones?: number | string | null;
   importe_total: number | string | null;
   factura_uid: string | null;
   invoice_reason: string | null;
@@ -97,7 +98,8 @@ type RevisionRow = {
   concepto: string;
   importeSinIva: number | string | null;
   iva: number | string | null;
-  descRetExtra: number | string | null;
+  descuentos: number | string | null;
+  retenciones: number | string | null;
   importeTotal: number | string | null;
   reviewed: boolean;
   reviewedAt: string | null;
@@ -135,18 +137,6 @@ const resolveContraparte = (row: RevisionRow) => {
 const getTipoBadgeClasses = (tipo: string) => {
   if (tipo === 'Por Revisar') {
     return 'bg-amber-100 text-amber-950 border-amber-300';
-  }
-
-  if (tipo === 'No Factura') {
-    return 'bg-violet-100 text-violet-950 border-violet-300';
-  }
-
-  if (tipo === 'Ingresos') {
-    return 'bg-emerald-50 text-emerald-900 border-emerald-200';
-  }
-
-  if (tipo === 'Gastos') {
-    return 'bg-rose-50 text-rose-900 border-rose-200';
   }
 
   return 'bg-slate-50 text-slate-700 border-slate-200';
@@ -202,9 +192,45 @@ export function RevisionsTable({
   const [tipoFilter, setTipoFilter] = React.useState<'all' | 'Ingresos' | 'Gastos' | 'Por Revisar' | 'No Factura'>('all');
   const [mode, setMode] = React.useState<'list' | 'review'>('list');
   const [scopeState, setScopeState] = React.useState<'pending' | 'history'>('pending');
-  const [historySort, setHistorySort] = React.useState<'desc' | 'asc'>('desc');
+
+  const [period, setPeriod] = React.useState<'total' | 'month' | 'quarter' | 'year' | 'custom'>('total');
+  const [customRange, setCustomRange] = React.useState<{ startDate: string; endDate: string }>({ startDate: '', endDate: '' });
 
   const [dateSort, setDateSort] = React.useState<null | 'asc' | 'desc'>(null);
+
+  const periodRange = React.useMemo(() => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toIsoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (period === 'total') {
+      return null;
+    }
+
+    if (period === 'custom') {
+      const start = customRange.startDate?.trim() || '';
+      const end = customRange.endDate?.trim() || '';
+      return start && end ? { start, end } : null;
+    }
+
+    if (period === 'year') {
+      const start = new Date(now.getFullYear(), 0, 1);
+      const end = now;
+      return { start: toIsoDate(start), end: toIsoDate(end) };
+    }
+
+    if (period === 'quarter') {
+      const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+      const start = new Date(now.getFullYear(), quarterStartMonth, 1);
+      const end = now;
+      return { start: toIsoDate(start), end: toIsoDate(end) };
+    }
+
+    // month
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = now;
+    return { start: toIsoDate(start), end: toIsoDate(end) };
+  }, [customRange.endDate, customRange.startDate, period]);
 
   const [reviewForm, setReviewForm] = React.useState({
     numero: '',
@@ -215,7 +241,8 @@ export function RevisionsTable({
     sellerName: '',
     sellerTaxId: '',
     iva: '',
-    descRetExtra: '',
+    descuentos: '',
+    retenciones: '',
     importeSinIva: '',
     importeTotal: '',
   });
@@ -223,6 +250,9 @@ export function RevisionsTable({
   const [nfUnlock, setNfUnlock] = React.useState(false);
   const [nfConfirmStep, setNfConfirmStep] = React.useState<0 | 1>(0);
   const [validateConfirmStep, setValidateConfirmStep] = React.useState<0 | 1>(0);
+  const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
+  const [amountsMismatchAccepted, setAmountsMismatchAccepted] = React.useState(false);
+  const [showAmountsMismatchHint, setShowAmountsMismatchHint] = React.useState(false);
   const validateConfirmTimeoutRef = React.useRef<number | null>(null);
 
   const businessName = user?.businessName?.trim() || '';
@@ -250,6 +280,7 @@ export function RevisionsTable({
     }
 
     setNfConfirmStep(0);
+    setShowAmountsMismatchHint(false);
     const isNoFactura = selected.tipo === 'No Factura';
     setNfUnlock(!isNoFactura);
 
@@ -262,7 +293,8 @@ export function RevisionsTable({
       sellerName: selected.sellerName ?? '',
       sellerTaxId: selected.clienteProveedor ?? '',
       iva: selected.iva == null ? '' : String(selected.iva),
-      descRetExtra: selected.descRetExtra == null ? '' : String(selected.descRetExtra),
+      descuentos: selected.descuentos == null ? '' : String(selected.descuentos),
+      retenciones: selected.retenciones == null ? '' : String(selected.retenciones),
       importeSinIva: selected.importeSinIva == null ? '' : String(selected.importeSinIva),
       importeTotal: selected.importeTotal == null ? '' : String(selected.importeTotal),
     });
@@ -286,15 +318,11 @@ export function RevisionsTable({
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, desc_ret_extra, importe_total, factura_uid, invoice_reason, factura_revisada, reviewed_at, drive_file_id, drive_type'
+          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_revisada, reviewed_at, drive_file_id, drive_type'
         )
         .eq('factura_revisada', scope === 'pending' ? false : true);
 
-      if (scope === 'pending') {
-        query = query.order('fecha', { ascending: false });
-      } else {
-        query = query.order('reviewed_at', { ascending: historySort === 'asc', nullsFirst: false }).order('fecha', { ascending: false });
-      }
+      query = query.order('fecha', { ascending: false });
 
       if (empresaId != null && businessName) {
         query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
@@ -304,6 +332,10 @@ export function RevisionsTable({
 
       if (tipoFilter !== 'all') {
         query = query.eq('tipo', tipoFilter);
+      }
+
+      if (periodRange) {
+        query = query.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
       }
 
       const makeCountQuery = (reviewed: boolean) => {
@@ -317,6 +349,14 @@ export function RevisionsTable({
         } else if (businessName) {
           // Fallback (shouldn't happen in your system, but keeps behavior safe)
           countQuery = countQuery.eq('user_businessname', businessName);
+        }
+
+        if (tipoFilter !== 'all') {
+          countQuery = countQuery.eq('tipo', tipoFilter);
+        }
+
+        if (periodRange) {
+          countQuery = countQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
         }
 
         return countQuery;
@@ -363,7 +403,8 @@ export function RevisionsTable({
           concepto: row.invoice_concept ?? '',
           importeSinIva: row.importe_sin_iva ?? null,
           iva: row.iva ?? null,
-          descRetExtra: row.desc_ret_extra ?? null,
+          descuentos: row.descuentos ?? null,
+          retenciones: row.retenciones ?? null,
           importeTotal: row.importe_total ?? null,
           reviewed: Boolean(row.factura_revisada),
           reviewedAt: row.reviewed_at ?? null,
@@ -386,9 +427,11 @@ export function RevisionsTable({
     businessName,
     empresaId,
     tipoFilter,
+    period,
+    customRange.startDate,
+    customRange.endDate,
     refreshKey,
     scope,
-    historySort,
     onPorRevisarCountChange,
     onNoFacturasCountChange,
     onHistoricoCountChange,
@@ -419,12 +462,49 @@ export function RevisionsTable({
     return value;
   };
 
+  const amountsCheck = React.useMemo(() => {
+    const base = parseOptionalNumber(reviewForm.importeSinIva);
+    const iva = parseOptionalNumber(reviewForm.iva);
+    const descuentos = parseOptionalNumber(reviewForm.descuentos);
+    const retenciones = parseOptionalNumber(reviewForm.retenciones);
+    const total = parseOptionalNumber(reviewForm.importeTotal);
+
+    const anyInvalid =
+      base === undefined || iva === undefined || descuentos === undefined || retenciones === undefined || total === undefined;
+    if (anyInvalid) {
+      return { status: 'invalid' as const, expected: null as number | null };
+    }
+
+    if (base === null || iva === null || total === null) {
+      return { status: 'missing' as const, expected: null as number | null };
+    }
+
+    const expected = base + iva - (descuentos ?? 0) - (retenciones ?? 0);
+    const equal = Math.abs(expected - total) < 0.005;
+    const status: 'ok' | 'mismatch' = equal ? 'ok' : 'mismatch';
+    return { status, expected };
+  }, [reviewForm.descuentos, reviewForm.importeSinIva, reviewForm.importeTotal, reviewForm.iva, reviewForm.retenciones]);
+
+  React.useEffect(() => {
+    if (!showAmountsMismatchHint) {
+      return;
+    }
+
+    if (amountsCheck.status !== 'mismatch') {
+      setShowAmountsMismatchHint(false);
+    }
+  }, [amountsCheck.status, showAmountsMismatchHint]);
+
   const handleValidateAndNext = async () => {
     if (!selected) {
       return;
     }
 
     if (validateConfirmStep === 0) {
+      if (amountsCheck.status === 'mismatch') {
+        setShowAmountsMismatchHint(true);
+      }
+      setAmountsMismatchAccepted(false);
       setValidateConfirmStep(1);
       if (validateConfirmTimeoutRef.current) {
         window.clearTimeout(validateConfirmTimeoutRef.current);
@@ -433,6 +513,11 @@ export function RevisionsTable({
         setValidateConfirmStep(0);
         validateConfirmTimeoutRef.current = null;
       }, 3500);
+      return;
+    }
+
+    if (amountsCheck.status === 'mismatch' && !amountsMismatchAccepted) {
+      setShowAmountsMismatchConfirm(true);
       return;
     }
 
@@ -477,11 +562,21 @@ export function RevisionsTable({
         });
         return;
       }
-      const descRetExtra = parseOptionalNumber(reviewForm.descRetExtra);
-      if (descRetExtra === undefined) {
+      const descuentos = parseOptionalNumber(reviewForm.descuentos);
+      if (descuentos === undefined) {
         toast({
           title: 'Formato incorrecto',
-          description: '“Descuentos/Retenciones” debe ser un número.',
+          description: '“Descuentos” debe ser un número.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const retenciones = parseOptionalNumber(reviewForm.retenciones);
+      if (retenciones === undefined) {
+        toast({
+          title: 'Formato incorrecto',
+          description: '“Retenciones” debe ser un número.',
           variant: 'destructive',
         });
         return;
@@ -508,7 +603,8 @@ export function RevisionsTable({
         seller_tax_id: sellerTaxId || null,
         importe_sin_iva: importeSinIva,
         iva,
-        desc_ret_extra: descRetExtra,
+        descuentos,
+        retenciones,
         importe_total: importeTotal,
         factura_revisada: true,
         reviewed_at: reviewedAt,
@@ -563,10 +659,22 @@ export function RevisionsTable({
     } finally {
       setIsSaving(false);
       setValidateConfirmStep(0);
+      setShowAmountsMismatchConfirm(false);
       if (validateConfirmTimeoutRef.current) {
         window.clearTimeout(validateConfirmTimeoutRef.current);
         validateConfirmTimeoutRef.current = null;
       }
+    }
+  };
+
+  const clearAmountsMismatchFlow = () => {
+    setShowAmountsMismatchConfirm(false);
+    setAmountsMismatchAccepted(false);
+    setShowAmountsMismatchHint(false);
+    setValidateConfirmStep(0);
+    if (validateConfirmTimeoutRef.current) {
+      window.clearTimeout(validateConfirmTimeoutRef.current);
+      validateConfirmTimeoutRef.current = null;
     }
   };
 
@@ -658,7 +766,7 @@ export function RevisionsTable({
                   tipo
                 )}`}
               >
-                {tipo === 'Por Revisar' ? 'Por revisar' : tipo === 'No Factura' ? 'No factura' : tipo}
+                {tipo === 'No Factura' ? 'No factura' : tipo}
               </span>
             </div>
           );
@@ -778,35 +886,93 @@ export function RevisionsTable({
         scope === 'history' ? 'bg-slate-50 border-slate-300' : 'bg-white border-gray-200'
       }`}
     >
+      {showAmountsMismatchConfirm ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/20 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="text-sm font-semibold text-slate-900">Importes no cuadran</div>
+            <div className="mt-2 text-sm text-slate-700">
+              El check de importes da un valor distinto al “Importe total”.
+            </div>
+            {amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
+              <div className="mt-2 text-sm text-slate-700">
+                Suma = <span className="font-mono font-semibold">{amountsCheck.expected.toFixed(2)}€</span>
+              </div>
+            ) : null}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" className="h-8 text-xs" onClick={clearAmountsMismatchFlow}>
+                Atrás
+              </Button>
+              <Button
+                type="button"
+                className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs"
+                onClick={() => {
+                  setAmountsMismatchAccepted(true);
+                  setShowAmountsMismatchConfirm(false);
+                }}
+              >
+                Aceptar
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {mode === 'list' ? (
         <div className="flex flex-col gap-2 mb-3">
           <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="w-[150px]">
-                <Select value={tipoFilter} onValueChange={(value) => setTipoFilter(value as typeof tipoFilter)}>
-                  <SelectTrigger className="h-7 px-2 text-xs">
-                    <SelectValue placeholder="Filtrar" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="Ingresos">Ingresos</SelectItem>
-                    <SelectItem value="Gastos">Gastos</SelectItem>
-                    <SelectItem value="Por Revisar">Por revisar</SelectItem>
-                    <SelectItem value="No Factura">No factura</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-2">
+                <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">Tipo</div>
+                <div className="w-[96px]">
+                  <Select value={tipoFilter} onValueChange={(value) => setTipoFilter(value as typeof tipoFilter)}>
+                    <SelectTrigger className="h-6 px-2 text-[11px] w-full">
+                      <SelectValue placeholder="Todas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas</SelectItem>
+                      <SelectItem value="Ingresos">Ingresos</SelectItem>
+                      <SelectItem value="Gastos">Gastos</SelectItem>
+                      <SelectItem value="Por Revisar">Por Revisar</SelectItem>
+                      <SelectItem value="No Factura">No factura</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              {scope === 'history' ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={() => setHistorySort((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-                >
-                  {historySort === 'desc' ? 'Últimas primero' : 'Antiguas primero'}
-                </Button>
+              <div className="flex items-center gap-2">
+                <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">Período</div>
+                <div className="w-[120px]">
+                  <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
+                    <SelectTrigger className="h-6 px-2 text-[11px] w-full">
+                      <SelectValue placeholder="Período" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="total">Total</SelectItem>
+                      <SelectItem value="month">Mes actual</SelectItem>
+                      <SelectItem value="quarter">Trimestre actual</SelectItem>
+                      <SelectItem value="year">Año actual</SelectItem>
+                      <SelectItem value="custom">Personalizado</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {period === 'custom' ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    className="h-7 px-2 text-xs"
+                    value={customRange.startDate}
+                    onChange={(e) => setCustomRange((prev) => ({ ...prev, startDate: e.target.value }))}
+                  />
+                  <span className="text-xs text-slate-400">—</span>
+                  <Input
+                    type="date"
+                    className="h-7 px-2 text-xs"
+                    value={customRange.endDate}
+                    onChange={(e) => setCustomRange((prev) => ({ ...prev, endDate: e.target.value }))}
+                  />
+                </div>
               ) : null}
             </div>
             <div className="w-full sm:w-auto">
@@ -815,7 +981,7 @@ export function RevisionsTable({
                 <Input
                   type="search"
                   placeholder="Buscar..."
-                  className="w-full rounded-lg bg-background pl-7 md:w-[180px] h-7 text-xs"
+                  className="w-full rounded-lg bg-background pl-7 md:w-[150px] h-6 text-[11px]"
                   value={globalFilter ?? ''}
                   onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGlobalFilter(event.target.value)}
                 />
@@ -961,7 +1127,7 @@ export function RevisionsTable({
                     <div>
                       <div className="pl-1 text-xs font-medium text-slate-600">Número</div>
                       <Input
-                        className="h-8 text-xs"
+                        className="h-9 text-xs"
                         value={reviewForm.numero}
                         onChange={(e) => setReviewForm((p) => ({ ...p, numero: e.target.value }))}
                       />
@@ -970,7 +1136,7 @@ export function RevisionsTable({
                       <div className="pl-1 text-xs font-medium text-slate-600">Fecha</div>
                       <Input
                         type="date"
-                        className="h-8 text-xs"
+                        className="h-9 text-xs"
                         value={reviewForm.fecha}
                         onChange={(e) => setReviewForm((p) => ({ ...p, fecha: e.target.value }))}
                       />
@@ -978,7 +1144,7 @@ export function RevisionsTable({
                     <div>
                       <div className="pl-1 text-xs font-medium text-slate-600">Tipo</div>
                       <select
-                        className="h-8 w-full rounded-md border border-input bg-background px-3 text-xs"
+                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
                         value={reviewForm.tipo}
                         onChange={(e) => setReviewForm((p) => ({ ...p, tipo: e.target.value }))}
                       >
@@ -990,87 +1156,140 @@ export function RevisionsTable({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                      <Input
-                        className="h-8 text-xs"
-                        value={reviewForm.buyerTaxId}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
-                      <Input
-                        className="h-8 text-xs"
-                        value={reviewForm.buyerName}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
-                      />
+                  <div className="mt-2" />
+
+                  <div className="space-y-2">
+                    <div className="text-[13px] font-semibold text-slate-800">Datos Comprador</div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={reviewForm.buyerTaxId}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={reviewForm.buyerName}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                      <Input
-                        className="h-8 text-xs"
-                        value={reviewForm.sellerTaxId}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
-                      <Input
-                        className="h-8 text-xs"
-                        value={reviewForm.sellerName}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
-                      />
+                  <div className="mt-2" />
+
+                  <div className="space-y-2">
+                    <div className="text-[13px] font-semibold text-slate-800">Datos Vendedor</div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={reviewForm.sellerTaxId}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
+                        <Input
+                          className="h-8 text-xs"
+                          value={reviewForm.sellerName}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">IVA</div>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 text-xs"
-                        value={reviewForm.iva}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, iva: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Descuentos/Retenciones</div>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 text-xs"
-                        value={reviewForm.descRetExtra}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, descRetExtra: e.target.value }))}
-                      />
-                    </div>
-                  </div>
+                  <div className="mt-2" />
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Importe sin IVA</div>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 text-xs"
-                        value={reviewForm.importeSinIva}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, importeSinIva: e.target.value }))}
-                      />
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">IVA</div>
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={reviewForm.iva}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, iva: e.target.value }))}
+                          />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                            EUR
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Descuentos</div>
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={reviewForm.descuentos}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, descuentos: e.target.value }))}
+                          />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                            EUR
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Retenciones</div>
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={reviewForm.retenciones}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, retenciones: e.target.value }))}
+                          />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                            EUR
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Importe Total</div>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        className="h-8 text-xs"
-                        value={reviewForm.importeTotal}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, importeTotal: e.target.value }))}
-                      />
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Importe sin IVA</div>
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            className="h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            value={reviewForm.importeSinIva}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, importeSinIva: e.target.value }))}
+                          />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                            EUR
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="pl-1 text-xs font-medium text-slate-600">Importe Total</div>
+                        <div className="relative">
+                          <Input
+                            inputMode="decimal"
+                            className={`h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                              showAmountsMismatchHint && amountsCheck.status === 'mismatch'
+                                ? 'ring-2 ring-red-300 ring-offset-2 ring-offset-white'
+                                : ''
+                            }`}
+                            value={reviewForm.importeTotal}
+                            onChange={(e) => setReviewForm((p) => ({ ...p, importeTotal: e.target.value }))}
+                          />
+                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                            EUR
+                          </div>
+                        </div>
+                        {showAmountsMismatchHint && amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
+                          <div className="mt-1 pl-1 text-[11px] font-semibold text-red-700">
+                            Check importes incorrecto. Suma = {amountsCheck.expected.toFixed(2)}€
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>

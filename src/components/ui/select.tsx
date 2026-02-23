@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 
@@ -128,9 +128,10 @@ const SelectItem = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { center?: boolean }
 >(({ className, center = false, children, ...props }, ref) => {
   const itemClasses = cn(
-    'relative flex w-full cursor-default select-none items-center rounded-sm py-1 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-    center ? 'justify-center px-0' : 'pl-8 pr-2',
-    'h-7', // Fixed height for items
+    'relative flex w-full cursor-default select-none items-center rounded-sm px-2 py-1 text-xs outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+    'data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground data-[state=checked]:font-semibold',
+    center ? 'justify-center' : 'justify-start',
+    'h-6',
     className
   );
 
@@ -140,13 +141,6 @@ const SelectItem = React.forwardRef<
       className={itemClasses}
       {...props}
     >
-      {!center && (
-        <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-          <SelectPrimitive.ItemIndicator>
-            <Check className="h-4 w-4" />
-          </SelectPrimitive.ItemIndicator>
-        </span>
-      )}
       <SelectPrimitive.ItemText className={center ? 'text-center w-full px-2' : ''}>
         {children}
       </SelectPrimitive.ItemText>

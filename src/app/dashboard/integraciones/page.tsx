@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { PlugZap, Search } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, PlugZap, Search } from 'lucide-react';
 
 import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
+import { useDashboardSession } from '@/context/dashboard-session-context';
 
 type IntegrationCategory = 'popular' | 'ingresos' | 'gastos';
 type IntegrationStatus = 'connected' | 'disconnected';
@@ -43,7 +44,7 @@ const baseIntegrations: Integration[] = [
     name: 'Drive',
     description:
       'Sincroniza las carpetas compartidas de tu empresa para mantener todo el respaldo documental al día.',
-    status: 'connected',
+    status: 'disconnected',
     categories: ['popular', 'ingresos', 'gastos'],
     icon: <img src="/brand/tab_integraciones/drive_logo.png" alt="Drive" className="h-8 w-8 object-contain" />,
   },
@@ -178,7 +179,9 @@ const baseIntegrations: Integration[] = [
 ];
 
 const IntegracionesPage = () => {
+  const { user } = useDashboardSession();
   const [integrations, setIntegrations] = useState<Integration[]>(baseIntegrations);
+  const integrationsRef = useRef<Integration[]>(baseIntegrations);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -189,6 +192,9 @@ const IntegracionesPage = () => {
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastFading, setToastFading] = useState(false);
+  const [hoveredDisconnectId, setHoveredDisconnectId] = useState<string | null>(null);
+  const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
@@ -209,6 +215,10 @@ const IntegracionesPage = () => {
       return matchesTab && matchesSearch;
     });
   }, [activeTab, integrations, search]);
+
+  useEffect(() => {
+    integrationsRef.current = integrations;
+  }, [integrations]);
 
   useEffect(() => {
     let isMounted = true;
@@ -281,10 +291,122 @@ const IntegracionesPage = () => {
     onedrive: <OneDriveConnectButton redirectPath="/dashboard/integraciones" />,
   };
 
+  const startOAuth = useCallback((integrationId: string) => {
+    const startPathById: Partial<Record<Integration['id'], string>> = {
+      gmail: '/api/gmail/oauth/start',
+      drive: '/api/drive/oauth/start',
+      outlook: '/api/oauth/outlook/start',
+      onedrive: '/api/oauth/onedrive/start',
+    };
+
+    const startPath = startPathById[integrationId as Integration['id']];
+    if (!startPath) return;
+
+    const url = new URL(startPath, window.location.origin);
+    url.searchParams.set('redirect', '/dashboard/integraciones');
+    window.location.href = url.toString();
+  }, []);
+
   const closeRequestModal = useCallback(() => {
     setIsRequestModalOpen(false);
     setRequestError(null);
   }, []);
+
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setToastFading(false);
+
+    window.setTimeout(() => setToastFading(true), 1800);
+    window.setTimeout(() => {
+      setToastMessage(null);
+      setToastFading(false);
+    }, 2400);
+  }, []);
+
+  const integrationWebhookValue = useCallback((id: string) => {
+    if (id === 'gmail') return 'gmail';
+    if (id === 'drive') return 'googledrive';
+    if (id === 'outlook') return 'outlook';
+    if (id === 'onedrive') return 'onedrive';
+    return null;
+  }, []);
+
+  const confirmDisconnect = useCallback(
+    async (integrationId: string) => {
+      if (!user?.id) {
+        showToast('No se pudo desconectar: usuario no identificado');
+        setConfirmDisconnectId(null);
+        return;
+      }
+
+      const integracion = integrationWebhookValue(integrationId);
+      if (!integracion) {
+        showToast('No se pudo desconectar: integración no soportada');
+        setConfirmDisconnectId(null);
+        return;
+      }
+
+      if (isDisconnecting) {
+        return;
+      }
+
+      const previousIntegrations = integrationsRef.current;
+      const optimisticDisconnectIds =
+        integrationId === 'gmail'
+          ? ['gmail', 'drive']
+          : integrationId === 'drive'
+            ? ['drive', 'gmail']
+            : integrationId === 'outlook'
+              ? ['outlook', 'onedrive']
+              : integrationId === 'onedrive'
+                ? ['onedrive', 'outlook']
+            : [integrationId];
+
+      setIntegrations((prev) =>
+        prev.map((integration) =>
+          optimisticDisconnectIds.includes(integration.id)
+            ? {
+                ...integration,
+                status: 'disconnected',
+              }
+            : integration
+        )
+      );
+
+      setIsDisconnecting(true);
+      try {
+        const response = await fetch(
+          'https://v-ascendsolutions.app.n8n.cloud/webhook/revocar-integracion',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              user_uid: user.id,
+              integracion,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        showToast(`Integración desconectada: ${integracion}`);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Error desconocido';
+        void reason;
+        setIntegrations(previousIntegrations);
+        showToast(`No se pudo desconectar. Contacte con soporte (hola@clerio.es).`);
+      } finally {
+        setIsDisconnecting(false);
+        setConfirmDisconnectId(null);
+        setHoveredDisconnectId(null);
+      }
+    },
+    [integrationWebhookValue, isDisconnecting, showToast, user?.id]
+  );
 
   const openRequestModal = useCallback(() => {
     setRequestError(null);
@@ -330,18 +452,11 @@ const IntegracionesPage = () => {
       }
 
       setIsRequestModalOpen(false);
-      setToastMessage('Solicitud enviada. ¡Gracias!');
-      setToastFading(false);
-
-      window.setTimeout(() => setToastFading(true), 1800);
-      window.setTimeout(() => {
-        setToastMessage(null);
-        setToastFading(false);
-      }, 2400);
+      showToast('Solicitud enviada. ¡Gracias!');
     } finally {
       setIsSubmittingRequest(false);
     }
-  }, [isSubmittingRequest, requestComments, requestNeedLevel, requestTool]);
+  }, [isSubmittingRequest, requestComments, requestNeedLevel, requestTool, showToast]);
 
   return (
     <div className="-m-8">
@@ -391,11 +506,19 @@ const IntegracionesPage = () => {
             {filteredIntegrations.map((integration) => {
               const isConnected = integration.status === 'connected';
               const integrationAction = connectedActions[integration.id];
+              const supportsDisconnect =
+                integration.id === 'gmail' ||
+                integration.id === 'drive' ||
+                integration.id === 'outlook' ||
+                integration.id === 'onedrive';
+              const isConfirmingDisconnect = confirmDisconnectId === integration.id;
+              const showDisconnectAction =
+                isConnected && supportsDisconnect && hoveredDisconnectId === integration.id;
 
               return (
                 <div
                   key={integration.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col gap-4"
+                  className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col gap-4 relative"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-center gap-3">
@@ -410,10 +533,40 @@ const IntegracionesPage = () => {
                       </div>
                     </div>
                     <div>
-                      {integrationAction ?? (
-                        <span className="inline-flex select-none items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-                          Próximamente
-                        </span>
+                      {isConnected && supportsDisconnect ? (
+                        <button
+                          type="button"
+                          onMouseEnter={() => setHoveredDisconnectId(integration.id)}
+                          onMouseLeave={() => setHoveredDisconnectId((prev) => (prev === integration.id ? null : prev))}
+                          onFocus={() => setHoveredDisconnectId(integration.id)}
+                          onBlur={() => setHoveredDisconnectId((prev) => (prev === integration.id ? null : prev))}
+                          onClick={() => {
+                            if (showDisconnectAction) {
+                              setConfirmDisconnectId(integration.id);
+                            }
+                          }}
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition border ${
+                            showDisconnectAction
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : 'bg-emerald-500 text-white border-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
+                          }`}
+                        >
+                          {showDisconnectAction ? 'Desconectar' : 'Conectado'}
+                        </button>
+                      ) : !isConnected && supportsDisconnect ? (
+                        <button
+                          type="button"
+                          onClick={() => startOAuth(integration.id)}
+                          className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition border border-gray-200 bg-gray-100 text-gray-700 hover:border-blue-300 hover:text-blue-600"
+                        >
+                          Conectar
+                        </button>
+                      ) : (
+                        integrationAction ?? (
+                          <span className="inline-flex select-none items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                            Próximamente
+                          </span>
+                        )
                       )}
                     </div>
                   </div>
@@ -430,6 +583,77 @@ const IntegracionesPage = () => {
                       </span>
                     ))}
                   </div>
+
+                  {isConfirmingDisconnect ? (
+                    <div className="absolute inset-0 z-10 grid place-items-center">
+                      <div className="absolute inset-0 rounded-2xl bg-white/40 backdrop-blur-sm" />
+                      <div className="relative z-10 w-[90%] max-w-[320px] rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-xl">
+                        <div className="text-center text-[12px] font-semibold leading-snug text-slate-900">
+                          <div>¿Estas seguro de que quieres</div>
+                          <div className="mt-0.5">
+                            <span className="relative inline-block px-0.5">
+                              <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-gradient-to-r from-slate-400/60 via-slate-600/70 to-slate-400/60" />
+                              <span className="relative">desconectar {integration.name}</span>
+                            </span>
+                            ?
+                          </div>
+                        </div>
+
+                        {integration.id === 'gmail' ||
+                        integration.id === 'drive' ||
+                        integration.id === 'outlook' ||
+                        integration.id === 'onedrive' ? (
+                          <div className="mt-3 rounded-xl border border-red-200 bg-red-50/40 px-3 py-2">
+                            <div className="flex items-start justify-center gap-2 text-center text-[11px] font-semibold text-red-700">
+                              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                              <div>
+                                {integration.id === 'gmail' ? (
+                                  <div>
+                                    <div>ATENCIÓN: También se desconectará</div>
+                                    <div className="mt-0.5">Google Drive</div>
+                                  </div>
+                                ) : integration.id === 'drive' ? (
+                                  <div>
+                                    <div>ATENCIÓN: También se desconectará</div>
+                                    <div className="mt-0.5">Gmail</div>
+                                  </div>
+                                ) : integration.id === 'outlook' ? (
+                                  <div>
+                                    <div>ATENCIÓN: También se desconectará</div>
+                                    <div className="mt-0.5">One Drive</div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div>ATENCIÓN: También se desconectará</div>
+                                    <div className="mt-0.5">Outlook</div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-4 flex items-center justify-center gap-3">
+                          <button
+                            type="button"
+                            disabled={isDisconnecting}
+                            onClick={() => confirmDisconnect(integration.id)}
+                            className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-60"
+                          >
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isDisconnecting}
+                            onClick={() => setConfirmDisconnectId(null)}
+                            className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-60"
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

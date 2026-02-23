@@ -86,7 +86,7 @@ const RevisionesPage = () => {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className={`text-xs font-semibold ${scope === 'pending' ? 'text-blue-900' : 'text-slate-700'}`}>
-                          Por revisar
+                          Por validar
                         </div>
                         <div className={`text-sm font-semibold tabular-nums ${scope === 'pending' ? 'text-blue-950' : 'text-slate-900'}`}>
                           {porRevisarCount}
