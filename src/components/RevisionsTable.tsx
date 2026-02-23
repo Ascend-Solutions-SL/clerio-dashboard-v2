@@ -93,8 +93,9 @@ type RevisionRow = {
   tipo: string;
   numero: string;
   buyerName: string;
-  clienteProveedor: string;
+  buyerTaxId: string;
   sellerName: string;
+  sellerTaxId: string;
   concepto: string;
   importeSinIva: number | string | null;
   iva: number | string | null;
@@ -116,11 +117,11 @@ const formatDate = (raw: string) => {
 
 const resolveContraparte = (row: RevisionRow) => {
   if (row.tipo === 'Ingresos') {
-    return row.buyerName || row.clienteProveedor || '—';
+    return row.buyerName || '—';
   }
 
   if (row.tipo === 'Gastos') {
-    return row.sellerName || row.clienteProveedor || '—';
+    return row.sellerName || '—';
   }
 
   if (row.tipo === 'Por Revisar') {
@@ -131,7 +132,7 @@ const resolveContraparte = (row: RevisionRow) => {
     return 'No Factura';
   }
 
-  return row.buyerName || row.sellerName || row.clienteProveedor || '—';
+  return row.buyerName || row.sellerName || '—';
 };
 
 const getTipoBadgeClasses = (tipo: string) => {
@@ -289,9 +290,9 @@ export function RevisionsTable({
       fecha: selected.rawDate ?? '',
       tipo: selected.tipo ?? 'Por Revisar',
       buyerName: selected.buyerName ?? '',
-      buyerTaxId: selected.clienteProveedor ?? '',
+      buyerTaxId: selected.buyerTaxId ?? '',
       sellerName: selected.sellerName ?? '',
-      sellerTaxId: selected.clienteProveedor ?? '',
+      sellerTaxId: selected.sellerTaxId ?? '',
       iva: selected.iva == null ? '' : String(selected.iva),
       descuentos: selected.descuentos == null ? '' : String(selected.descuentos),
       retenciones: selected.retenciones == null ? '' : String(selected.retenciones),
@@ -398,8 +399,9 @@ export function RevisionsTable({
           tipo: row.tipo,
           numero: row.numero,
           buyerName: row.buyer_name ?? '',
-          clienteProveedor: row.buyer_tax_id ?? row.seller_tax_id ?? '',
+          buyerTaxId: row.buyer_tax_id ?? '',
           sellerName: row.seller_name ?? '',
+          sellerTaxId: row.seller_tax_id ?? '',
           concepto: row.invoice_concept ?? '',
           importeSinIva: row.importe_sin_iva ?? null,
           iva: row.iva ?? null,

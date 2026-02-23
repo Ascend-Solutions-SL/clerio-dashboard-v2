@@ -198,6 +198,7 @@ type FacturaRow = {
   id: number;
   numero: string;
   fecha: string;
+  seller_name: string | null;
   seller_tax_id: string | null;
   invoice_concept: string | null;
   importe_sin_iva: number | string | null;
@@ -278,17 +279,18 @@ export const columns: ColumnDef<Expense>[] = [
     header: 'Nº Factura',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="group inline-flex min-w-0 items-center gap-1.5 cursor-zoom-in pr-2">
-                <span className="block truncate min-w-0 flex-1">{value}</span>
+                <span className="block truncate min-w-0 flex-1">{displayValue}</span>
                 <Search className="h-3.5 w-3.5 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
               </span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin datos'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -302,14 +304,15 @@ export const columns: ColumnDef<Expense>[] = [
     header: 'Proveedor',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block truncate cursor-zoom-in pr-2">{value}</span>
+              <span className="block truncate cursor-zoom-in pr-2">{displayValue}</span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin datos'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -323,14 +326,15 @@ export const columns: ColumnDef<Expense>[] = [
     header: 'Descripción',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block truncate cursor-zoom-in pr-2">{value}</span>
+              <span className="block truncate cursor-zoom-in pr-2">{displayValue}</span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin descripción'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -437,7 +441,9 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
 
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada')
+        .select(
+          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada'
+        )
         .eq('tipo', 'Gastos')
         .eq('source', 'ocr')
         .order('fecha', { ascending: false });
@@ -485,7 +491,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           date: formatDate(row.fecha),
           rawDate: row.fecha,
           invoice: row.numero,
-          provider: row.seller_tax_id ?? '',
+          provider: row.seller_name ?? '',
           description: row.invoice_concept || '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),
@@ -521,7 +527,9 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     const loadData = async () => {
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type')
+        .select(
+          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type'
+        )
         .eq('tipo', 'Gastos')
         .eq('source', 'ocr')
         .order('fecha', { ascending: false });
@@ -565,7 +573,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           date: formatDate(row.fecha),
           rawDate: row.fecha,
           invoice: row.numero,
-          provider: row.seller_tax_id ?? '',
+          provider: row.seller_name ?? '',
           description: row.invoice_concept ?? '',
           subtotal: formatNegative(subtotalValue),
           total: formatNegative(totalValue),

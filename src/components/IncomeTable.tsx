@@ -198,6 +198,7 @@ type FacturaRow = {
   id: number;
   numero: string;
   fecha: string;
+  buyer_name: string | null;
   buyer_tax_id: string | null;
   invoice_concept: string | null;
   importe_sin_iva: number | string | null;
@@ -276,14 +277,15 @@ export const columns: ColumnDef<Income>[] = [
     header: 'Nº Factura',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block truncate cursor-zoom-in pr-2">{value}</span>
+              <span className="block truncate cursor-zoom-in pr-2">{displayValue}</span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin datos'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -295,14 +297,15 @@ export const columns: ColumnDef<Income>[] = [
     header: 'Cliente',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block truncate cursor-zoom-in pr-2">{value}</span>
+              <span className="block truncate cursor-zoom-in pr-2">{displayValue}</span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin datos'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -314,14 +317,15 @@ export const columns: ColumnDef<Income>[] = [
     header: 'Descripción',
     cell: ({ getValue }) => {
       const value = getValue<string>() ?? '';
+      const displayValue = value.trim() ? value : '-';
       return (
         <TooltipProvider delayDuration={100}>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block truncate cursor-zoom-in pr-2">{value}</span>
+              <span className="block truncate cursor-zoom-in pr-2">{displayValue}</span>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs break-words text-sm">
-              {value || 'Sin descripción'}
+              {displayValue}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -415,7 +419,9 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
 
       let query = supabase
         .from('facturas')
-        .select('id, numero, fecha, buyer_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada')
+        .select(
+          'id, numero, fecha, buyer_name, buyer_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada'
+        )
         .eq('tipo', 'Ingresos')
         .eq('source', 'ocr')
         .order('fecha', { ascending: false });
@@ -458,7 +464,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           date: formatDate(row.fecha),
           rawDate: row.fecha,
           invoice: row.numero,
-          client: row.buyer_tax_id ?? '',
+          client: row.buyer_name ?? '',
           description: row.invoice_concept || '',
           subtotal: currencyFormatter.format(subtotalValue),
           total: currencyFormatter.format(totalValue),
@@ -495,7 +501,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, buyer_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada'
+          'id, numero, fecha, buyer_name, buyer_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada'
         )
         .eq('tipo', 'Ingresos')
         .eq('source', 'ocr')
@@ -535,7 +541,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           id: row.id,
           date: formatDate(row.fecha),
           invoice: row.numero,
-          client: row.buyer_tax_id ?? '',
+          client: row.buyer_name ?? '',
           description: row.invoice_concept ?? '',
           subtotal: currencyFormatter.format(Number.isNaN(subtotalValue) ? 0 : subtotalValue),
           total: currencyFormatter.format(Number.isNaN(totalValue) ? 0 : totalValue),
