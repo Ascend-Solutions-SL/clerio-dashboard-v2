@@ -61,11 +61,10 @@ const createMonthlyTimeline = (start: Date, end: Date): MonthlyData[] => {
   return months;
 };
 
-const getDefaultTimeline = (monthsBack = 12): MonthlyData[] => {
-  const end = new Date();
-  end.setDate(1);
-  const start = new Date(end);
-  start.setMonth(start.getMonth() - (monthsBack - 1));
+const getDefaultTimeline = (): MonthlyData[] => {
+  const currentYear = new Date().getFullYear();
+  const start = new Date(currentYear, 0, 1);
+  const end = new Date(currentYear, 11, 1);
   return createMonthlyTimeline(start, end);
 };
 
@@ -155,13 +154,13 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
                 allDates.map((d) => d.getTime()),
               ),
             );
-            const currentMonth = new Date();
-            currentMonth.setDate(1);
-            if (maxDate < currentMonth) {
-              maxDate.setTime(currentMonth.getTime());
-            }
 
-            return createMonthlyTimeline(minDate, maxDate);
+            const start = new Date(minDate.getFullYear(), 0, 1);
+
+            const currentYear = new Date().getFullYear();
+            const end = new Date(currentYear, 11, 1);
+
+            return createMonthlyTimeline(start, end);
           })();
           let totalIncome = 0;
           let totalExpenses = 0;

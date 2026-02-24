@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFinancialData } from '@/context/FinancialDataContext';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const getNiceCeil = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return 0;
@@ -10,29 +11,94 @@ const getNiceCeil = (value: number) => {
   return Math.ceil(value / magnitude) * magnitude;
 };
 
-const roundUpToThousand = (value: number) => {
+const roundUpAxisMax = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return 0;
+
+  if (value <= 100) return 100;
+  if (value <= 1000) return Math.ceil(value / 100) * 100;
   return Math.ceil(value / 1000) * 1000;
 };
 
 const VISIBLE_MONTHS = 12;
 
 const BalanceChart = () => {
-  const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Total'>('Ingresos');
+  const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
   const { data, loading, error, refresh } = useFinancialData();
   const chartData = useMemo(() => data?.monthlyData ?? [], [data]);
-  const [viewportStart, setViewportStart] = useState(0);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
+  const [renderYear, setRenderYear] = useState<number>(currentYear);
+  const [slideState, setSlideState] = useState<'idle' | 'out' | 'in'>('idle');
+  const [slideDir, setSlideDir] = useState<'left' | 'right'>('left');
+
+  const yearBounds = useMemo(() => {
+    if (!chartData.length) {
+      return { minYear: currentYear, maxYear: currentYear };
+    }
+
+    let minYear = chartData[0].year;
+    let maxYear = chartData[0].year;
+    chartData.forEach((row) => {
+      minYear = Math.min(minYear, row.year);
+      maxYear = Math.max(maxYear, row.year);
+    });
+
+    return { minYear, maxYear: currentYear };
+  }, [chartData, currentYear]);
+
+  const defaultYear = useMemo(() => {
+    if (!chartData.length) return currentYear;
+
+    let lastYearWithData: number | null = null;
+    chartData.forEach((row) => {
+      if ((row.ingresos ?? 0) !== 0 || (row.gastos ?? 0) !== 0) {
+        if (lastYearWithData == null || row.year > lastYearWithData) {
+          lastYearWithData = row.year;
+        }
+      }
+    });
+
+    const candidate = lastYearWithData ?? currentYear;
+    return Math.min(candidate, currentYear);
+  }, [chartData, currentYear]);
 
   useEffect(() => {
-    const maxStart = Math.max(0, chartData.length - VISIBLE_MONTHS);
-    setViewportStart(maxStart);
-  }, [chartData.length]);
+    setSelectedYear(defaultYear);
+  }, [defaultYear]);
+
+  useEffect(() => {
+    setRenderYear((prev) => {
+      if (prev === selectedYear) return prev;
+      return prev;
+    });
+
+    if (renderYear === selectedYear) {
+      return;
+    }
+
+    setSlideDir(selectedYear < renderYear ? 'left' : 'right');
+    setSlideState('out');
+
+    const outTimer = window.setTimeout(() => {
+      setRenderYear(selectedYear);
+      setSlideState('in');
+    }, 150);
+
+    const inTimer = window.setTimeout(() => {
+      setSlideState('idle');
+    }, 300);
+
+    return () => {
+      window.clearTimeout(outTimer);
+      window.clearTimeout(inTimer);
+    };
+  }, [renderYear, selectedYear]);
 
   const visibleData = useMemo(() => {
     if (!chartData.length) return [];
-    const safeStart = Math.min(Math.max(0, viewportStart), Math.max(0, chartData.length - VISIBLE_MONTHS));
-    return chartData.slice(safeStart, safeStart + VISIBLE_MONTHS);
-  }, [chartData, viewportStart]);
+    const yearRows = chartData.filter((row) => row.year === renderYear);
+    return yearRows.slice(0, VISIBLE_MONTHS);
+  }, [chartData, renderYear]);
 
   const chartExtents = useMemo(() => {
     const slice = visibleData.length ? visibleData : chartData.slice(-VISIBLE_MONTHS);
@@ -50,20 +116,26 @@ const BalanceChart = () => {
   }, [chartData, visibleData]);
 
   const yAxisDomain = useMemo<[number, number] | undefined>(() => {
-    const sliceLength = (visibleData.length ? visibleData : chartData.slice(-VISIBLE_MONTHS)).length;
+    const sliceLength = visibleData.length;
     if (!sliceLength) return undefined;
 
-    if (activeTab === 'Total') {
+    if (activeTab === 'Neto') {
       const maxAbs = Math.max(Math.abs(chartExtents.minTotal), Math.abs(chartExtents.maxTotal));
       const nice = getNiceCeil(maxAbs);
-      return nice ? [-nice, nice] : undefined;
+      const resolved = nice || 0;
+      const minAbs = Math.max(100, resolved);
+      return [-minAbs, minAbs];
     }
 
-    const rounded = roundUpToThousand(chartExtents.maxIncomeExpense);
+    const rounded = roundUpAxisMax(chartExtents.maxIncomeExpense);
     return rounded ? [0, rounded] : undefined;
-  }, [activeTab, chartData, chartExtents.maxIncomeExpense, chartExtents.maxTotal, chartExtents.minTotal, visibleData]);
+  }, [activeTab, chartExtents.maxIncomeExpense, chartExtents.maxTotal, chartExtents.minTotal, visibleData.length]);
 
-  const activeDataKey = activeTab.toLowerCase();
+  const activeDataKey = useMemo<'ingresos' | 'gastos' | 'total'>(() => {
+    if (activeTab === 'Ingresos') return 'ingresos';
+    if (activeTab === 'Gastos') return 'gastos';
+    return 'total';
+  }, [activeTab]);
 
   if (loading) {
     return (
@@ -111,23 +183,62 @@ const BalanceChart = () => {
         </div>
       </div>
       <div className="flex gap-2 border-b mb-4 pb-2">
-        {(['Ingresos', 'Gastos', 'Total'] as const).map((tab) => (
+        <div className="flex gap-2">
+          {(['Ingresos', 'Gastos', 'Combinado', 'Neto'] as const).map((tab) => (
+            <button
+              key={tab}
+              className={`inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 cursor-pointer select-none ${
+                activeTab === tab
+                  ? 'text-blue-600 bg-blue-50 shadow-md shadow-blue-500/20 border border-blue-200 -translate-y-0.5'
+                  : 'text-gray-500 hover:text-blue-600 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/15 border border-transparent'
+              }`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
           <button
-            key={tab}
-            className={`inline-flex items-center px-3 py-1.5 text-sm font-semibold rounded-md transition-all duration-200 cursor-pointer select-none ${
-              activeTab === tab
-                ? 'text-blue-600 bg-blue-50 shadow-md shadow-blue-500/20 border border-blue-200 -translate-y-0.5'
-                : 'text-gray-500 hover:text-blue-600 hover:-translate-y-0.5 hover:bg-blue-50 hover:shadow-md hover:shadow-blue-500/15 border border-transparent'
-            }`}
-            onClick={() => setActiveTab(tab)}
+            type="button"
+            onClick={() => setSelectedYear((year) => Math.max(yearBounds.minYear, year - 1))}
+            disabled={selectedYear <= yearBounds.minYear}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Año anterior"
           >
-            {tab}
+            <ChevronLeft className="h-4 w-4" />
           </button>
-        ))}
+          <div className="text-xs font-semibold text-gray-600 tabular-nums min-w-[44px] text-center">
+            {selectedYear}
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedYear((year) => Math.min(yearBounds.maxYear, year + 1))}
+            disabled={selectedYear >= yearBounds.maxYear}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="Año siguiente"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div>
         <div className="flex-1">
-          <div style={{ width: '100%', height: 300 }}>
+          <div
+            style={{ width: '100%', height: 300 }}
+            className={`transition-all duration-300 ease-out ${
+              slideState === 'idle'
+                ? 'opacity-100 translate-x-0'
+                : slideState === 'out'
+                  ? slideDir === 'left'
+                    ? 'opacity-0 -translate-x-4'
+                    : 'opacity-0 translate-x-4'
+                  : slideDir === 'left'
+                    ? 'opacity-100 translate-x-4'
+                    : 'opacity-100 -translate-x-4'
+            }`}
+          >
             <ResponsiveContainer>
               <BarChart 
                 data={visibleData} 
@@ -154,48 +265,46 @@ const BalanceChart = () => {
                     }).format(Number(value))
                   }
                 />
-                <Tooltip 
-                  formatter={(value) => [
-                    new Intl.NumberFormat('es-ES', { 
-                      style: 'currency', 
-                      currency: 'EUR' 
-                    }).format(Number(value)),
-                    activeTab
-                  ]}
-                  labelFormatter={(label, payload) => {
-                    if (!payload || !payload.length) return label;
-                    const month = payload[0]?.payload;
-                    return month ? `${month.name} ${month.year}` : label;
-                  }}
+                <Tooltip
+                  formatter={(value: unknown) =>
+                    new Intl.NumberFormat('es-ES', {
+                      style: 'currency',
+                      currency: 'EUR',
+                    }).format(Number(value))
+                  }
                 />
-                <Bar 
-                  name={activeTab}
-                  dataKey={activeDataKey}
-                  fill={activeTab === 'Gastos' ? '#EF4444' : (activeTab === 'Ingresos' ? '#10B981' : '#3B82F6')} 
-                  radius={[4, 4, 0, 0]}
-                  isAnimationActive={false}
-                />
+
+                {activeTab === 'Combinado' ? (
+                  <>
+                    <Bar
+                      name="Ingresos"
+                      dataKey="ingresos"
+                      fill="#10B981"
+                      radius={[4, 4, 0, 0]}
+                      isAnimationActive={false}
+                      barSize={12}
+                    />
+                    <Bar
+                      name="Gastos"
+                      dataKey="gastos"
+                      fill="#EF4444"
+                      radius={[4, 4, 0, 0]}
+                      isAnimationActive={false}
+                      barSize={12}
+                    />
+                  </>
+                ) : (
+                  <Bar
+                    name={activeTab}
+                    dataKey={activeDataKey}
+                    fill={activeTab === 'Gastos' ? '#EF4444' : activeTab === 'Ingresos' ? '#10B981' : '#3B82F6'}
+                    radius={[4, 4, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                )}
               </BarChart>
             </ResponsiveContainer>
           </div>
-          {chartData.length > VISIBLE_MONTHS && (
-            <div className="mt-3">
-              <div className="flex justify-end text-xs text-gray-500 mb-1">
-                <span>
-                  {visibleData[0]?.name} {visibleData[0]?.year} → {visibleData[visibleData.length - 1]?.name}{' '}
-                  {visibleData[visibleData.length - 1]?.year}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, chartData.length - VISIBLE_MONTHS)}
-                value={viewportStart}
-                onChange={(event) => setViewportStart(Number(event.target.value))}
-                className="w-full accent-blue-500"
-              />
-            </div>
-          )}
         </div>
       </div>
     </div>
