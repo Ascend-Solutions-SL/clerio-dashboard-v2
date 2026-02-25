@@ -254,12 +254,57 @@ export function RevisionsTable({
   const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
   const [amountsMismatchAccepted, setAmountsMismatchAccepted] = React.useState(false);
   const [showAmountsMismatchHint, setShowAmountsMismatchHint] = React.useState(false);
+  const amountsMismatchAcceptedRef = React.useRef(false);
   const validateConfirmTimeoutRef = React.useRef<number | null>(null);
+  const [realtimeRefreshKey, setRealtimeRefreshKey] = React.useState(0);
+  const realtimeDebounceRef = React.useRef<number | null>(null);
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
   const scope = scopeProp ?? scopeState;
+
+  React.useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    if (empresaId == null && !businessName) {
+      return;
+    }
+
+    const filter = empresaId != null ? `empresa_id=eq.${empresaId}` : `user_businessname=eq.${businessName}`;
+    const channel = supabase
+      .channel(`revisions-facturas-${empresaId ?? businessName}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'facturas',
+          filter,
+        },
+        () => {
+          if (realtimeDebounceRef.current) {
+            window.clearTimeout(realtimeDebounceRef.current);
+          }
+          realtimeDebounceRef.current = window.setTimeout(() => {
+            setRealtimeRefreshKey((prev) => prev + 1);
+            realtimeDebounceRef.current = null;
+          }, 400);
+        }
+      );
+
+    channel.subscribe();
+
+    return () => {
+      if (realtimeDebounceRef.current) {
+        window.clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = null;
+      }
+      supabase.removeChannel(channel);
+    };
+  }, [businessName, empresaId, isLoading]);
 
   React.useEffect(() => {
     if (scopeProp) {
@@ -282,6 +327,8 @@ export function RevisionsTable({
 
     setNfConfirmStep(0);
     setShowAmountsMismatchHint(false);
+    setAmountsMismatchAccepted(false);
+    amountsMismatchAcceptedRef.current = false;
     const isNoFactura = selected.tipo === 'No Factura';
     setNfUnlock(!isNoFactura);
 
@@ -436,6 +483,7 @@ export function RevisionsTable({
     customRange.startDate,
     customRange.endDate,
     refreshKey,
+    realtimeRefreshKey,
     scope,
     onPorRevisarCountChange,
     onNoFacturasCountChange,
@@ -510,6 +558,7 @@ export function RevisionsTable({
         setShowAmountsMismatchHint(true);
       }
       setAmountsMismatchAccepted(false);
+      amountsMismatchAcceptedRef.current = false;
       setValidateConfirmStep(1);
       if (validateConfirmTimeoutRef.current) {
         window.clearTimeout(validateConfirmTimeoutRef.current);
@@ -521,7 +570,7 @@ export function RevisionsTable({
       return;
     }
 
-    if (amountsCheck.status === 'mismatch' && !amountsMismatchAccepted) {
+    if (amountsCheck.status === 'mismatch' && !amountsMismatchAcceptedRef.current) {
       setShowAmountsMismatchConfirm(true);
       return;
     }
@@ -596,9 +645,19 @@ export function RevisionsTable({
         return;
       }
 
-      const reviewedAt = new Date().toISOString();
+      const userUid = user?.id ?? null;
+      if (!userUid) {
+        toast({
+          title: 'Sesión no válida',
+          description: 'No se ha podido obtener el usuario autenticado.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-      const payload = {
+      const webhookPayload = {
+        user_uid: userUid,
+        factura_id: selected.id,
         numero,
         fecha,
         tipo,
@@ -611,54 +670,32 @@ export function RevisionsTable({
         descuentos,
         retenciones,
         importe_total: importeTotal,
-        factura_revisada: true,
-        reviewed_at: reviewedAt,
       };
 
-      const { data: updatedRows, error } = await supabase.from('facturas').update(payload).eq('id', selected.id).select('id');
-      if (error) {
-        throw error;
-      }
+      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook-test/validacion-factura', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(webhookPayload),
+      });
 
-      if (!updatedRows || updatedRows.length === 0) {
-        toast({
-          title: 'No se pudo guardar',
-          description:
-            'No se ha actualizado ninguna fila. Normalmente es un problema de permisos (RLS) o de que la factura no coincide con tu empresa/usuario.',
-          variant: 'destructive',
-        });
-        return;
+      if (!webhookRes.ok) {
+        const text = await webhookRes.text().catch(() => '');
+        throw new Error(text || `Webhook error (${webhookRes.status})`);
       }
 
       toast({
-        title: 'Validada',
-        description: 'La factura se ha guardado correctamente.',
+        title: 'Enviado',
+        description: 'La validación se ha enviado correctamente.',
       });
 
-      // Next selection before mutating local list
-      const idx = data.findIndex((r) => r.id === selected.id);
-      const next = idx >= 0 ? data[idx + 1] ?? data[idx - 1] ?? null : data[0] ?? null;
-
-      setData((prev) => {
-        if (scope === 'pending') {
-          return prev.filter((r) => r.id !== selected.id);
-        }
-        return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
-      });
-      if (scope === 'pending') {
-        if (next) {
-          onSelect?.(next.id, next);
-          setMode('review');
-        } else {
-          setMode('list');
-        }
-      } else {
-        // In history, stay on the same invoice after saving.
-      }
+      advanceToNext(selected.id);
     } catch (error) {
+      console.error('Error validando factura (webhook)', error);
       toast({
-        title: 'No se pudo guardar',
-        description: error instanceof Error ? error.message : 'Inténtalo de nuevo.',
+        title: 'No se pudo validar la factura',
+        description: 'Inténtalo de nuevo. Si el problema persiste, contacta con soporte en hola@clerio.es',
         variant: 'destructive',
       });
     } finally {
@@ -675,6 +712,7 @@ export function RevisionsTable({
   const clearAmountsMismatchFlow = () => {
     setShowAmountsMismatchConfirm(false);
     setAmountsMismatchAccepted(false);
+    amountsMismatchAcceptedRef.current = false;
     setShowAmountsMismatchHint(false);
     setValidateConfirmStep(0);
     if (validateConfirmTimeoutRef.current) {
@@ -912,7 +950,9 @@ export function RevisionsTable({
                 className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs"
                 onClick={() => {
                   setAmountsMismatchAccepted(true);
+                  amountsMismatchAcceptedRef.current = true;
                   setShowAmountsMismatchConfirm(false);
+                  void handleValidateAndNext();
                 }}
               >
                 Aceptar
