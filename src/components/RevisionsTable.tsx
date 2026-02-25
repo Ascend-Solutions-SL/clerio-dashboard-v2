@@ -389,6 +389,9 @@ export function RevisionsTable({
       onNoFacturasCountChange?.(noFacturasCount);
       onHistoricoCountChange?.(historyCountRes.count ?? 0);
 
+      // Emit real-time count update for sidebar badge
+      window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCountRes.count ?? 0 } }));
+
       const mapped: RevisionRow[] = typedRows.map((row) => {
         const resolvedDriveType =
           row.drive_type === 'onedrive' || row.drive_type === 'googledrive' ? (row.drive_type as DriveType) : null;

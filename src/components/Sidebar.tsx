@@ -57,6 +57,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
     };
   }, [user?.empresaId]);
 
+  React.useEffect(() => {
+    const handleCountUpdate = (event: CustomEvent<{ pending: number }>) => {
+      setPendingValidationCount(event.detail.pending);
+    };
+
+    window.addEventListener('revisions-count-updated', handleCountUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('revisions-count-updated', handleCountUpdate as EventListener);
+    };
+  }, []);
+
   const handleLogout = () => {
     (async () => {
       try {
