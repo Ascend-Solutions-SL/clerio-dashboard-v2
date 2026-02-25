@@ -672,7 +672,7 @@ export function RevisionsTable({
         importe_total: importeTotal,
       };
 
-      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook-test/validacion-factura', {
+      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
