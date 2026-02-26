@@ -89,6 +89,7 @@ const formatRelativeTime = (iso: string) => {
 
 type RevisionRow = {
   id: number;
+  invoice_uid: string;
   rawDate: string;
   tipo: string;
   numero: string;
@@ -445,6 +446,7 @@ export function RevisionsTable({
 
         return {
           id: row.id,
+          invoice_uid: row.factura_uid ?? '',
           rawDate: row.fecha,
           tipo: row.tipo,
           numero: row.numero,
@@ -658,6 +660,7 @@ export function RevisionsTable({
       const webhookPayload = {
         user_uid: userUid,
         factura_id: selected.id,
+        invoice_uid: selected.invoice_uid,
         numero,
         fecha,
         tipo,
@@ -1136,11 +1139,11 @@ export function RevisionsTable({
             <div className="mt-3 relative">
               {selected.tipo === 'No Factura' && !nfUnlock ? (
                 <div className="absolute inset-0 z-10 flex items-start justify-center">
-                  <div className="mt-2 w-full rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="mt-2 w-full max-w-md rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center">
                     <div className="text-xs font-semibold text-amber-900">
                       ¿Es una factura/recibo/transacción que debas contabilizar?
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap justify-center gap-2">
                       <Button
                         type="button"
                         className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
