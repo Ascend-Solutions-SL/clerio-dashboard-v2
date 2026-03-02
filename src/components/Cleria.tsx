@@ -338,10 +338,10 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
                   const tipo = String(row.tipo ?? '');
                   const divisa = row.divisa ?? 'EUR';
                   const importe = formatCurrency(row.importe_total, divisa);
+                  const stableKey = String(row.id ?? row.drive_file_id ?? row.numero ?? `${idx}`);
                   return (
-                    // eslint-disable-next-line react/no-array-index-key
                     <tr
-                      key={row.id ?? `${idx}`}
+                      key={stableKey}
                       className="border-b border-slate-100 hover:bg-slate-50 transition-colors duration-150 cursor-pointer"
                       onClick={() => setDrawerRow(row)}
                     >

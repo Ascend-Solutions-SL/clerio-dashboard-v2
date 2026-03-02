@@ -8,7 +8,7 @@ const normalizeTitle = (value: unknown) => {
   return raw.slice(0, 60);
 };
 
-export async function GET(_request: NextRequest, context: { params: { id: string } }) {
+export async function GET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServerClient();
 
   const {
@@ -53,7 +53,7 @@ export async function GET(_request: NextRequest, context: { params: { id: string
   return NextResponse.json(data);
 }
 
-export async function PUT(request: NextRequest, context: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServerClient();
 
   const {
@@ -108,7 +108,7 @@ export async function PUT(request: NextRequest, context: { params: { id: string 
   return NextResponse.json({ ok: true, title: nextTitle });
 }
 
-export async function DELETE(_request: NextRequest, context: { params: { id: string } }) {
+export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const supabase = await createSupabaseServerClient();
 
   const {
