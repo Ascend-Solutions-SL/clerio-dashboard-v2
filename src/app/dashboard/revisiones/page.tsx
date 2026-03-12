@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Clock, Download } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { RevisionsTable } from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
 
-const RevisionesPage = () => {
+const RevisionesPageContent = () => {
   const searchParams = useSearchParams();
   const [porRevisarCount, setPorRevisarCount] = useState<number>(0);
   const [historicoCount, setHistoricoCount] = useState<number>(0);
@@ -270,6 +270,14 @@ const RevisionesPage = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+const RevisionesPage = () => {
+  return (
+    <Suspense fallback={<div className="-m-8 bg-white pt-6 pb-8" />}>
+      <RevisionesPageContent />
+    </Suspense>
   );
 };
 
