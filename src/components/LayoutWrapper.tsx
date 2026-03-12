@@ -34,13 +34,13 @@ const LayoutWrapper: React.FC<LayoutWrapperProps> = ({ children }) => {
   return (
     <div className="flex h-screen bg-blue-600">
       <Sidebar isOpen={isSidebarOpen} setOpen={setSidebarOpen} />
-      <div className="flex-1 p-4">
+      <div className="flex-1 py-4 pr-4">
         {isClerIA ? (
-          <main className="w-full h-full overflow-hidden rounded-2xl bg-gray-50">
+          <main className="h-full w-full overflow-hidden rounded-l-2xl rounded-r-2xl bg-gray-50">
             {children}
           </main>
         ) : (
-          <main className="w-full h-full bg-gray-50 rounded-2xl p-8 overflow-y-auto">
+          <main className="h-full w-full overflow-y-auto rounded-l-2xl rounded-r-2xl bg-gray-50 p-8">
             {children}
           </main>
         )}
