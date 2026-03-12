@@ -91,12 +91,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
 
   return (
     <aside 
-      className={`bg-blue-600 text-white flex flex-col transition-all duration-300 ease-in-out ${isOpen ? 'w-64' : 'w-20'}`}
+      className={`bg-blue-600 text-white flex flex-col transition-all duration-300 ease-in-out ${isOpen ? 'w-52' : 'w-[68px]'}`}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div className="h-20 grid grid-cols-[80px_1fr] items-center">
-        <div className="flex items-center justify-center">
+      <div className="grid h-24 grid-cols-[36px_minmax(0,1fr)] items-center px-4 pt-5">
+        <div className="flex h-12 items-center justify-center">
           <div className="relative h-8 w-8">
             <Image
               src="/brand/IMAGO_BLANCO.png"
@@ -108,14 +108,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
             />
           </div>
         </div>
-        {isOpen ? (
-          <div className="pr-6">
+        <div className={`flex h-12 items-center overflow-hidden pl-2 pr-2.5 transition-opacity duration-200 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          {isOpen ? (
             <span className="font-bold text-2xl whitespace-nowrap">Clerio</span>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
 
-      <nav className="flex-grow flex flex-col">
+      <nav className="flex-grow flex flex-col pt-0">
         {navItems.map((item) => (
           (() => {
             const isActive =
@@ -126,28 +126,28 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           <Link 
             key={item.label} 
             href={item.href} 
-            className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center"
+            className="group relative mx-0 my-0.5 grid grid-cols-[36px_minmax(0,1fr)] items-center rounded-none px-4"
           >
             <div
-              className={`pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors ${
+              className={`pointer-events-none absolute inset-0 transition-colors ${
                 isActive ? 'bg-blue-700' : 'bg-transparent group-hover:bg-blue-700'
               }`}
             />
 
-            <div className="relative z-10 h-12 flex items-center justify-center">
+            <div className="relative z-10 flex h-11 items-center justify-center">
               {typeof item.icon === 'string' ? (
                 item.icon.startsWith('/sidebar/') ? (
                   <div className="relative h-5 w-5">
                     <img
                       src={item.icon}
                       alt={item.label}
-                      className="h-5 w-5 object-contain"
+                      className="h-[18px] w-[18px] object-contain"
                     />
                   </div>
                 ) : (
                   <span
                     aria-label={item.label}
-                    className="block h-5 w-5 bg-current"
+                    className="block h-[18px] w-[18px] bg-current"
                     style={{
                       WebkitMaskImage: `url(${item.icon})`,
                       maskImage: `url(${item.icon})`,
@@ -161,23 +161,30 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
                   />
                 )
               ) : (
-                <item.icon size={20} />
+                <item.icon size={18} />
               )}
             </div>
-            {isOpen ? (
-              <span className="relative z-10 pr-4 whitespace-nowrap flex items-center gap-2">
+            <span
+              className={`relative z-10 flex items-center whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
+                isOpen
+                  ? 'opacity-100 gap-2 pl-2 text-sm'
+                  : 'opacity-0 pointer-events-none gap-0 pl-0'
+              }`}
+            >
+              {isOpen ? (
+                <>
                 {item.label}
                 {item.href === '/dashboard/revisiones' && pendingValidationCount > 0 ? (
                   <span className="inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-2 h-5 min-w-[20px]">
                     {pendingValidationCount}
                   </span>
                 ) : null}
-              </span>
-            ) : (
-              <span className="sr-only">{item.label}</span>
-            )}
+                </>
+              ) : null}
+            </span>
+            {!isOpen ? <span className="sr-only">{item.label}</span> : null}
             {!isOpen && item.href === '/dashboard/revisiones' && pendingValidationCount > 0 ? (
-              <span className="absolute right-5 top-2 z-20 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold h-4 min-w-[16px] px-1">
+              <span className="absolute right-[14px] top-2 z-20 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold h-4 min-w-[16px] px-1">
                 {pendingValidationCount}
               </span>
             ) : null}
@@ -189,50 +196,60 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
 
       <Link
         href="/dashboard/settings"
-        className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center"
+        className="group relative mx-0 my-1 grid grid-cols-[36px_minmax(0,1fr)] items-center rounded-none px-4"
       >
-        <div className="pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors bg-transparent group-hover:bg-blue-700" />
+        <div className="pointer-events-none absolute inset-0 transition-colors bg-transparent group-hover:bg-blue-700" />
 
-        <div className="relative z-10 h-12 flex items-center justify-center">
+        <div className="relative z-10 flex h-12 items-center justify-center">
           <Settings size={20} />
         </div>
-        {isOpen ? (
-          <span className="relative z-10 pr-4 whitespace-nowrap">Configuración</span>
-        ) : (
-          <span className="sr-only">Configuración</span>
-        )}
+        <span
+          className={`relative z-10 whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
+            isOpen ? 'opacity-100 text-[15px]' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {isOpen ? 'Configuración' : null}
+        </span>
+        {!isOpen ? <span className="sr-only">Configuración</span> : null}
       </Link>
 
       <button
         type="button"
         onClick={handleLogout}
-        className="group my-1 rounded-lg relative grid grid-cols-[80px_1fr] items-center text-left"
+        className="group relative mx-0 my-1 grid grid-cols-[36px_minmax(0,1fr)] items-center rounded-none px-4 text-left"
       >
-        <div className="pointer-events-none absolute inset-y-0 left-3 right-3 rounded-lg transition-colors bg-transparent group-hover:bg-blue-700" />
+        <div className="pointer-events-none absolute inset-0 transition-colors bg-transparent group-hover:bg-blue-700" />
 
-        <div className="relative z-10 h-12 flex items-center justify-center">
+        <div className="relative z-10 flex h-12 items-center justify-center">
           <LogOut size={20} />
         </div>
-        {isOpen ? (
-          <span className="relative z-10 pr-4 whitespace-nowrap">Cerrar sesión</span>
-        ) : (
-          <span className="sr-only">Cerrar sesión</span>
-        )}
+        <span
+          className={`relative z-10 whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
+            isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {isOpen ? 'Cerrar sesión' : null}
+        </span>
+        {!isOpen ? <span className="sr-only">Cerrar sesión</span> : null}
       </button>
 
-      <div className="mx-3 border-t border-white/20" />
+      <div className="mx-4 border-t border-white/20" />
 
-      <div className="grid grid-cols-[80px_1fr] items-center py-4">
-        <div className="flex items-center justify-center">
+      <div className="grid grid-cols-[36px_minmax(0,1fr)] items-center px-4 py-2.5">
+        <div className="flex h-11 items-center justify-center">
           <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-semibold border border-white/70">
             {initials}
           </div>
         </div>
-        <div className={`pr-4 overflow-hidden ${isOpen ? '' : 'invisible'}`}>
-          <p className="font-semibold whitespace-nowrap">
-            {isLoading ? 'Cargando…' : displayName}
-          </p>
-          <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
+        <div className={`overflow-hidden pr-2.5 transition-opacity duration-200 ${isOpen ? 'opacity-100 text-[15px]' : 'opacity-0 pointer-events-none'}`}>
+          {isOpen ? (
+            <>
+              <p className="font-semibold whitespace-nowrap">
+                {isLoading ? 'Cargando…' : displayName}
+              </p>
+              <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
+            </>
+          ) : null}
         </div>
       </div>
     </aside>
