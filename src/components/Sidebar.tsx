@@ -42,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
         .from('facturas')
         .select('id', { count: 'exact', head: true })
         .eq('empresa_id', empresaId)
-        .eq('factura_revisada', false);
+        .eq('factura_validada', false);
 
       if (cancelled) {
         return;

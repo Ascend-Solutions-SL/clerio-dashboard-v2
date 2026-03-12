@@ -196,7 +196,7 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-blue-600 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md active:translate-y-0"
           onClick={() => !isDisabled && setOpen(true)}
           disabled={isDisabled}
         >

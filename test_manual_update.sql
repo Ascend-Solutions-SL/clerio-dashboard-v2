@@ -6,10 +6,10 @@ SELECT auth.uid() as current_user_id;
 
 -- Then test the update
 UPDATE facturas 
-SET factura_revisada = true, reviewed_at = NOW() 
+SET factura_validada = true, reviewed_at = NOW() 
 WHERE id = 173;  -- replace with your test factura id
 
 -- Check if it was updated
-SELECT id, factura_revisada, reviewed_at 
+SELECT id, factura_validada, reviewed_at 
 FROM facturas 
 WHERE id = 173;

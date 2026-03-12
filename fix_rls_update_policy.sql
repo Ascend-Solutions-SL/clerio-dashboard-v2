@@ -54,5 +54,5 @@ FROM pg_policies
 WHERE tablename = 'facturas';
 
 -- 6) Test with a manual update (run this in Supabase SQL Editor as a test user)
--- UPDATE facturas SET factura_revisada = true, reviewed_at = NOW() WHERE id = <TEST_FACTURA_ID>;
+-- UPDATE facturas SET factura_validada = true, reviewed_at = NOW() WHERE id = <TEST_FACTURA_ID>;
 -- It should affect 1 row if the policy works; 0 rows if not.

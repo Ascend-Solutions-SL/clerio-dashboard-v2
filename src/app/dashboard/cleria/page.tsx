@@ -62,6 +62,32 @@ export default function ClerIAPage() {
     setConversations(data ?? []);
   }, [empresaId, user?.id]);
 
+  const createConversation = React.useCallback(async () => {
+    if (!user?.id || empresaId == null) {
+      return null;
+    }
+
+    const createRes = await fetch('/api/cleria/conversation', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        user_uid: user.id,
+        empresa_id: empresaId,
+      }),
+    });
+
+    if (!createRes.ok) {
+      return null;
+    }
+
+    const created = (await createRes.json().catch(() => null)) as { id?: string } | null;
+    const createdId = String(created?.id ?? '').trim();
+    return createdId || null;
+  }, [empresaId, user?.id]);
+
   const ensureDefaultConversation = React.useCallback(async () => {
     if (!user?.id || empresaId == null) {
       return;
@@ -87,30 +113,48 @@ export default function ClerIAPage() {
 
       const rows = convRows ?? [];
       if (rows.length > 0) {
+        const latest = rows[0]!;
+        const latestTitle = (latest.title ?? '').trim() || 'Nuevo Chat';
+
+        const latestConversationRes = await fetch(`/api/cleria/conversation/${encodeURIComponent(latest.id)}`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+          },
+        });
+
+        const latestMessages = latestConversationRes.ok ? ((await latestConversationRes.json().catch(() => null)) as unknown[] | null) : null;
+        const latestIsEmpty = (latestMessages?.length ?? 0) === 0;
+
+        if (latestTitle === 'Nuevo Chat' && latestIsEmpty) {
+          setConversations(rows);
+          setActiveConversationId((prev) => prev ?? latest.id);
+          return;
+        }
+
+        const updatedAtMs = latest.updated_at ? new Date(latest.updated_at).getTime() : NaN;
+        const oneMinuteMs = 1 * 60 * 1000;
+        const isStale = Number.isFinite(updatedAtMs) ? Date.now() - updatedAtMs > oneMinuteMs : false;
+
+        if (!latestIsEmpty && isStale) {
+          const createdId = await createConversation();
+          if (!createdId) {
+            setConversations(rows);
+            setActiveConversationId((prev) => prev ?? latest.id);
+            return;
+          }
+
+          setActiveConversationId(createdId);
+          await loadConversations();
+          return;
+        }
+
         setConversations(rows);
-        setActiveConversationId((prev) => prev ?? rows[0]!.id);
+        setActiveConversationId((prev) => prev ?? latest.id);
         return;
       }
 
-      const createRes = await fetch('/api/cleria/conversation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          user_uid: user.id,
-          empresa_id: empresaId,
-        }),
-      });
-
-      if (!createRes.ok) {
-        await loadConversations();
-        return;
-      }
-
-      const created = (await createRes.json().catch(() => null)) as { id?: string } | null;
-      const createdId = String(created?.id ?? '').trim();
+      const createdId = await createConversation();
       if (!createdId) {
         await loadConversations();
         return;
@@ -121,7 +165,7 @@ export default function ClerIAPage() {
     } finally {
       setIsBootstrapping(false);
     }
-  }, [empresaId, loadConversations, user?.id]);
+  }, [createConversation, empresaId, loadConversations, user?.id]);
 
   React.useEffect(() => {
     if (!renamingId) return;

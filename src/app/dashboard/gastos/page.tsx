@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import StatCard from '@/components/StatCard';
 import { ExpensesTable } from '@/components/ExpensesTable';
-import { ArrowDownCircle, FileText, Link2, RefreshCw } from 'lucide-react';
+import { ArrowDownCircle, FileText, Link2 } from 'lucide-react';
 import { useInvoices } from '@/context/InvoiceContext';
 import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
+import InvoiceScanControls from '@/components/InvoiceScanControls';
 
 const GastosPage = () => {
   const { setExpensesData } = useInvoices();
@@ -67,12 +68,11 @@ const GastosPage = () => {
             </div>
 
             <div>
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center text-sm text-gray-500 gap-2">
-                  <RefreshCw className="h-4 w-4" />
-                  <span>Último escaneo hace 22 min</span>
+              <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
+                <InvoiceScanControls onScanned={() => setTableRefreshKey((prev) => prev + 1)} />
+                <div className="flex justify-end">
+                  <InvoiceUploadDialog type="Gastos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
                 </div>
-                <InvoiceUploadDialog type="Gastos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
               </div>
               <ExpensesTable
                 onTotalExpensesChange={setTotalExpenses}

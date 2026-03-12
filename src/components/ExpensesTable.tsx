@@ -42,11 +42,32 @@ type DriveType = 'googledrive' | 'onedrive';
    y: number;
  };
 
+const normalizeFacturaValidada = (value: unknown): boolean | null => {
+  if (value === true || value === false) {
+    return value;
+  }
+  if (value == null) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === 't' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === 'f' || normalized === '0') return false;
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return null;
+};
+
 function ExpensesActionsCell({
+  invoiceId,
   driveFileId,
   driveType,
   needsReview,
 }: {
+  invoiceId: number;
   driveFileId: string | null;
   driveType: DriveType;
   needsReview: boolean;
@@ -102,9 +123,10 @@ function ExpensesActionsCell({
   };
 
   const canOpen = Boolean(driveFileId && driveType);
+  const reviewHref = `/dashboard/revisiones?invoiceId=${invoiceId}&scope=pending`;
 
   return (
-    <div className="flex items-center space-x-2">
+    <div className="flex items-center space-x-3 pr-2">
       <a
         href={previewHref ?? '#'}
         target={previewHref ? '_blank' : undefined}
@@ -131,34 +153,44 @@ function ExpensesActionsCell({
         <Download className="h-4 w-4" />
       </Button>
 
-      {needsReview ? (
-        <div
-          className="relative z-10"
-          ref={dotRef}
-          onMouseEnter={openPendingTooltip}
-          onMouseLeave={closePendingTooltip}
-          onFocus={openPendingTooltip}
-          onBlur={closePendingTooltip}
-          tabIndex={0}
-        >
-          <div className="relative h-3 w-3">
+      <div
+        className="relative z-10 w-4 flex justify-center"
+        ref={needsReview ? dotRef : null}
+        onMouseEnter={needsReview ? openPendingTooltip : undefined}
+        onMouseLeave={needsReview ? closePendingTooltip : undefined}
+        onFocus={needsReview ? openPendingTooltip : undefined}
+        onBlur={needsReview ? closePendingTooltip : undefined}
+        tabIndex={needsReview ? 0 : -1}
+        aria-hidden={!needsReview}
+      >
+        {needsReview ? (
+          <a
+            href={reviewHref}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+            aria-label="Ir a validar factura"
+            className="relative block h-3 w-3 cursor-pointer transition-transform duration-200 hover:scale-110"
+          >
             <div className="absolute -inset-1 rounded-full bg-amber-600/12 blur-[6px] animate-pulse" />
             <div className="absolute -inset-0.5 rounded-full bg-amber-500/16 blur-[4px] animate-pulse" />
             <div className="absolute inset-[3px] rounded-full bg-amber-500 shadow-[0_0_0_1px_rgba(255,255,255,0.45)]" />
-          </div>
-          {pendingTooltip.open && typeof document !== 'undefined'
-            ? ReactDOM.createPortal(
-                <div
-                  className="pointer-events-none fixed z-[999999] w-max max-w-[220px] rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow"
-                  style={{ left: pendingTooltip.x - 8, top: pendingTooltip.y, transform: 'translateX(-100%)' }}
-                >
-                  Factura pendiente de validar
-                </div>,
-                document.body
-              )
-            : null}
-        </div>
-      ) : null}
+          </a>
+        ) : (
+          <div className="h-3 w-3 opacity-0" />
+        )}
+        {needsReview && pendingTooltip.open && typeof document !== 'undefined'
+          ? ReactDOM.createPortal(
+              <div
+                className="pointer-events-none fixed z-[999999] w-max max-w-[220px] rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow"
+                style={{ left: pendingTooltip.x - 8, top: pendingTooltip.y, transform: 'translateX(-100%)' }}
+              >
+                Factura pendiente de validar
+              </div>,
+              document.body
+            )
+          : null}
+      </div>
     </div>
   );
 }
@@ -205,7 +237,7 @@ type FacturaRow = {
   importe_total: number | string | null;
   drive_file_id: string | null;
   drive_type?: string | null;
-  factura_revisada?: boolean | null;
+  factura_validada?: boolean | null;
 };
 
 export type Expense = {
@@ -221,7 +253,7 @@ export type Expense = {
   totalValue: number;
   driveFileId: string | null;
   driveType: DriveType;
-  facturaRevisada: boolean;
+  facturaValidada: boolean | null;
 };
 
 export const columns: ColumnDef<Expense>[] = [
@@ -411,13 +443,14 @@ export const columns: ColumnDef<Expense>[] = [
     id: 'actions',
     cell: ({ row }) => (
       <ExpensesActionsCell
+        invoiceId={row.original.id}
         driveFileId={row.original.driveFileId}
         driveType={row.original.driveType}
-        needsReview={row.original.facturaRevisada === false}
+        needsReview={row.original.facturaValidada !== true}
       />
     ),
-    size: 80,
-    minSize: 80,
+    size: 108,
+    minSize: 108,
   },
 ];
 
@@ -442,7 +475,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_revisada'
+          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_validada'
         )
         .eq('tipo', 'Gastos')
         .eq('source', 'ocr')
@@ -501,7 +534,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           driveType: (row.drive_type === 'onedrive' || row.drive_type === 'googledrive'
             ? row.drive_type
             : 'googledrive') as DriveType,
-          facturaRevisada: Boolean(row.factura_revisada),
+          facturaValidada: normalizeFacturaValidada(row.factura_validada),
         };
       });
 
@@ -528,7 +561,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type'
+          'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_validada'
         )
         .eq('tipo', 'Gastos')
         .eq('source', 'ocr')
@@ -583,7 +616,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           driveType: (row.drive_type === 'onedrive' || row.drive_type === 'googledrive'
             ? row.drive_type
             : 'googledrive') as DriveType,
-          facturaRevisada: Boolean(row.factura_revisada),
+          facturaValidada: normalizeFacturaValidada(row.factura_validada),
         };
       });
 

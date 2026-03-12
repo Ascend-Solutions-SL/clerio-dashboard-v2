@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, PlugZap, Search } from 'lucide-react';
+import { AlertTriangle, Plus, PlugZap, Search } from 'lucide-react';
 
 import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
@@ -485,21 +485,31 @@ const IntegracionesPage = () => {
             </label>
           </header>
 
-          <div className="flex flex-wrap gap-2">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition border ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold border transition-transform duration-200 hover:-translate-y-0.5 ${
+                    activeTab === tab.id
+                      ? 'bg-blue-600 text-white border-blue-600 hover:shadow-md'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-700 hover:shadow-md'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={openRequestModal}
+              className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-700 hover:shadow-md"
+            >
+              <Plus className="h-4 w-4" />
+              Solicitar integración
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -545,10 +555,10 @@ const IntegracionesPage = () => {
                               setConfirmDisconnectId(integration.id);
                             }
                           }}
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition border ${
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold border transition-transform duration-200 hover:-translate-y-0.5 ${
                             showDisconnectAction
-                              ? 'bg-slate-900 text-white border-slate-900'
-                              : 'bg-emerald-500 text-white border-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)]'
+                              ? 'bg-slate-900 text-white border-slate-900 hover:shadow-md'
+                              : 'bg-emerald-500 text-white border-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)] hover:shadow-[0_8px_20px_rgba(16,185,129,0.42)]'
                           }`}
                         >
                           {showDisconnectAction ? 'Desconectar' : 'Conectado'}
@@ -557,7 +567,7 @@ const IntegracionesPage = () => {
                         <button
                           type="button"
                           onClick={() => startOAuth(integration.id)}
-                          className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold transition border border-gray-200 bg-gray-100 text-gray-700 hover:border-blue-300 hover:text-blue-600"
+                          className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold border border-gray-200 bg-gray-100 text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-600 hover:shadow-md"
                         >
                           Conectar
                         </button>
@@ -638,7 +648,7 @@ const IntegracionesPage = () => {
                             type="button"
                             disabled={isDisconnecting}
                             onClick={() => confirmDisconnect(integration.id)}
-                            className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200 disabled:opacity-60"
+                            className="inline-flex items-center justify-center rounded-full border border-gray-200 bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-200 hover:shadow-md disabled:opacity-60"
                           >
                             Sí
                           </button>
@@ -646,7 +656,7 @@ const IntegracionesPage = () => {
                             type="button"
                             disabled={isDisconnecting}
                             onClick={() => setConfirmDisconnectId(null)}
-                            className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-60"
+                            className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-500 px-4 py-1.5 text-xs font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-red-600 hover:shadow-md disabled:opacity-60"
                           >
                             No
                           </button>
@@ -670,7 +680,7 @@ const IntegracionesPage = () => {
               <button
                 type="button"
                 onClick={openRequestModal}
-                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md"
               >
                 Solicitar integración
               </button>
@@ -698,7 +708,7 @@ const IntegracionesPage = () => {
               <button
                 type="button"
                 onClick={closeRequestModal}
-                className="rounded-full border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                className="rounded-full border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-600 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
               >
                 Cerrar
               </button>
@@ -756,7 +766,7 @@ const IntegracionesPage = () => {
                 <button
                   type="button"
                   onClick={closeRequestModal}
-                  className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                  className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
                 >
                   Cancelar
                 </button>
@@ -764,7 +774,7 @@ const IntegracionesPage = () => {
                   type="button"
                   onClick={submitRequest}
                   disabled={isSubmittingRequest}
-                  className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                  className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md disabled:opacity-60"
                 >
                   {isSubmittingRequest ? 'Enviando…' : 'Enviar'}
                 </button>

@@ -60,4 +60,4 @@ ORDER BY policyname;
 
 -- 6) Test the policy (run this as a dashboard user)
 -- This should now return 1 row affected if the policy works
--- UPDATE facturas SET factura_revisada = true, reviewed_at = NOW() WHERE id = 173;
+-- UPDATE facturas SET factura_validada = true, reviewed_at = NOW() WHERE id = 173;

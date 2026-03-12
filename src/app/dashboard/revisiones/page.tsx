@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { Clock, Download } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { RevisionsTable } from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
 
 const RevisionesPage = () => {
+  const searchParams = useSearchParams();
   const [porRevisarCount, setPorRevisarCount] = useState<number>(0);
   const [historicoCount, setHistoricoCount] = useState<number>(0);
   const [scope, setScope] = useState<'pending' | 'history'>('pending');
@@ -19,6 +21,32 @@ const RevisionesPage = () => {
 
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  const handleScopeChange = (nextScope: 'pending' | 'history') => {
+    setScope(nextScope);
+    setSelectedId(null);
+    setSelectedRow(null);
+    setEmbedUrl(null);
+    setIsPreviewLoading(false);
+  };
+
+  useEffect(() => {
+    const invoiceIdParam = searchParams.get('invoiceId');
+    const scopeParam = searchParams.get('scope');
+
+    if (scopeParam === 'pending' || scopeParam === 'history') {
+      handleScopeChange(scopeParam);
+    }
+
+    if (!invoiceIdParam) {
+      return;
+    }
+
+    const parsedId = Number(invoiceIdParam);
+    if (Number.isFinite(parsedId)) {
+      setSelectedId(parsedId);
+    }
+  }, [searchParams]);
 
   const downloadHref =
     selectedRow?.driveFileId && selectedRow.driveType
@@ -36,16 +64,15 @@ const RevisionesPage = () => {
 
     const fileId = selectedRow.driveFileId;
     const driveType = selectedRow.driveType;
+    setIsPreviewLoading(true);
 
     if (driveType === 'googledrive') {
       const url = `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
       setEmbedUrl(url);
-      setIsPreviewLoading(false);
       return;
     }
 
     const resolve = async () => {
-      setIsPreviewLoading(true);
       try {
         const base = new URL('/api/files/link', window.location.origin);
         base.searchParams.set('drive_type', 'onedrive');
@@ -55,10 +82,13 @@ const RevisionesPage = () => {
         const res = await fetch(base.toString(), { credentials: 'include' });
         const payload = (await res.json().catch(() => null)) as { url?: string } | null;
 
-        setEmbedUrl(res.ok ? payload?.url ?? null : null);
+        const nextUrl = res.ok ? payload?.url ?? null : null;
+        setEmbedUrl(nextUrl);
+        if (!nextUrl) {
+          setIsPreviewLoading(false);
+        }
       } catch {
         setEmbedUrl(null);
-      } finally {
         setIsPreviewLoading(false);
       }
     };
@@ -82,7 +112,7 @@ const RevisionesPage = () => {
                           ? 'border-blue-200 bg-blue-50 text-slate-900'
                           : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
                       }`}
-                      onClick={() => setScope('pending')}
+                      onClick={() => handleScopeChange('pending')}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className={`text-xs font-semibold ${scope === 'pending' ? 'text-blue-900' : 'text-slate-700'}`}>
@@ -101,7 +131,7 @@ const RevisionesPage = () => {
                           ? 'border-slate-300 bg-slate-900 text-white'
                           : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
                       }`}
-                      onClick={() => setScope('history')}
+                      onClick={() => handleScopeChange('history')}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
@@ -117,7 +147,7 @@ const RevisionesPage = () => {
                       onPorRevisarCountChange={setPorRevisarCount}
                       onHistoricoCountChange={setHistoricoCount}
                       scope={scope}
-                      onScopeChange={setScope}
+                      onScopeChange={handleScopeChange}
                       selectedId={selectedId}
                       onSelect={(id, row) => {
                         setSelectedId(id);
@@ -129,10 +159,36 @@ const RevisionesPage = () => {
                       }}
                       onDataLoaded={(rows) => {
                         if (selectedId != null) {
+                          const selectedFromQuery = rows.find((row) => row.id === selectedId);
+                          if (selectedFromQuery) {
+                            setSelectedRow({
+                              id: selectedFromQuery.id,
+                              driveFileId: selectedFromQuery.driveFileId,
+                              driveType: selectedFromQuery.driveType,
+                            });
+                          } else {
+                            const firstRow = rows[0] ?? null;
+                            if (firstRow) {
+                              setSelectedId(firstRow.id);
+                              setSelectedRow({
+                                id: firstRow.id,
+                                driveFileId: firstRow.driveFileId,
+                                driveType: firstRow.driveType,
+                              });
+                            } else {
+                              setSelectedId(null);
+                              setSelectedRow(null);
+                              setEmbedUrl(null);
+                              setIsPreviewLoading(false);
+                            }
+                          }
                           return;
                         }
                         const first = rows[0];
                         if (!first) {
+                          setSelectedRow(null);
+                          setEmbedUrl(null);
+                          setIsPreviewLoading(false);
                           return;
                         }
                         setSelectedId(first.id);
@@ -168,18 +224,38 @@ const RevisionesPage = () => {
                       </Button>
                     </div>
                     {embedUrl ? (
-                      <div className="mt-3 flex-1 min-h-0 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                      <div className="relative mt-3 flex-1 min-h-0 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                        {isPreviewLoading ? (
+                          <div className="absolute inset-1 z-10 flex items-center justify-center rounded-lg bg-slate-50/95 px-4 py-3">
+                            <div className="flex flex-col items-center gap-3 text-slate-700">
+                              <div className="relative h-12 w-12">
+                                <div className="absolute inset-0 rounded-full border-[4px] border-slate-200/90" />
+                                <div className="absolute inset-0 animate-spin rounded-full border-[4px] border-transparent border-t-slate-900 border-r-slate-500 shadow-[0_0_18px_rgba(100,116,139,0.25)] [filter:saturate(1.1)]" />
+                              </div>
+                              <div className="text-sm font-medium tracking-[0.01em]">Cargando vista previa...</div>
+                            </div>
+                          </div>
+                        ) : null}
                         <iframe
                           title="Vista previa documento"
                           src={embedUrl}
-                          className="block h-full w-full rounded-lg bg-white"
+                          className={`h-full w-full rounded-lg bg-white ${isPreviewLoading ? 'invisible' : 'block'}`}
                           allow="autoplay"
                           style={{ border: 0 }}
+                          onLoad={() => {
+                            setIsPreviewLoading(false);
+                          }}
                         />
                       </div>
                     ) : isPreviewLoading ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                        Cargando vista previa...
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6">
+                        <div className="flex flex-col items-center gap-3 text-slate-700">
+                          <div className="relative h-12 w-12">
+                            <div className="absolute inset-0 rounded-full border-[4px] border-slate-200/90" />
+                            <div className="absolute inset-0 animate-spin rounded-full border-[4px] border-transparent border-t-slate-900 border-r-slate-500 shadow-[0_0_18px_rgba(100,116,139,0.25)] [filter:saturate(1.1)]" />
+                          </div>
+                          <div className="text-sm font-medium tracking-[0.01em]">Cargando vista previa...</div>
+                        </div>
                       </div>
                     ) : (
                       <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

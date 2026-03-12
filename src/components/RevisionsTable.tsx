@@ -50,7 +50,7 @@ type FacturaRow = {
   importe_total: number | string | null;
   factura_uid: string | null;
   invoice_reason: string | null;
-  factura_revisada?: boolean | null;
+  factura_validada?: boolean | null;
   reviewed_at?: string | null;
   drive_file_id?: string | null;
   drive_type?: DriveType | string | null;
@@ -67,22 +67,22 @@ const formatRelativeTime = (iso: string) => {
 
   const abs = Math.abs(diffSec);
   if (abs < 60) {
-    return 'hace unos segundos';
+    return 'Ahora';
   }
   const diffMin = Math.round(diffSec / 60);
   if (Math.abs(diffMin) < 60) {
-    return `hace ${diffMin} min`;
+    return `Hace ${diffMin} min`;
   }
   const diffHour = Math.round(diffMin / 60);
   if (Math.abs(diffHour) < 24) {
-    return `hace ${diffHour} h`;
+    return `Hace ${diffHour} h`;
   }
   const diffDay = Math.round(diffHour / 24);
   if (diffDay === 1) {
     return 'ayer';
   }
   if (diffDay < 7) {
-    return `hace ${diffDay} días`;
+    return `Hace ${diffDay} días`;
   }
   return target.toLocaleDateString();
 };
@@ -367,9 +367,9 @@ export function RevisionsTable({
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_revisada, reviewed_at, drive_file_id, drive_type'
+          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_validada, reviewed_at, drive_file_id, drive_type'
         )
-        .eq('factura_revisada', scope === 'pending' ? false : true);
+        .eq('factura_validada', scope === 'pending' ? false : true);
 
       query = query.order('fecha', { ascending: false });
 
@@ -391,7 +391,7 @@ export function RevisionsTable({
         let countQuery = supabase
           .from('facturas')
           .select('id', { count: 'exact', head: true })
-          .eq('factura_revisada', reviewed);
+          .eq('factura_validada', reviewed);
 
         if (empresaId != null) {
           countQuery = countQuery.eq('empresa_id', empresaId);
@@ -460,7 +460,7 @@ export function RevisionsTable({
           descuentos: row.descuentos ?? null,
           retenciones: row.retenciones ?? null,
           importeTotal: row.importe_total ?? null,
-          reviewed: Boolean(row.factura_revisada),
+          reviewed: Boolean(row.factura_validada),
           reviewedAt: row.reviewed_at ?? null,
           driveFileId: row.drive_file_id ?? null,
           driveType: resolvedDriveType,
@@ -729,17 +729,12 @@ export function RevisionsTable({
       return;
     }
 
-    if (nfConfirmStep === 0) {
-      setNfConfirmStep(1);
-      return;
-    }
-
     setIsSaving(true);
     try {
       const reviewedAt = new Date().toISOString();
       const { data: updatedRows, error } = await supabase
         .from('facturas')
-        .update({ tipo: 'No Factura', factura_revisada: true, reviewed_at: reviewedAt })
+        .update({ tipo: 'No Factura', factura_validada: true, reviewed_at: reviewedAt })
         .eq('id', selected.id)
         .select('id');
       if (error) {
@@ -770,13 +765,17 @@ export function RevisionsTable({
         }
         return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
       });
-      if (scope === 'pending') {
-        if (next) {
-          onSelect?.(next.id, next);
-          setMode('review');
-        } else {
-          setMode('list');
-        }
+      if (next) {
+        setNfConfirmStep(0);
+        setShowAmountsMismatchHint(false);
+        setAmountsMismatchAccepted(false);
+        amountsMismatchAcceptedRef.current = false;
+        setNfUnlock(next.tipo !== 'No Factura');
+        onSelect?.(next.id, next);
+        setMode('review');
+      } else if (scope === 'pending') {
+        setNfUnlock(true);
+        setMode('list');
       }
     } catch (error) {
       toast({
@@ -845,18 +844,24 @@ export function RevisionsTable({
       },
       {
         id: 'contraparte',
-        header: 'Contraparte',
-        cell: ({ row }) => <span className="font-medium text-slate-900 truncate block">{resolveContraparte(row.original)}</span>,
+        header: () => <div className="text-center font-semibold">Contraparte</div>,
+        cell: ({ row }) => (
+          <div className="flex justify-center">
+            <span className="block max-w-full truncate text-center font-medium text-slate-900">
+              {resolveContraparte(row.original)}
+            </span>
+          </div>
+        ),
         size: 9999,
       },
       {
         id: 'importe',
-        header: () => <div className="text-right font-semibold">Importe (EUR)</div>,
+        header: () => <div className="text-center font-semibold">Importe (EUR)</div>,
         cell: ({ row }) => {
           const raw = row.original.importeTotal;
           const value = raw == null || raw === '' ? null : Number(String(raw).replace(',', '.'));
           return (
-            <div className="text-right tabular-nums">
+            <div className="text-center tabular-nums">
               {Number.isFinite(value as number)
                 ? `${(value as number).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
                 : '—'}
@@ -870,11 +875,11 @@ export function RevisionsTable({
     if (scope === 'history') {
       base.push({
         id: 'reviewedAt',
-        header: () => <div className="text-right font-semibold">Revisada</div>,
+        header: () => <div className="text-center font-semibold">Revisada</div>,
         cell: ({ row }) => (
-          <div className="text-right tabular-nums">{row.original.reviewedAt ? formatRelativeTime(row.original.reviewedAt) : '—'}</div>
+          <div className="text-center tabular-nums">{row.original.reviewedAt ? formatRelativeTime(row.original.reviewedAt) : '—'}</div>
         ),
-        size: 140,
+        size: 124,
       });
     }
 
@@ -1068,30 +1073,42 @@ export function RevisionsTable({
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          padding: 0.5rem 0.5rem;
-          text-align: left;
+          padding: 0.625rem 0.75rem;
+          text-align: center;
         }
 
         .revisions-table th:nth-child(1),
         .revisions-table td:nth-child(1) {
           width: 120px;
           min-width: 120px;
-          padding-left: 0.25rem;
-          padding-right: 0.25rem;
+          padding-left: 0.75rem;
+          padding-right: 0.75rem;
         }
 
         .revisions-table th:nth-child(2),
         .revisions-table td:nth-child(2) {
           width: 105px;
           min-width: 105px;
-          padding-left: 0.25rem;
-          padding-right: 0.25rem;
+          padding-left: 0.75rem;
+          padding-right: 0.75rem;
+        }
+
+        .revisions-table th:nth-child(3),
+        .revisions-table td:nth-child(3) {
+          width: 44%;
+          min-width: 220px;
         }
 
         .revisions-table th:nth-child(4),
         .revisions-table td:nth-child(4) {
           width: 120px;
           min-width: 120px;
+        }
+
+        .revisions-table th:nth-child(5),
+        .revisions-table td:nth-child(5) {
+          width: 124px;
+          min-width: 124px;
         }
       `}</style>
 
@@ -1134,42 +1151,43 @@ export function RevisionsTable({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto rounded-md border border-slate-200 bg-white p-3">
-          {selected ? (
-            <div className="mt-3 relative">
-              {selected.tipo === 'No Factura' && !nfUnlock ? (
-                <div className="absolute inset-0 z-10 flex items-start justify-center">
-                  <div className="mt-2 w-full max-w-md rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center">
-                    <div className="text-xs font-semibold text-amber-900">
-                      ¿Es una factura/recibo/transacción que debas contabilizar?
-                    </div>
-                    <div className="mt-2 flex flex-wrap justify-center gap-2">
-                      <Button
-                        type="button"
-                        className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
-                        onClick={() => {
-                          setNfUnlock(true);
-                          setNfConfirmStep(0);
-                          setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
-                        }}
-                      >
-                        Sí, es factura
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        disabled={isSaving}
-                        onClick={() => void handleNoFacturaConfirm()}
-                      >
-                        {nfConfirmStep === 0 ? 'No, no es factura' : 'Confirmar: no es factura'}
-                      </Button>
-                    </div>
+        <div className="relative flex-1 min-h-0 overflow-y-auto rounded-md border border-slate-200 bg-white p-3">
+          {selected?.tipo === 'No Factura' && !nfUnlock ? (
+            <div className="absolute inset-0 z-10 bg-slate-950/24 backdrop-blur-sm">
+              <div className="flex h-full items-start justify-center px-3">
+                <div className="mt-14 w-full max-w-md rounded-lg bg-white px-3 py-2 text-center shadow-lg">
+                  <div className="text-xs font-semibold text-slate-900">
+                    ¿Es un documento que debas contabilizar?
+                  </div>
+                  <div className="mt-2 flex flex-wrap justify-center gap-2">
+                    <Button
+                      type="button"
+                      className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
+                      onClick={() => {
+                        setNfUnlock(true);
+                        setNfConfirmStep(0);
+                        setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
+                      }}
+                    >
+                      Sí
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={isSaving}
+                      onClick={() => void handleNoFacturaConfirm()}
+                    >
+                      No
+                    </Button>
                   </div>
                 </div>
-              ) : null}
-
-              <div className={selected.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-sm select-none' : ''}>
+              </div>
+            </div>
+          ) : null}
+          {selected ? (
+            <div className="mt-3 relative overflow-hidden rounded-md">
+              <div className={selected.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-[1px] select-none' : ''}>
                 <div className="grid grid-cols-1 gap-3">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <div>
