@@ -83,15 +83,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
     })();
   };
 
-  const displayName = user?.firstName
-    ? `${user.firstName} ${user.lastName ?? ''}`.trim()
+  const firstName = user?.firstName?.trim() ?? '';
+  const firstSurname = user?.lastName?.trim()?.split(' ')?.[0] ?? '';
+  const displayName = firstName
+    ? `${firstName} ${firstSurname}`.trim()
     : user?.businessName ?? 'Usuario';
   const role = user?.role ?? (isLoading ? 'Cargando…' : 'Sin rol');
   const initials = (user?.initials ?? `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`).toUpperCase() || 'U';
 
   return (
     <aside 
-      className={`bg-blue-600 text-white flex flex-col transition-all duration-300 ease-in-out ${isOpen ? 'w-52' : 'w-[68px]'}`}
+      className={`bg-blue-600 text-white flex flex-col transition-all duration-300 ease-in-out ${isOpen ? 'w-48' : 'w-[68px]'}`}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
@@ -200,12 +202,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       >
         <div className="pointer-events-none absolute inset-0 transition-colors bg-transparent group-hover:bg-blue-700" />
 
-        <div className="relative z-10 flex h-12 items-center justify-center">
-          <Settings size={20} />
+        <div className="relative z-10 flex h-11 items-center justify-center">
+          <Settings size={18} />
         </div>
         <span
           className={`relative z-10 whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
-            isOpen ? 'opacity-100 text-[15px]' : 'opacity-0 pointer-events-none'
+            isOpen ? 'opacity-100 text-sm' : 'opacity-0 pointer-events-none'
           }`}
         >
           {isOpen ? 'Configuración' : null}
@@ -220,12 +222,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       >
         <div className="pointer-events-none absolute inset-0 transition-colors bg-transparent group-hover:bg-blue-700" />
 
-        <div className="relative z-10 flex h-12 items-center justify-center">
-          <LogOut size={20} />
+        <div className="relative z-10 flex h-11 items-center justify-center">
+          <LogOut size={18} />
         </div>
         <span
           className={`relative z-10 whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
-            isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            isOpen ? 'opacity-100 text-sm' : 'opacity-0 pointer-events-none'
           }`}
         >
           {isOpen ? 'Cerrar sesión' : null}
@@ -241,13 +243,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
             {initials}
           </div>
         </div>
-        <div className={`overflow-hidden pr-2.5 transition-opacity duration-200 ${isOpen ? 'opacity-100 text-[15px]' : 'opacity-0 pointer-events-none'}`}>
+        <div className={`overflow-hidden pr-2.5 transition-opacity duration-200 ${isOpen ? 'opacity-100 pl-3 text-sm' : 'opacity-0 pointer-events-none'}`}>
           {isOpen ? (
             <>
-              <p className="font-semibold whitespace-nowrap">
+              <p className="font-semibold whitespace-nowrap text-sm">
                 {isLoading ? 'Cargando…' : displayName}
               </p>
-              <p className="text-sm text-blue-200 whitespace-nowrap">{role}</p>
+              <p className="text-xs text-blue-200 whitespace-nowrap">{role}</p>
             </>
           ) : null}
         </div>

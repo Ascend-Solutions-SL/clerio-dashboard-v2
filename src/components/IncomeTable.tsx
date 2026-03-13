@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
-import { TableFilters } from '@/components/ui/table-filters';
+import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filters';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
@@ -225,6 +225,12 @@ const formatDate = (value: string) => {
   }
   return `${day}/${month}/${year}`;
 };
+
+const normalizeClientLabel = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s-/])([a-záéíóúüñ])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
 
 type FacturaRow = {
   id: number;
@@ -433,98 +439,28 @@ export const columns: ColumnDef<Income>[] = [
 
 export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refreshKey = 0 }: IncomeTableProps) {
   const { user, isLoading } = useDashboardSession();
-  const [data, setData] = React.useState<Income[]>([]);
+  const [sourceData, setSourceData] = React.useState<Income[]>([]);
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
-  const [dateRange, setDateRange] = React.useState<{ startDate: string; endDate: string }>({ 
+  const [filters, setFilters] = React.useState<TableFiltersValue>({
     startDate: '', 
-    endDate: '' 
+    endDate: '',
+    clients: [],
+    minAmount: null,
+    maxAmount: null,
   });
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
-
-  // Load data and calculate total income
-  React.useEffect(() => {
-    const loadData = async () => {
-      if (!businessName && empresaId == null) return;
-
-      let query = supabase
-        .from('facturas')
-        .select(
-          'id, numero, fecha, buyer_name, buyer_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_validada'
-        )
-        .eq('tipo', 'Ingresos')
-        .eq('source', 'ocr')
-        .order('fecha', { ascending: false });
-
-      if (empresaId != null && businessName) {
-        query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
-      } else {
-        query = empresaId != null ? query.eq('empresa_id', empresaId) : query.eq('user_businessname', businessName);
-      }
-
-      const { data: facturas, error } = await query;
-
-      if (error) {
-        console.error('Error fetching invoices:', error);
-        return;
-      }
-      if (!facturas) {
-        console.log('No invoices found');
-        return;
-      }
-      console.log('Fetched invoices:', facturas);
-
-      // Calculate total income and count
-      const total = (facturas as FacturaRow[]).reduce((sum: number, factura: FacturaRow) => {
-        const amount = parseFloat(factura.importe_total as string) || 0;
-        return sum + amount;
-      }, 0);
-
-      // Update parent components with total income and invoice count
-      onTotalIncomeChange?.(total);
-      onInvoiceCountChange?.(facturas.length);
-
-      // Map to table data
-      const mapped = (facturas as FacturaRow[]).map((row: FacturaRow) => {
-        const subtotalValue = Number(row.importe_sin_iva ?? 0);
-        const totalValue = Number(row.importe_total ?? 0);
-
-        return {
-          id: row.id,
-          date: formatDate(row.fecha),
-          rawDate: row.fecha,
-          invoice: row.numero,
-          client: row.buyer_name ?? '',
-          description: row.invoice_concept || '',
-          subtotal: currencyFormatter.format(subtotalValue),
-          total: currencyFormatter.format(totalValue),
-          subtotalValue,
-          totalValue,
-          driveFileId: row.drive_file_id ?? null,
-          driveType: (row.drive_type === 'onedrive' || row.drive_type === 'googledrive'
-            ? row.drive_type
-            : 'googledrive') as DriveType,
-          facturaValidada: normalizeFacturaValidada(row.factura_validada),
-        };
-      });
-
-      setData(mapped);
-    };
-
-    void loadData();
-  }, [businessName, empresaId, onTotalIncomeChange, onInvoiceCountChange, refreshKey]);
-
-  // Apply date range filter
+  // Load table data (date filter at source)
   React.useEffect(() => {
     if (isLoading) {
       return;
     }
 
     if (!businessName && empresaId == null) {
-      setData([]);
+      setSourceData([]);
       return;
     }
 
@@ -547,10 +483,10 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       }
 
       // Aplicar filtro de rango de fechas si existe
-      if (dateRange.startDate && dateRange.endDate) {
+      if (filters.startDate && filters.endDate) {
         query = query
-          .gte('fecha', dateRange.startDate)
-          .lte('fecha', dateRange.endDate);
+          .gte('fecha', filters.startDate)
+          .lte('fecha', filters.endDate);
       }
 
       const { data: rows, error } = await query;
@@ -560,7 +496,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       }
 
       if (error || !rows) {
-        setData([]);
+        setSourceData([]);
         return;
       }
 
@@ -589,7 +525,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
         };
       });
 
-      setData(mapped);
+      setSourceData(mapped);
     };
 
     void loadData();
@@ -597,10 +533,55 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     return () => {
       isMounted = false;
     };
-  }, [isLoading, businessName, empresaId, dateRange, refreshKey]);
+  }, [isLoading, businessName, empresaId, filters.startDate, filters.endDate, refreshKey]);
+
+  const filteredData = React.useMemo(() => {
+    let next = sourceData;
+
+    if (filters.clients.length > 0) {
+      const selectedClients = new Set(filters.clients.map((client) => normalizeClientLabel(client).toLowerCase()));
+      next = next.filter((row) => selectedClients.has(normalizeClientLabel(row.client).toLowerCase()));
+    }
+
+    if (filters.minAmount != null && filters.maxAmount != null) {
+      next = next.filter(
+        (row) => row.totalValue >= filters.minAmount! && row.totalValue <= filters.maxAmount!
+      );
+    }
+
+    return next;
+  }, [sourceData, filters.clients, filters.minAmount, filters.maxAmount]);
+
+  React.useEffect(() => {
+    const total = filteredData.reduce((sum, row) => sum + (Number(row.totalValue) || 0), 0);
+    onTotalIncomeChange?.(total);
+    onInvoiceCountChange?.(filteredData.length);
+  }, [filteredData, onTotalIncomeChange, onInvoiceCountChange]);
+
+  const clients = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sourceData
+            .map((row) => normalizeClientLabel(row.client))
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b, 'es')),
+    [sourceData]
+  );
+
+  const amountBounds = React.useMemo(() => {
+    if (sourceData.length === 0) {
+      return { min: 0, max: 0 };
+    }
+    const values = sourceData.map((row) => Math.max(0, row.totalValue));
+    const highestValue = Math.max(...values);
+    const roundedMax = Math.ceil(highestValue / 100) * 100;
+    return { min: 0, max: roundedMax };
+  }, [sourceData]);
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     state: {
       rowSelection,
@@ -626,30 +607,85 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     },
   });
 
-  const handleDateRangeChange = (startDate: string, endDate: string) => {
-    setDateRange({ startDate, endDate });
-  };
-
   const resetFilters = () => {
-    setDateRange({ startDate: '', endDate: '' });
+    setFilters({
+      startDate: '',
+      endDate: '',
+      clients: [],
+      minAmount: null,
+      maxAmount: null,
+    });
     setGlobalFilter('');
   };
 
-  const hasActiveFilters = dateRange.startDate || dateRange.endDate;
+  const hasAmountFilter = filters.minAmount != null && filters.maxAmount != null;
+  const hasActiveFilters = Boolean(
+    filters.startDate || filters.endDate || filters.clients.length > 0 || hasAmountFilter
+  );
 
   return (
     <div className="bg-white p-6 rounded-lg border border-gray-200 relative z-0">
-      <div className="flex flex-col gap-4 mb-6">
-        <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col gap-2 mb-2">
+        <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <TableFilters 
-              onDateRangeChange={handleDateRangeChange}
-              activeDateRange={dateRange}
+              filters={filters}
+              onFiltersChange={setFilters}
+              clients={clients}
+              amountBounds={amountBounds}
               className="flex-1"
             />
             <Button variant="outline" size="sm" className="h-8" disabled>
               <Download className="h-4 w-4" />
             </Button>
+            {hasActiveFilters && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {filters.startDate && filters.endDate && (
+                  <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                    Período: {formatDate(filters.startDate)} - {formatDate(filters.endDate)}
+                    <button
+                      type="button"
+                      className="text-blue-200 hover:text-white text-xs leading-none"
+                      onClick={() => setFilters((prev) => ({ ...prev, startDate: '', endDate: '' }))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                {filters.clients.length > 0 && (
+                  <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                    Clientes: {filters.clients.length}
+                    <button
+                      type="button"
+                      className="text-blue-200 hover:text-white text-xs leading-none"
+                      onClick={() => setFilters((prev) => ({ ...prev, clients: [] }))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                {hasAmountFilter && (
+                  <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                    Importe: {filters.minAmount}€ - {filters.maxAmount}€
+                    <button
+                      type="button"
+                      className="text-blue-200 hover:text-white text-xs leading-none"
+                      onClick={() => setFilters((prev) => ({ ...prev, minAmount: null, maxAmount: null }))}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  onClick={resetFilters}
+                  className="h-7 px-2 text-[11px]"
+                >
+                  Reset filters
+                  <X className="ml-1.5 h-3 w-3" />
+                </Button>
+              </div>
+            )}
           </div>
           <div className="w-full sm:w-auto">
             <div className="relative">
@@ -695,34 +731,6 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
         .table th:nth-child(8), .table td:nth-child(8) { width: 10%; }  /* Acciones */
       `}</style>
       
-      <div className="w-full overflow-x-auto pr-4">
-        {hasActiveFilters && (
-          <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-sm text-gray-500">Filtros activos:</span>
-            {dateRange.startDate && dateRange.endDate && (
-              <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                Período: {formatDate(dateRange.startDate)} - {formatDate(dateRange.endDate)}
-                <button 
-                  type="button" 
-                  className="text-blue-200 hover:text-white text-xs leading-none"
-                  onClick={() => setDateRange({ startDate: '', endDate: '' })}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-            <Button
-              variant="ghost"
-              onClick={resetFilters}
-              className="h-8 px-2 lg:px-3 text-xs"
-            >
-              Reset filters
-              <X className="ml-2 h-3 w-3" />
-            </Button>
-          </div>
-        )}
-      </div>
-
       <div className="rounded-md border relative z-0">
         <div className="max-h-[520px] overflow-y-auto">
           <Table className="table">
