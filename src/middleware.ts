@@ -13,6 +13,7 @@ import { createSupabaseMiddlewareClient } from '@/lib/supabase/middleware';
 const isStaticAsset = (pathname: string) =>
   pathname.startsWith('/_next') ||
   pathname.startsWith('/static') ||
+  pathname.startsWith('/sidebar') ||
   pathname.startsWith('/brand') ||
   pathname.endsWith('.ico');
 
@@ -46,7 +47,11 @@ const buildLoginRedirectUrl = (request: NextRequest) => {
   const redirect = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   const url = request.nextUrl.clone();
   url.pathname = '/login';
-  url.searchParams.set('redirect', redirect);
+  if (redirect !== '/') {
+    url.searchParams.set('redirect', redirect);
+  } else {
+    url.search = '';
+  }
   return url;
 };
 

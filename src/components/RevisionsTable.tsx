@@ -173,7 +173,6 @@ interface RevisionsTableProps {
   onDataLoaded?: (rows: RevisionRow[]) => void;
   refreshKey?: number;
   scope?: 'pending' | 'history';
-  onScopeChange?: (scope: 'pending' | 'history') => void;
 }
 
 export function RevisionsTable({
@@ -185,7 +184,6 @@ export function RevisionsTable({
   onDataLoaded,
   refreshKey = 0,
   scope: scopeProp,
-  onScopeChange,
 }: RevisionsTableProps) {
   const { toast } = useToast();
   const { user, isLoading } = useDashboardSession();
@@ -250,15 +248,13 @@ export function RevisionsTable({
   });
   const [isSaving, setIsSaving] = React.useState(false);
   const [nfUnlock, setNfUnlock] = React.useState(false);
-  const [nfConfirmStep, setNfConfirmStep] = React.useState<0 | 1>(0);
   const [validateConfirmStep, setValidateConfirmStep] = React.useState<0 | 1>(0);
   const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
-  const [amountsMismatchAccepted, setAmountsMismatchAccepted] = React.useState(false);
   const [showAmountsMismatchHint, setShowAmountsMismatchHint] = React.useState(false);
   const amountsMismatchAcceptedRef = React.useRef(false);
-  const validateConfirmTimeoutRef = React.useRef<number | null>(null);
+  const validateConfirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [realtimeRefreshKey, setRealtimeRefreshKey] = React.useState(0);
-  const realtimeDebounceRef = React.useRef<number | null>(null);
+  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
@@ -287,9 +283,9 @@ export function RevisionsTable({
         },
         () => {
           if (realtimeDebounceRef.current) {
-            window.clearTimeout(realtimeDebounceRef.current);
+            clearTimeout(realtimeDebounceRef.current);
           }
-          realtimeDebounceRef.current = window.setTimeout(() => {
+          realtimeDebounceRef.current = setTimeout(() => {
             setRealtimeRefreshKey((prev) => prev + 1);
             realtimeDebounceRef.current = null;
           }, 400);
@@ -300,7 +296,7 @@ export function RevisionsTable({
 
     return () => {
       if (realtimeDebounceRef.current) {
-        window.clearTimeout(realtimeDebounceRef.current);
+        clearTimeout(realtimeDebounceRef.current);
         realtimeDebounceRef.current = null;
       }
       supabase.removeChannel(channel);
@@ -326,9 +322,7 @@ export function RevisionsTable({
       return;
     }
 
-    setNfConfirmStep(0);
     setShowAmountsMismatchHint(false);
-    setAmountsMismatchAccepted(false);
     amountsMismatchAcceptedRef.current = false;
     const isNoFactura = selected.tipo === 'No Factura';
     setNfUnlock(!isNoFactura);
@@ -484,9 +478,11 @@ export function RevisionsTable({
     period,
     customRange.startDate,
     customRange.endDate,
+    periodRange,
     refreshKey,
     realtimeRefreshKey,
     scope,
+    onDataLoaded,
     onPorRevisarCountChange,
     onNoFacturasCountChange,
     onHistoricoCountChange,
@@ -559,13 +555,12 @@ export function RevisionsTable({
       if (amountsCheck.status === 'mismatch') {
         setShowAmountsMismatchHint(true);
       }
-      setAmountsMismatchAccepted(false);
       amountsMismatchAcceptedRef.current = false;
       setValidateConfirmStep(1);
       if (validateConfirmTimeoutRef.current) {
-        window.clearTimeout(validateConfirmTimeoutRef.current);
+        clearTimeout(validateConfirmTimeoutRef.current);
       }
-      validateConfirmTimeoutRef.current = window.setTimeout(() => {
+      validateConfirmTimeoutRef.current = setTimeout(() => {
         setValidateConfirmStep(0);
         validateConfirmTimeoutRef.current = null;
       }, 3500);
@@ -706,7 +701,7 @@ export function RevisionsTable({
       setValidateConfirmStep(0);
       setShowAmountsMismatchConfirm(false);
       if (validateConfirmTimeoutRef.current) {
-        window.clearTimeout(validateConfirmTimeoutRef.current);
+        clearTimeout(validateConfirmTimeoutRef.current);
         validateConfirmTimeoutRef.current = null;
       }
     }
@@ -714,12 +709,11 @@ export function RevisionsTable({
 
   const clearAmountsMismatchFlow = () => {
     setShowAmountsMismatchConfirm(false);
-    setAmountsMismatchAccepted(false);
     amountsMismatchAcceptedRef.current = false;
     setShowAmountsMismatchHint(false);
     setValidateConfirmStep(0);
     if (validateConfirmTimeoutRef.current) {
-      window.clearTimeout(validateConfirmTimeoutRef.current);
+      clearTimeout(validateConfirmTimeoutRef.current);
       validateConfirmTimeoutRef.current = null;
     }
   };
@@ -766,9 +760,7 @@ export function RevisionsTable({
         return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
       });
       if (next) {
-        setNfConfirmStep(0);
         setShowAmountsMismatchHint(false);
-        setAmountsMismatchAccepted(false);
         amountsMismatchAcceptedRef.current = false;
         setNfUnlock(next.tipo !== 'No Factura');
         onSelect?.(next.id, next);
@@ -785,7 +777,6 @@ export function RevisionsTable({
       });
     } finally {
       setIsSaving(false);
-      setNfConfirmStep(0);
     }
   };
 
@@ -957,7 +948,6 @@ export function RevisionsTable({
                 type="button"
                 className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs"
                 onClick={() => {
-                  setAmountsMismatchAccepted(true);
                   amountsMismatchAcceptedRef.current = true;
                   setShowAmountsMismatchConfirm(false);
                   void handleValidateAndNext();
@@ -1077,38 +1067,46 @@ export function RevisionsTable({
           text-align: center;
         }
 
+        .revisions-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 20;
+          background: ${scope === 'history' ? '#f8fafc' : '#ffffff'};
+          box-shadow: inset 0 -1px 0 rgba(226, 232, 240, 1);
+        }
+
         .revisions-table th:nth-child(1),
         .revisions-table td:nth-child(1) {
-          width: 120px;
-          min-width: 120px;
+          width: 100px;
+          min-width: 100px;
           padding-left: 0.75rem;
           padding-right: 0.75rem;
         }
 
         .revisions-table th:nth-child(2),
         .revisions-table td:nth-child(2) {
-          width: 105px;
-          min-width: 105px;
+          width: 90px;
+          min-width: 90px;
           padding-left: 0.75rem;
           padding-right: 0.75rem;
         }
 
         .revisions-table th:nth-child(3),
         .revisions-table td:nth-child(3) {
-          width: 44%;
-          min-width: 220px;
+          width: ${scope === 'history' ? '64%' : '44%'};
+          min-width: ${scope === 'history' ? '320px' : '220px'};
         }
 
         .revisions-table th:nth-child(4),
         .revisions-table td:nth-child(4) {
-          width: 120px;
-          min-width: 120px;
+          width: ${scope === 'history' ? '94px' : '100px'};
+          min-width: ${scope === 'history' ? '94px' : '100px'};
         }
 
         .revisions-table th:nth-child(5),
         .revisions-table td:nth-child(5) {
-          width: 124px;
-          min-width: 124px;
+          width: ${scope === 'history' ? '94px' : '110px'};
+          min-width: ${scope === 'history' ? '94px' : '110px'};
         }
       `}</style>
 
@@ -1165,7 +1163,6 @@ export function RevisionsTable({
                       className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
                       onClick={() => {
                         setNfUnlock(true);
-                        setNfConfirmStep(0);
                         setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
                       }}
                     >

@@ -17,6 +17,18 @@ type ProfilePayload = {
   role: string;
 };
 
+type VisualScaleLevel = 'muy_grande' | 'grande' | 'normal' | 'pequeno' | 'muy_pequeno';
+
+const VISUAL_SCALE_KEY = 'dashboard-visual-scale-level';
+
+const VISUAL_SCALE_OPTIONS: Array<{ value: VisualScaleLevel; label: string }> = [
+  { value: 'muy_grande', label: 'Muy grande' },
+  { value: 'grande', label: 'Grande' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'pequeno', label: 'Pequeño' },
+  { value: 'muy_pequeno', label: 'Muy pequeño' },
+];
+
 const Badge = ({ role }: { role: string }) => {
   const normalized = role.toLowerCase();
   const isAdmin = normalized === 'admin';
@@ -29,21 +41,37 @@ const Badge = ({ role }: { role: string }) => {
   return <span className={className}>{label}</span>;
 };
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => {
+const Section = ({
+  title,
+  children,
+  gridClassName = 'md:grid-cols-2',
+}: {
+  title: string;
+  children: React.ReactNode;
+  gridClassName?: string;
+}) => {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div>
         <h2 className="text-sm font-bold text-slate-900">{title}</h2>
         <div className="mt-2 h-px w-full bg-slate-200" />
       </div>
-      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">{children}</div>
+      <div className={`mt-4 grid grid-cols-1 gap-4 ${gridClassName}`}>{children}</div>
     </section>
   );
 };
 
-const Field = ({ label, children }: { label: string; children: React.ReactNode }) => {
+const Field = ({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) => {
   return (
-    <div className="space-y-1">
+    <div className={`space-y-1 ${className ?? ''}`}>
       <label className="block text-xs font-semibold text-slate-600">{label}</label>
       {children}
     </div>
@@ -81,6 +109,7 @@ export default function SettingsPage() {
 
   const [companyPhone, setCompanyPhone] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
+  const [visualScaleLevel, setVisualScaleLevel] = useState<VisualScaleLevel>('normal');
 
   const canSave = useMemo(() => !!payload && !isLoading && !isSaving, [payload, isLoading, isSaving]);
 
@@ -110,6 +139,30 @@ export default function SettingsPage() {
 
     void load();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const raw = window.localStorage.getItem(VISUAL_SCALE_KEY) as VisualScaleLevel | null;
+    if (!raw) {
+      setVisualScaleLevel('normal');
+      return;
+    }
+
+    const exists = VISUAL_SCALE_OPTIONS.some((option) => option.value === raw);
+    setVisualScaleLevel(exists ? raw : 'normal');
+  }, []);
+
+  const applyVisualScale = (next: VisualScaleLevel) => {
+    setVisualScaleLevel(next);
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.localStorage.setItem(VISUAL_SCALE_KEY, next);
+    window.dispatchEvent(new Event('dashboard-visual-scale-changed'));
+  };
 
   const handleSave = async () => {
     if (!payload) {
@@ -179,31 +232,52 @@ export default function SettingsPage() {
         </div>
       ) : null}
 
-      <Section title="Datos Empleado">
-        <Field label="Nombre">
+      <Section title="Datos Empleado" gridClassName="md:grid-cols-12">
+        <Field label="Nombre" className="md:col-span-3">
           <ReadonlyInput value={payload.employee.firstName ?? ''} />
         </Field>
-        <Field label="Apellidos">
+        <Field label="Apellidos" className="md:col-span-3">
           <ReadonlyInput value={payload.employee.lastName ?? ''} />
         </Field>
-        <Field label="Email">
+        <Field label="Email" className="md:col-span-6">
           <ReadonlyInput value={payload.employee.email ?? ''} />
         </Field>
       </Section>
 
-      <Section title="Datos Empresa">
-        <Field label="Nombre de Empresa">
+      <Section title="Datos Empresa" gridClassName="md:grid-cols-12">
+        <Field label="Nombre de Empresa" className="md:col-span-3">
           <ReadonlyInput value={payload.company.businessName ?? ''} />
         </Field>
-        <Field label="CIF">
+        <Field label="CIF" className="md:col-span-2">
           <ReadonlyInput value={payload.company.cif ?? ''} />
         </Field>
-        <Field label="Teléfono Empresa">
+        <Field label="Teléfono Empresa" className="md:col-span-2">
           <EditableInput value={companyPhone} onChange={setCompanyPhone} />
         </Field>
-        <Field label="Dirección">
+        <Field label="Dirección" className="md:col-span-5">
           <EditableInput value={companyAddress} onChange={setCompanyAddress} />
         </Field>
+      </Section>
+
+      <Section title="Tamaño y Proporción">
+        <div className="space-y-3 md:col-span-2">
+          <div className="flex flex-wrap gap-2">
+            {VISUAL_SCALE_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => applyVisualScale(option.value)}
+                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  visualScaleLevel === option.value
+                    ? 'border-blue-600 bg-blue-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </Section>
 
       <div className="flex justify-end">

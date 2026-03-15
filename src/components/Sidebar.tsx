@@ -27,6 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
   const pathname = usePathname();
   const { user, isLoading } = useDashboardSession();
   const [pendingValidationCount, setPendingValidationCount] = React.useState<number>(0);
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
 
   React.useEffect(() => {
     const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
@@ -70,15 +71,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
   }, []);
 
   const handleLogout = () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    setIsSigningOut(true);
     (async () => {
       try {
         const client = createSupabaseBrowserClient();
-        await client.auth.signOut();
-        await fetch('/api/auth/logout', { method: 'POST' });
+        await Promise.allSettled([
+          client.auth.signOut(),
+          fetch('/api/auth/logout', { method: 'POST', credentials: 'include', cache: 'no-store' }),
+        ]);
       } catch (error) {
         console.error('Error al cerrar sesión', error);
       } finally {
-        window.location.href = '/login';
+        window.location.replace('/login');
       }
     })();
   };
@@ -97,7 +105,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <div className="grid h-24 grid-cols-[36px_minmax(0,1fr)] items-center px-4 pt-5">
+      <div className="grid h-[76px] grid-cols-[36px_minmax(0,1fr)] items-center px-4 pt-2 pb-1">
         <div className="flex h-12 items-center justify-center">
           <div className="relative h-8 w-8">
             <Image
@@ -140,9 +148,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
               {typeof item.icon === 'string' ? (
                 item.icon.startsWith('/sidebar/') ? (
                   <div className="relative h-5 w-5">
-                    <img
+                    <Image
                       src={item.icon}
                       alt={item.label}
+                      width={18}
+                      height={18}
                       className="h-[18px] w-[18px] object-contain"
                     />
                   </div>
@@ -218,6 +228,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
       <button
         type="button"
         onClick={handleLogout}
+        disabled={isSigningOut}
         className="group relative mx-0 my-1 grid grid-cols-[36px_minmax(0,1fr)] items-center rounded-none px-4 text-left"
       >
         <div className="pointer-events-none absolute inset-0 transition-colors bg-transparent group-hover:bg-blue-700" />
@@ -230,9 +241,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
             isOpen ? 'opacity-100 text-sm' : 'opacity-0 pointer-events-none'
           }`}
         >
-          {isOpen ? 'Cerrar sesión' : null}
+          {isOpen ? (isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión') : null}
         </span>
-        {!isOpen ? <span className="sr-only">Cerrar sesión</span> : null}
+        {!isOpen ? <span className="sr-only">{isSigningOut ? 'Cerrando sesión…' : 'Cerrar sesión'}</span> : null}
       </button>
 
       <div className="mx-4 border-t border-white/20" />

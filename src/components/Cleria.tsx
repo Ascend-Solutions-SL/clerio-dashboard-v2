@@ -318,8 +318,6 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
 
   const hasUserMessages = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
 
-  const showExpandedHero = !hasStartedConversation;
-
   useEffect(() => {
     setSuggestionsCollapsed(hasUserMessages);
   }, [conversationId, hasUserMessages]);
@@ -741,7 +739,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
           </div>
         </div>
 
-        <div className="mt-auto border-t border-gray-200 px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="mt-auto px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="relative mx-auto w-full max-w-[700px]">
             <div
               className={`pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2 origin-bottom transition-[transform,opacity] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${

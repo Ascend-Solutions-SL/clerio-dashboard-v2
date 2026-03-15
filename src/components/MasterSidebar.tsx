@@ -40,11 +40,13 @@ export default function MasterSidebar({
 
     setIsSigningOut(true);
     try {
-      const supabase = createSupabaseBrowserClient();
-      await supabase.auth.signOut();
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      const client = createSupabaseBrowserClient();
+      await Promise.allSettled([
+        client.auth.signOut(),
+        fetch('/api/auth/logout', { method: 'POST', credentials: 'include', cache: 'no-store' }),
+      ]);
     } finally {
-      window.location.href = '/login';
+      window.location.replace('/login');
     }
   }, [isSigningOut]);
 

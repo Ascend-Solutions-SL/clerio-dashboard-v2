@@ -21,6 +21,7 @@ const RevisionesPageContent = () => {
 
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
 
   const handleScopeChange = (nextScope: 'pending' | 'history') => {
     setScope(nextScope);
@@ -59,11 +60,18 @@ const RevisionesPageContent = () => {
     if (!selectedRow?.driveFileId || !selectedRow.driveType) {
       setEmbedUrl(null);
       setIsPreviewLoading(false);
+      setPreviewKey(null);
       return;
     }
 
     const fileId = selectedRow.driveFileId;
     const driveType = selectedRow.driveType;
+    const nextPreviewKey = `${driveType}:${fileId}`;
+    if (nextPreviewKey === previewKey && embedUrl) {
+      return;
+    }
+
+    setPreviewKey(nextPreviewKey);
     setIsPreviewLoading(true);
 
     if (driveType === 'googledrive') {
@@ -94,7 +102,7 @@ const RevisionesPageContent = () => {
     };
 
     void resolve();
-  }, [selectedRow]);
+  }, [selectedRow?.driveFileId, selectedRow?.driveType, previewKey, embedUrl]);
 
   return (
     <div className="-m-8">
@@ -147,7 +155,6 @@ const RevisionesPageContent = () => {
                       onPorRevisarCountChange={setPorRevisarCount}
                       onHistoricoCountChange={setHistoricoCount}
                       scope={scope}
-                      onScopeChange={handleScopeChange}
                       selectedId={selectedId}
                       onSelect={(id, row) => {
                         setSelectedId(id);

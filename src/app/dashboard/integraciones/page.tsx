@@ -7,7 +7,12 @@ import { GmailConnectButton } from '@/features/integrations/gmail/components/Gma
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+
+const HOLDED_STATUS_EVENT = 'holded-status-changed';
 
 type IntegrationCategory = 'popular' | 'ingresos' | 'gastos';
 type IntegrationStatus = 'connected' | 'disconnected';
@@ -195,6 +200,13 @@ const IntegracionesPage = () => {
   const [hoveredDisconnectId, setHoveredDisconnectId] = useState<string | null>(null);
   const [confirmDisconnectId, setConfirmDisconnectId] = useState<string | null>(null);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isHoldedModalOpen, setIsHoldedModalOpen] = useState(false);
+  const [holdedApiKeyInput, setHoldedApiKeyInput] = useState('');
+  const [holdedApiKeyMasked, setHoldedApiKeyMasked] = useState<string | null>(null);
+  const [holdedApiKeyError, setHoldedApiKeyError] = useState<string | null>(null);
+  const [isSavingHoldedApiKey, setIsSavingHoldedApiKey] = useState(false);
+  const [isEditingHoldedApiKey, setIsEditingHoldedApiKey] = useState(false);
+  const [isStatusesLoading, setIsStatusesLoading] = useState(true);
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
@@ -224,11 +236,16 @@ const IntegracionesPage = () => {
     let isMounted = true;
 
     const fetchStatuses = async () => {
+      if (isMounted) {
+        setIsStatusesLoading(true);
+      }
+
       const endpoints: Partial<Record<Integration['id'], string>> = {
         gmail: '/api/gmail/status',
         drive: '/api/drive/status',
         outlook: '/api/oauth/outlook/status',
         onedrive: '/api/oauth/onedrive/status',
+        holded: '/api/holded/key',
       };
 
       const entries = Object.entries(endpoints) as Array<[Integration['id'], string]>;
@@ -243,34 +260,45 @@ const IntegracionesPage = () => {
             });
 
             if (!response.ok) {
-              return [id, false] as const;
+              return [id, { connected: false, maskedApiKey: null }] as const;
             }
 
-            const payload = (await response.json()) as { connected?: boolean };
-            return [id, Boolean(payload.connected)] as const;
+            const payload = (await response.json()) as { connected?: boolean; masked_api_key?: string | null };
+            return [id, { connected: Boolean(payload.connected), maskedApiKey: payload.masked_api_key ?? null }] as const;
           } catch {
-            return [id, false] as const;
+            return [id, { connected: false, maskedApiKey: null }] as const;
           }
         })
       );
 
       if (!isMounted) return;
 
-      const connectedMap = Object.fromEntries(results) as Partial<Record<Integration['id'], boolean>>;
+      const connectedMap = Object.fromEntries(results) as Partial<
+        Record<Integration['id'], { connected: boolean; maskedApiKey: string | null }>
+      >;
+
+      const holdedMeta = connectedMap.holded;
+      setHoldedApiKeyMasked(holdedMeta?.maskedApiKey ?? null);
 
       setIntegrations((prev) =>
         prev.map((integration) => {
-          const isConnected = connectedMap[integration.id];
-          if (typeof isConnected !== 'boolean') {
+          const statusMeta = connectedMap[integration.id];
+          if (!statusMeta) {
             return integration;
           }
 
           return {
             ...integration,
-            status: isConnected ? 'connected' : 'disconnected',
+            status: statusMeta.connected ? 'connected' : 'disconnected',
           };
         })
       );
+
+      window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: Boolean(holdedMeta?.connected) } }));
+
+      if (isMounted) {
+        setIsStatusesLoading(false);
+      }
     };
 
     void fetchStatuses();
@@ -310,6 +338,23 @@ const IntegracionesPage = () => {
   const closeRequestModal = useCallback(() => {
     setIsRequestModalOpen(false);
     setRequestError(null);
+  }, []);
+
+  const openHoldedModal = useCallback(() => {
+    const holdedIntegration = integrationsRef.current.find((integration) => integration.id === 'holded');
+    const isHoldedConnected = holdedIntegration?.status === 'connected';
+
+    setHoldedApiKeyError(null);
+    setIsEditingHoldedApiKey(false);
+    setHoldedApiKeyInput(isHoldedConnected ? (holdedApiKeyMasked ?? '') : '');
+    setIsHoldedModalOpen(true);
+  }, [holdedApiKeyMasked]);
+
+  const closeHoldedModal = useCallback(() => {
+    setIsHoldedModalOpen(false);
+    setHoldedApiKeyError(null);
+    setHoldedApiKeyInput('');
+    setIsEditingHoldedApiKey(false);
   }, []);
 
   const showToast = useCallback((message: string) => {
@@ -458,17 +503,80 @@ const IntegracionesPage = () => {
     }
   }, [isSubmittingRequest, requestComments, requestNeedLevel, requestTool, showToast]);
 
+  const saveHoldedApiKey = useCallback(async () => {
+    if (isSavingHoldedApiKey) {
+      return;
+    }
+
+    const holdedIntegration = integrationsRef.current.find((integration) => integration.id === 'holded');
+    const isHoldedConnected = holdedIntegration?.status === 'connected';
+
+    if (isHoldedConnected && !isEditingHoldedApiKey) {
+      return;
+    }
+
+    const apiKey = holdedApiKeyInput.trim();
+    if (!apiKey) {
+      setHoldedApiKeyError('La API key es obligatoria');
+      return;
+    }
+
+    setIsSavingHoldedApiKey(true);
+    setHoldedApiKeyError(null);
+
+    try {
+      const response = await fetch('/api/holded/key', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; connected?: boolean; masked_api_key?: string | null }
+        | null;
+
+      if (!response.ok || !payload?.connected) {
+        setHoldedApiKeyError(payload?.error ?? 'No se pudo guardar la API key');
+        return;
+      }
+
+      setIntegrations((prev) =>
+        prev.map((integration) =>
+          integration.id === 'holded'
+            ? {
+                ...integration,
+                status: 'connected',
+              }
+            : integration
+        )
+      );
+
+      setHoldedApiKeyMasked(payload.masked_api_key ?? null);
+      setIsHoldedModalOpen(false);
+      setHoldedApiKeyInput('');
+      setIsEditingHoldedApiKey(false);
+      showToast('Holded conectado correctamente');
+
+      window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: true } }));
+    } finally {
+      setIsSavingHoldedApiKey(false);
+    }
+  }, [holdedApiKeyInput, isEditingHoldedApiKey, isSavingHoldedApiKey, showToast]);
+
   return (
     <div className="-m-8">
-      <div className="bg-white pt-8 pb-12">
-        <div className="max-w-7xl mx-auto px-6 space-y-8">
-          <header className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-3 max-w-2xl">
-              <div className="flex items-center gap-3 text-blue-700">
+      <div className="bg-white pt-6 pb-10">
+        <div className="mx-auto max-w-6xl space-y-6 px-6">
+          <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-2xl space-y-2">
+              <div className="flex items-center gap-2.5 text-blue-700">
                 <PlugZap className="h-10 w-10" />
-                <h1 className="text-3xl font-semibold">Integraciones</h1>
+                <h1 className="text-3xl font-bold text-blue-700">Integraciones</h1>
               </div>
-              <p className="text-gray-500 text-base">
+              <p className="text-gray-500">
                 Conecta tus herramientas y deja que Clerio sincronice automáticamente tus facturas de ingresos y gastos.
               </p>
             </div>
@@ -485,14 +593,14 @@ const IntegracionesPage = () => {
             </label>
           </header>
 
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap gap-2">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold border transition-transform duration-200 hover:-translate-y-0.5 ${
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-transform duration-200 hover:-translate-y-0.5 ${
                     activeTab === tab.id
                       ? 'bg-blue-600 text-white border-blue-600 hover:shadow-md'
                       : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-700 hover:shadow-md'
@@ -505,14 +613,14 @@ const IntegracionesPage = () => {
             <button
               type="button"
               onClick={openRequestModal}
-              className="inline-flex items-center justify-center gap-2 self-start rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-700 hover:shadow-md"
+              className="inline-flex items-center justify-center gap-1.5 self-start rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-700 hover:shadow-md"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3.5 w-3.5" />
               Solicitar integración
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredIntegrations.map((integration) => {
               const isConnected = integration.status === 'connected';
               const integrationAction = connectedActions[integration.id];
@@ -521,6 +629,8 @@ const IntegracionesPage = () => {
                 integration.id === 'drive' ||
                 integration.id === 'outlook' ||
                 integration.id === 'onedrive';
+              const isHolded = integration.id === 'holded';
+              const supportsStatusCheck = supportsDisconnect || isHolded;
               const isConfirmingDisconnect = confirmDisconnectId === integration.id;
               const showDisconnectAction =
                 isConnected && supportsDisconnect && hoveredDisconnectId === integration.id;
@@ -528,22 +638,30 @@ const IntegracionesPage = () => {
               return (
                 <div
                   key={integration.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col gap-4 relative"
+                  onClick={() => {
+                    if (isHolded) {
+                      openHoldedModal();
+                    }
+                  }}
+                  className={`relative flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm ${
+                    isHolded ? 'cursor-pointer transition-shadow hover:shadow-md' : ''
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-14 w-14 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white">
                         {integration.icon}
                       </div>
                       <div>
-                        <h2 className="text-lg font-semibold text-gray-800">{integration.name}</h2>
-                        <p className="text-xs font-semibold text-gray-400">
-                          {isConnected ? 'Conectado' : 'No conectado'}
-                        </p>
+                        <h2 className="text-base font-semibold text-gray-800">{integration.name}</h2>
                       </div>
                     </div>
                     <div>
-                      {isConnected && supportsDisconnect ? (
+                      {supportsStatusCheck && isStatusesLoading ? (
+                        <span className="inline-flex select-none items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-500">
+                          Cargando...
+                        </span>
+                      ) : isConnected && supportsDisconnect ? (
                         <button
                           type="button"
                           onMouseEnter={() => setHoveredDisconnectId(integration.id)}
@@ -555,7 +673,7 @@ const IntegracionesPage = () => {
                               setConfirmDisconnectId(integration.id);
                             }
                           }}
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold border transition-transform duration-200 hover:-translate-y-0.5 ${
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform duration-200 hover:-translate-y-0.5 ${
                             showDisconnectAction
                               ? 'bg-slate-900 text-white border-slate-900 hover:shadow-md'
                               : 'bg-emerald-500 text-white border-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)] hover:shadow-[0_8px_20px_rgba(16,185,129,0.42)]'
@@ -567,13 +685,25 @@ const IntegracionesPage = () => {
                         <button
                           type="button"
                           onClick={() => startOAuth(integration.id)}
-                          className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold border border-gray-200 bg-gray-100 text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-600 hover:shadow-md"
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-[10px] font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-600 hover:shadow-md"
                         >
                           Conectar
                         </button>
+                      ) : isHolded ? (
+                        <button
+                          type="button"
+                          onClick={openHoldedModal}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold transition-transform duration-200 hover:-translate-y-0.5 ${
+                            isConnected
+                              ? 'bg-emerald-500 text-white border-emerald-500 shadow-[0_4px_12px_rgba(16,185,129,0.35)] hover:shadow-[0_8px_20px_rgba(16,185,129,0.42)]'
+                              : 'border-gray-200 bg-gray-100 text-gray-700 hover:border-blue-300 hover:text-blue-600 hover:shadow-md'
+                          }`}
+                        >
+                          {isConnected ? 'Conectado' : 'Conectar'}
+                        </button>
                       ) : (
                         integrationAction ?? (
-                          <span className="inline-flex select-none items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                          <span className="inline-flex select-none items-center rounded-full border border-dashed border-amber-300 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
                             Próximamente
                           </span>
                         )
@@ -581,18 +711,7 @@ const IntegracionesPage = () => {
                     </div>
                   </div>
 
-                  <p className="text-sm text-gray-500 leading-relaxed">{integration.description}</p>
-
-                  <div className="flex flex-wrap gap-2">
-                    {integration.categories.map((category) => (
-                      <span
-                        key={category}
-                        className="rounded-full bg-gray-100 px-3 py-1 text-[11px] font-semibold text-gray-600"
-                      >
-                        {category}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="text-xs leading-5 text-gray-500">{integration.description}</p>
 
                   {isConfirmingDisconnect ? (
                     <div className="absolute inset-0 z-10 grid place-items-center">
@@ -669,18 +788,18 @@ const IntegracionesPage = () => {
             })}
           </div>
 
-          <section className="mt-10 rounded-3xl border border-gray-200 bg-gray-50 p-6">
+          <section className="mt-8 rounded-3xl border border-gray-200 bg-gray-50 p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
-                <h2 className="text-lg font-semibold text-gray-800">¿No ves tu herramienta?</h2>
-                <p className="text-sm text-gray-500">
+                <h2 className="text-base font-semibold text-gray-800">¿No ves tu herramienta?</h2>
+                <p className="text-xs text-gray-500">
                   Solicita una integración nueva y priorizaremos su desarrollo según la necesidad.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={openRequestModal}
-                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md"
+                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md"
               >
                 Solicitar integración
               </button>
@@ -777,6 +896,82 @@ const IntegracionesPage = () => {
                   className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md disabled:opacity-60"
                 >
                   {isSubmittingRequest ? 'Enviando…' : 'Enviar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isHoldedModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button type="button" aria-label="Cerrar" onClick={closeHoldedModal} className="absolute inset-0 bg-black/50" />
+          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Conectar Holded</h3>
+                <p className="mt-1 text-sm text-gray-500">Introduce tu API key para activar la integración de Holded.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeHoldedModal}
+                className="rounded-full border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-600 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700" htmlFor="holdedApiKey">
+                  API key
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="holdedApiKey"
+                    value={holdedApiKeyInput}
+                    onChange={(e) => setHoldedApiKeyInput(e.target.value)}
+                    disabled={Boolean(holdedApiKeyMasked) && !isEditingHoldedApiKey}
+                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                    placeholder="Pega aquí tu API key de Holded"
+                  />
+                  {holdedApiKeyMasked ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditingHoldedApiKey(true);
+                        setHoldedApiKeyInput('');
+                        setHoldedApiKeyError(null);
+                      }}
+                      className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
+                    >
+                      Editar
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {holdedApiKeyError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  {holdedApiKeyError}
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={closeHoldedModal}
+                  className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={saveHoldedApiKey}
+                  disabled={isSavingHoldedApiKey || (Boolean(holdedApiKeyMasked) && !isEditingHoldedApiKey)}
+                  className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md disabled:opacity-60"
+                >
+                  {isSavingHoldedApiKey ? 'Guardando…' : 'Guardar'}
                 </button>
               </div>
             </div>

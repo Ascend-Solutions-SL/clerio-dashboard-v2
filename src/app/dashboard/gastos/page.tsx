@@ -13,6 +13,7 @@ const GastosPage = () => {
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);
   const [tableRefreshKey, setTableRefreshKey] = useState<number>(0);
+  const [isHoldedConnected, setIsHoldedConnected] = useState<boolean | null>(null);
   const prevData = useRef({ total: 0, count: 0 });
 
   useEffect(() => {
@@ -21,6 +22,53 @@ const GastosPage = () => {
       prevData.current = { total: totalExpenses, count: invoiceCount };
     }
   }, [totalExpenses, invoiceCount, setExpensesData]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadHoldedStatus = async () => {
+      try {
+        if (isMounted) setIsHoldedConnected(null);
+        const response = await fetch('/api/holded/key', {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          if (isMounted) setIsHoldedConnected(false);
+          return;
+        }
+
+        const payload = (await response.json()) as { connected?: boolean };
+        if (isMounted) {
+          setIsHoldedConnected(Boolean(payload.connected));
+        }
+      } catch {
+        if (isMounted) setIsHoldedConnected(false);
+      }
+    };
+
+    void loadHoldedStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [tableRefreshKey]);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ connected?: boolean }>;
+      if (typeof customEvent.detail?.connected === 'boolean') {
+        setIsHoldedConnected(customEvent.detail.connected);
+      }
+    };
+
+    window.addEventListener('holded-status-changed', handler);
+    return () => {
+      window.removeEventListener('holded-status-changed', handler);
+    };
+  }, []);
 
   const getExpensesFontSize = (value: number) => {
     const valueStr = value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -56,7 +104,13 @@ const GastosPage = () => {
                     <img src="/brand/tab_gastos/holded_logo.png" alt="Holded" className="h-8 w-8" />
                     <div className="flex flex-col leading-tight">
                       <span className="text-sm md:text-base font-semibold text-inherit">Holded</span>
-                      <span className="text-sm font-light text-green-500">Connected</span>
+                      <span
+                        className={`text-sm font-light ${
+                          isHoldedConnected === null ? 'text-gray-500' : isHoldedConnected ? 'text-green-500' : 'text-red-500'
+                        }`}
+                      >
+                        {isHoldedConnected === null ? 'Cargando...' : isHoldedConnected ? 'Connected' : 'Disconnected'}
+                      </span>
                     </div>
                   </div>
                 }

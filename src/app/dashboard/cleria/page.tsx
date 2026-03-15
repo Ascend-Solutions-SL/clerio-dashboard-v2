@@ -1,9 +1,10 @@
 "use client";
 
 import Cleria from '@/components/Cleria';
-import { Edit3, Search, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Edit3, Search, MoreHorizontal, Pencil, Trash2, Sidebar, ChevronLeft, ChevronRight } from 'lucide-react';
 import React from 'react';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { useSearchParams } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,8 +26,29 @@ type CleriaConversationRow = {
   updated_at: string | null;
 };
 
+type VisualScaleLevel = 'muy_grande' | 'grande' | 'normal' | 'pequeno' | 'muy_pequeno';
+
+const VISUAL_SCALE_KEY = 'dashboard-visual-scale-level';
+
+const MAIN_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
+  muy_grande: '[zoom:0.98]',
+  grande: '[zoom:0.94]',
+  normal: '[zoom:0.90]',
+  pequeno: '[zoom:0.86]',
+  muy_pequeno: '[zoom:0.82]',
+};
+
+const SIDEBAR_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
+  muy_grande: '[zoom:0.92]',
+  grande: '[zoom:0.88]',
+  normal: '[zoom:0.84]',
+  pequeno: '[zoom:0.80]',
+  muy_pequeno: '[zoom:0.76]',
+};
+
 export default function ClerIAPage() {
   const { user, isLoading } = useDashboardSession();
+  const searchParams = useSearchParams();
   const [conversations, setConversations] = React.useState<CleriaConversationRow[]>([]);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
   const [isBootstrapping, setIsBootstrapping] = React.useState(false);
@@ -36,6 +58,8 @@ export default function ClerIAPage() {
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const renameContainerRef = React.useRef<HTMLDivElement | null>(null);
   const [deleteTargetId, setDeleteTargetId] = React.useState<string | null>(null);
+  const [isConversationsSidebarCollapsed, setIsConversationsSidebarCollapsed] = React.useState(false);
+  const [visualScaleLevel, setVisualScaleLevel] = React.useState<VisualScaleLevel>('normal');
 
   const empresaId = user?.empresaId ?? null;
 
@@ -166,6 +190,14 @@ export default function ClerIAPage() {
       setIsBootstrapping(false);
     }
   }, [createConversation, empresaId, loadConversations, user?.id]);
+
+  // Sync active conversation with URL param when present
+  React.useEffect(() => {
+    const idFromUrl = searchParams.get('conversationId');
+    if (idFromUrl) {
+      setActiveConversationId(idFromUrl);
+    }
+  }, [searchParams]);
 
   React.useEffect(() => {
     if (!renamingId) return;
@@ -318,36 +350,108 @@ export default function ClerIAPage() {
     void ensureDefaultConversation();
   }, [ensureDefaultConversation, isLoading]);
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const applySavedScale = () => {
+      const raw = window.localStorage.getItem(VISUAL_SCALE_KEY) as VisualScaleLevel | null;
+      if (!raw) {
+        setVisualScaleLevel('normal');
+        return;
+      }
+      if (raw in MAIN_SCALE_CLASS_BY_LEVEL) {
+        setVisualScaleLevel(raw);
+      } else {
+        setVisualScaleLevel('normal');
+      }
+    };
+
+    const onScaleChanged = () => applySavedScale();
+    window.addEventListener('dashboard-visual-scale-changed', onScaleChanged);
+    applySavedScale();
+
+    return () => {
+      window.removeEventListener('dashboard-visual-scale-changed', onScaleChanged);
+    };
+  }, []);
+
+  const mainScaleClass = MAIN_SCALE_CLASS_BY_LEVEL[visualScaleLevel] ?? MAIN_SCALE_CLASS_BY_LEVEL.normal;
+  const sidebarScaleClass = SIDEBAR_SCALE_CLASS_BY_LEVEL[visualScaleLevel] ?? SIDEBAR_SCALE_CLASS_BY_LEVEL.normal;
+
   return (
   <>
     <div className="h-full w-full bg-white">
-      <div className="h-full overflow-hidden grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="hidden lg:flex flex-col bg-gray-50 text-gray-900 overflow-hidden border-r border-gray-200">
-          <div className="px-4 pt-4 pb-3">
+      <div
+        className={`relative grid h-full grid-cols-1 overflow-hidden transition-[grid-template-columns] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          isConversationsSidebarCollapsed ? 'lg:grid-cols-[40px_minmax(0,1fr)]' : 'lg:grid-cols-[220px_minmax(0,1fr)]'
+        }`}
+      >
+        <aside className="relative hidden overflow-hidden border-r border-gray-200 bg-gray-50 text-gray-900 lg:flex lg:flex-col">
+          <div className={`h-full transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${sidebarScaleClass}`}>
+          <div className="relative px-0 pt-3 pb-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]">
             <button
               type="button"
-              className="w-full flex items-center gap-2 rounded-2xl hover:bg-gray-100 transition px-3 py-2 text-[13px] font-semibold text-gray-800"
+              onClick={() => setIsConversationsSidebarCollapsed((prev) => !prev)}
+              className={`absolute top-3 z-10 inline-flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-xl text-gray-700 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-gray-100 ${
+                isConversationsSidebarCollapsed ? 'left-5' : 'left-[calc(100%-20px)]'
+              }`}
+              aria-label={isConversationsSidebarCollapsed ? 'Desplegar sidebar de conversaciones' : 'Plegar sidebar de conversaciones'}
+            >
+              <Sidebar className="h-4.5 w-4.5" />
+            </button>
+            <div className="space-y-1 pt-9">
+            <button
+              type="button"
+              className="grid w-full grid-cols-[40px_minmax(0,1fr)] items-center rounded-xl border border-transparent px-0 py-0.5 text-[13px] font-semibold text-gray-800 transition hover:bg-gray-100"
               onClick={() => void handleNewChat()}
               disabled={empresaId == null || isBootstrapping}
             >
-              <Edit3 className="h-4 w-4 text-gray-700" />
-              Nuevo chat
+              <span className="flex h-7 w-full items-center justify-center">
+                <Edit3 className="h-4 w-4 text-gray-700" />
+              </span>
+              <span
+                className={`overflow-hidden whitespace-nowrap text-left transition-all duration-300 ${
+                  isConversationsSidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[180px] opacity-100'
+                }`}
+              >
+                Nuevo chat
+              </span>
             </button>
 
             <button
               type="button"
-              className="mt-1 w-full flex items-center gap-2 rounded-2xl hover:bg-gray-100 transition px-3 py-2 text-[13px] font-semibold text-gray-700"
+              className="grid w-full grid-cols-[40px_minmax(0,1fr)] items-center rounded-xl border border-transparent px-0 py-0.5 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100"
             >
-              <Search className="h-4 w-4 text-gray-700" />
-              Buscar chats
+              <span className="flex h-7 w-full items-center justify-center">
+                <Search className="h-4 w-4 text-gray-700" />
+              </span>
+              <span
+                className={`overflow-hidden whitespace-nowrap text-left transition-all duration-300 ${
+                  isConversationsSidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[180px] opacity-100'
+                }`}
+              >
+                Buscar chats
+              </span>
             </button>
+            </div>
           </div>
 
-          <div className="px-4 pb-2">
+          <div
+            className={`overflow-hidden px-3 pb-2 transition-all duration-300 ${
+              isConversationsSidebarCollapsed ? 'max-h-0 opacity-0 pointer-events-none pb-0' : 'max-h-16 opacity-100'
+            }`}
+          >
             <p className="text-[11px] font-semibold tracking-wide text-gray-500">Tus chats</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2 pb-3">
+          <div
+            className={`flex-1 overflow-hidden transition-all duration-300 ${
+              isConversationsSidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
+            }`}
+          >
+          <div className="h-full overflow-y-auto px-1.5 pb-3">
             <div className="space-y-1">
               {conversations.map((conv) => {
                 const isActive = conv.id === activeConversationId;
@@ -356,7 +460,7 @@ export default function ClerIAPage() {
                 return (
                   <div
                     key={conv.id}
-                    className={`group w-full flex items-center gap-2 rounded-2xl px-3 py-2 text-[13px] transition ${
+                    className={`group w-full flex items-center gap-2 rounded-xl border border-transparent px-3 py-1.5 text-[13px] transition ${
                       isActive ? 'bg-gray-200 text-gray-900' : 'text-gray-700 hover:bg-gray-100'
                     }`}
                   >
@@ -438,10 +542,25 @@ export default function ClerIAPage() {
               })}
             </div>
           </div>
+          </div>
+          </div>
         </aside>
 
+        <button
+          type="button"
+          onClick={() => setIsConversationsSidebarCollapsed((prev) => !prev)}
+          className={`absolute top-1/2 z-20 hidden -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 p-1 text-gray-500 shadow-sm backdrop-blur-sm transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-gray-700 lg:inline-flex ${
+            isConversationsSidebarCollapsed ? 'left-[40px] -translate-x-1/2' : 'left-[220px] -translate-x-1/2'
+          }`}
+          aria-label={isConversationsSidebarCollapsed ? 'Desplegar conversaciones' : 'Plegar conversaciones'}
+        >
+          {isConversationsSidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
+
           <main className="h-full overflow-hidden p-6">
-            <Cleria conversationId={activeConversationId} onConversationTitleMaybeUpdated={loadConversations} />
+            <div className={`h-full w-full ${mainScaleClass}`}>
+              <Cleria conversationId={activeConversationId} onConversationTitleMaybeUpdated={loadConversations} />
+            </div>
           </main>
         </div>
       </div>
