@@ -46,7 +46,7 @@ const SIDEBAR_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
   muy_pequeno: '[zoom:0.76]',
 };
 
-export default function ClerIAPage() {
+function ClerIAPageClient() {
   const { user, isLoading } = useDashboardSession();
   const searchParams = useSearchParams();
   const [conversations, setConversations] = React.useState<CleriaConversationRow[]>([]);
@@ -590,5 +590,13 @@ export default function ClerIAPage() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+export default function ClerIAPage() {
+  return (
+    <React.Suspense fallback={<div className="h-full w-full bg-white" />}>
+      <ClerIAPageClient />
+    </React.Suspense>
   );
 }
