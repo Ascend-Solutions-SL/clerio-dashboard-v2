@@ -157,8 +157,8 @@ function ClerIAPageClient() {
         }
 
         const updatedAtMs = latest.updated_at ? new Date(latest.updated_at).getTime() : NaN;
-        const oneMinuteMs = 1 * 60 * 1000;
-        const isStale = Number.isFinite(updatedAtMs) ? Date.now() - updatedAtMs > oneMinuteMs : false;
+        const fiveMinutesMs = 5 * 60 * 1000;
+        const isStale = Number.isFinite(updatedAtMs) ? Date.now() - updatedAtMs >= fiveMinutesMs : false;
 
         if (!latestIsEmpty && isStale) {
           const createdId = await createConversation();
