@@ -52,6 +52,59 @@ type CleriaMessageRow = {
   created_at: string | null;
 };
 
+const CLERIA_BACKEND_TYPES: CleriaBackendType[] = ['count', 'sum_total', 'sum_sin_iva', 'sum_iva', 'list', 'error'];
+
+const isCleriaBackendType = (value: unknown): value is CleriaBackendType => {
+  return typeof value === 'string' && CLERIA_BACKEND_TYPES.includes(value as CleriaBackendType);
+};
+
+const parseMaybeJson = (value: unknown): unknown => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return value;
+  }
+
+  if (
+    !(trimmed.startsWith('{') && trimmed.endsWith('}')) &&
+    !(trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) {
+    return value;
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
+const getListRowsFromResponseData = (responseData: unknown): CleriaListInvoiceRow[] => {
+  const parsed = parseMaybeJson(responseData);
+  if (Array.isArray(parsed)) {
+    return parsed as CleriaListInvoiceRow[];
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return [];
+  }
+
+  const payload = parsed as { data?: unknown; rows?: unknown };
+  const parsedData = parseMaybeJson(payload.data);
+  if (Array.isArray(parsedData)) {
+    return parsedData as CleriaListInvoiceRow[];
+  }
+
+  if (Array.isArray(payload.rows)) {
+    return payload.rows as CleriaListInvoiceRow[];
+  }
+
+  return [];
+};
+
 type ScrollableResultsTableProps = {
   rows: CleriaListInvoiceRow[];
   formatCurrency: (value: unknown, currency?: string | null | undefined) => string;
@@ -69,6 +122,13 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
 }) => {
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
+  const handleScrollToBottom = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const el = tableScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  };
 
   useEffect(() => {
     const el = tableScrollRef.current;
@@ -101,10 +161,16 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
               showScrollHint ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
             }`}
           >
-            <div className="flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/88 px-2.5 py-1 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={handleScrollToBottom}
+              className={`pointer-events-auto flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/88 px-2.5 py-1 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur-sm transition hover:bg-white ${
+                showScrollHint ? 'cursor-pointer' : 'pointer-events-none'
+              }`}
+            >
               <span className="h-1.5 w-1.5 rounded-full bg-slate-300 animate-pulse" />
               Desliza para ver más
-            </div>
+            </button>
           </div>
           <div
             className={`pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-white via-white/82 to-transparent transition-opacity duration-300 ${
@@ -215,18 +281,25 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     const mapped = (data as CleriaMessageRow[])
       .filter((row) => row.role === 'assistant' || row.role === 'user')
       .map((row) => {
+        const normalizedMetadata = parseMaybeJson(row.metadata);
         const cancelled =
           row.role === 'user' &&
-          typeof row.metadata === 'object' &&
-          row.metadata !== null &&
-          (row.metadata as { status?: unknown })?.status === 'cancelled';
+          typeof normalizedMetadata === 'object' &&
+          normalizedMetadata !== null &&
+          (normalizedMetadata as { status?: unknown })?.status === 'cancelled';
+
+        const metadataResultType =
+          typeof normalizedMetadata === 'object' && normalizedMetadata !== null
+            ? (normalizedMetadata as { result_type?: unknown })?.result_type
+            : undefined;
+        const resolvedType = row.type ?? (isCleriaBackendType(metadataResultType) ? metadataResultType : null);
 
         const msg = {
           id: row.id,
           role: row.role as 'assistant' | 'user',
           content: row.content,
-          responseType: row.role === 'assistant' && row.type ? (row.type as CleriaBackendType) : undefined,
-          responseData: row.role === 'assistant' ? row.metadata : undefined,
+          responseType: row.role === 'assistant' && isCleriaBackendType(resolvedType) ? resolvedType : undefined,
+          responseData: row.role === 'assistant' ? normalizedMetadata : undefined,
           createdAt: row.created_at,
           clientStatus: cancelled ? ('cancelled' as const) : null,
         } satisfies ChatMessage;
@@ -401,7 +474,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     }
 
     if (m.responseType === 'list') {
-      const rows: CleriaListInvoiceRow[] = Array.isArray(m.responseData) ? (m.responseData as CleriaListInvoiceRow[]) : [];
+      const rows = getListRowsFromResponseData(m.responseData);
       if (rows.length === 0) {
         return <div className="mt-3 text-sm text-slate-600">No se encontraron resultados</div>;
       }
