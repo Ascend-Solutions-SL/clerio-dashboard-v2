@@ -1,17 +1,11 @@
 "use client";
 
 import Image from 'next/image';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { ChevronUp, Download, Eye, Sparkles, X } from 'lucide-react';
 
 type CleriaBackendType = 'count' | 'sum_total' | 'sum_sin_iva' | 'sum_iva' | 'list' | 'error';
-
-type CleriaBackendResponse = {
-  response: string;
-  type: CleriaBackendType;
-  data: unknown;
-};
 
 type CleriaListInvoiceRow = {
   id?: string | number;
@@ -194,58 +188,58 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const run = async () => {
-      if (!conversationId) {
-        setMessages([WELCOME_MESSAGE]);
-        return;
-      }
+  const loadConversationMessages = useCallback(async () => {
+    if (!conversationId) {
+      setMessages([WELCOME_MESSAGE]);
+      return;
+    }
 
-      const res = await fetch(`/api/cleria/conversation/${encodeURIComponent(conversationId)}`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
+    const res = await fetch(`/api/cleria/conversation/${encodeURIComponent(conversationId)}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      setMessages([WELCOME_MESSAGE]);
+      return;
+    }
+
+    const data = (await res.json().catch(() => null)) as CleriaMessageRow[] | null;
+    if (!data) {
+      setMessages([WELCOME_MESSAGE]);
+      return;
+    }
+
+    const mapped = (data as CleriaMessageRow[])
+      .filter((row) => row.role === 'assistant' || row.role === 'user')
+      .map((row) => {
+        const cancelled =
+          row.role === 'user' &&
+          typeof row.metadata === 'object' &&
+          row.metadata !== null &&
+          (row.metadata as { status?: unknown })?.status === 'cancelled';
+
+        const msg = {
+          id: row.id,
+          role: row.role as 'assistant' | 'user',
+          content: row.content,
+          responseType: row.role === 'assistant' && row.type ? (row.type as CleriaBackendType) : undefined,
+          responseData: row.role === 'assistant' ? row.metadata : undefined,
+          createdAt: row.created_at,
+          clientStatus: cancelled ? ('cancelled' as const) : null,
+        } satisfies ChatMessage;
+
+        return msg;
       });
 
-      if (!res.ok) {
-        setMessages([WELCOME_MESSAGE]);
-        return;
-      }
-
-      const data = (await res.json().catch(() => null)) as CleriaMessageRow[] | null;
-      if (!data) {
-        setMessages([WELCOME_MESSAGE]);
-        return;
-      }
-
-      const mapped = (data as CleriaMessageRow[])
-        .filter((row) => row.role === 'assistant' || row.role === 'user')
-        .map((row) => {
-          const cancelled =
-            row.role === 'user' &&
-            typeof row.metadata === 'object' &&
-            row.metadata !== null &&
-            (row.metadata as { status?: unknown })?.status === 'cancelled';
-
-          const msg = {
-            id: row.id,
-            role: row.role as 'assistant' | 'user',
-            content: row.content,
-            responseType: row.role === 'assistant' && row.type ? (row.type as CleriaBackendType) : undefined,
-            responseData: row.role === 'assistant' ? row.metadata : undefined,
-            createdAt: row.created_at,
-            clientStatus: cancelled ? ('cancelled' as const) : null,
-          } satisfies ChatMessage;
-
-          return msg;
-        });
-
-      setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
-    };
-
-    void run();
+    setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
   }, [conversationId]);
+
+  useEffect(() => {
+    void loadConversationMessages();
+  }, [loadConversationMessages]);
 
   useEffect(() => {
     if (!shouldAutoScrollRef.current) {
@@ -349,12 +343,6 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     return `${formatted} ${currency}`;
   };
 
-  const formatCount = (value: unknown) => {
-    const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-    if (!Number.isFinite(n)) return '—';
-    return new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(n);
-  };
-
   const formatDateLabel = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
@@ -406,31 +394,6 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     ],
     []
   );
-
-  const buildNaturalMetricText = (type: CleriaBackendType, value: unknown, userPrompt?: string) => {
-    const prompt = (userPrompt ?? '').toLowerCase();
-    const metricNoun = prompt.includes('ingres') ? 'facturas de ingresos' : prompt.includes('gasto') ? 'facturas de gastos' : 'facturas';
-
-    if (type === 'count') {
-      const n = formatCount(value);
-      return n === '—'
-        ? `Actualmente tienes ${metricNoun} registradas.`
-        : `Actualmente tienes ${n} ${metricNoun} registradas.`;
-    }
-
-    const money = formatCurrency(value);
-    if (type === 'sum_total') {
-      return money === '—' ? 'El importe total asciende a.' : `El importe total asciende a ${money}.`;
-    }
-    if (type === 'sum_iva') {
-      return money === '—' ? 'El IVA total acumulado es.' : `El IVA total acumulado es de ${money}.`;
-    }
-    if (type === 'sum_sin_iva') {
-      return money === '—' ? 'El total sin IVA asciende a.' : `El total sin IVA asciende a ${money}.`;
-    }
-
-    return '';
-  };
 
   const renderAssistantExtras = (m: ChatMessage) => {
     if (m.role !== 'assistant' || !m.responseType) {
@@ -514,27 +477,12 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
         throw new Error(errorText || `Request failed (${res.status})`);
       }
 
-      const json = (await res.json().catch(() => null)) as CleriaBackendResponse | null;
-      const backendType: CleriaBackendType = json?.type ?? 'error';
-      const backendData = json?.data;
-      const backendTextRaw = json?.response ?? 'No se pudo procesar la respuesta.';
-      const metricValue = (backendData as { value?: unknown } | null)?.value;
-      const backendText =
-        backendType === 'count' || backendType === 'sum_total' || backendType === 'sum_sin_iva' || backendType === 'sum_iva'
-          ? buildNaturalMetricText(backendType, metricValue, text) || backendTextRaw
-          : backendTextRaw;
+      const json = (await res.json().catch(() => null)) as { status?: string; conversation_id?: string } | null;
+      if (json?.status && json.status !== 'ok') {
+        throw new Error('Webhook did not return ok status');
+      }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}-assistant`,
-          role: 'assistant',
-          content: backendText,
-          responseType: backendType,
-          responseData: backendData,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      await loadConversationMessages();
 
       if (isFirstUserMessage) {
         onConversationTitleMaybeUpdated?.();

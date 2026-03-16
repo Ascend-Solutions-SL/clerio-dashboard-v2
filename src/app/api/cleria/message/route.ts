@@ -2,14 +2,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
-type CleriaBackendType = 'count' | 'sum_total' | 'sum_sin_iva' | 'sum_iva' | 'list' | 'error';
-
-type CleriaBackendResponse = {
-  response: string;
-  type: CleriaBackendType;
-  data: unknown;
-};
-
 type Body = {
   conversation_id: string;
   user_uid: string;
@@ -203,14 +195,6 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('cleria/message: failed to persist assistant error', error);
     }
-
-    const response: CleriaBackendResponse = {
-      response: content,
-      type: 'error',
-      data: metadata,
-    };
-
-    return response;
   };
 
   let n8nRes: Response;
@@ -238,31 +222,25 @@ export async function POST(request: NextRequest) {
     console.error('cleria/message: failed to reach n8n', err);
 
     await markUserErrored();
-    const response = await persistAssistantError(
+    await persistAssistantError(
       'No se pudo obtener respuesta. Inténtalo de nuevo.',
       err instanceof Error ? err.message : undefined
     );
 
-    return NextResponse.json(response, { status: 200 });
+    return NextResponse.json({ status: 'ok', conversation_id: conversationId }, { status: 200 });
   }
 
   if (!n8nRes.ok) {
     const text = await n8nRes.text().catch(() => '');
 
     await markUserErrored();
-    const response = await persistAssistantError(
+    await persistAssistantError(
       'No se pudo obtener respuesta. Inténtalo de nuevo.',
       text || `n8n error (${n8nRes.status})`
     );
 
-    return NextResponse.json(response, { status: 200 });
+    return NextResponse.json({ status: 'ok', conversation_id: conversationId }, { status: 200 });
   }
-
-  const n8nJson = (await n8nRes.json()) as CleriaBackendResponse;
-
-  const assistantResponse = String(n8nJson?.response ?? '');
-  const assistantType = (n8nJson?.type ?? 'error') as CleriaBackendType;
-  const assistantData = n8nJson?.data ?? null;
 
   if (request.signal.aborted) {
     await markCancelled();
@@ -281,30 +259,12 @@ export async function POST(request: NextRequest) {
     console.error('cleria/message: failed to clear pending metadata', clearMetadataError);
   }
 
-  const { error: insertAssistantError } = await supabase
-    .schema('public')
-    .from('cleria_messages')
-    .insert({
-      conversation_id: conversationId,
-      role: 'assistant',
-      content: assistantResponse,
-      type: assistantType,
-      metadata: assistantData,
-    });
-
-  if (insertAssistantError) {
-    console.error('cleria/message: failed to insert assistant message', insertAssistantError);
-    return NextResponse.json(
-      { error: 'Failed to save assistant message', detail: isDev ? insertAssistantError.message : undefined },
-      { status: 500 }
-    );
-  }
-
   const { count, error: countError } = await supabase
     .schema('public')
     .from('cleria_messages')
     .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversationId);
+    .eq('conversation_id', conversationId)
+    .eq('role', 'user');
 
   if (countError) {
     console.error('cleria/message: failed to count messages', countError);
@@ -328,7 +288,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (count === 2) {
+  if (count === 1) {
     const title = await generateTitleFromMessage(message);
     if (title) {
       const { error: titleError } = await supabase
@@ -343,5 +303,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ response: assistantResponse, type: assistantType, data: assistantData });
+  return NextResponse.json({ status: 'ok', conversation_id: conversationId });
 }
