@@ -93,6 +93,7 @@ type ScrollableResultsTableProps = {
   formatShortDate: (value: string | null | undefined) => string;
   getTipoBadge: (value: string) => string;
   onRowClick: (row: CleriaListInvoiceRow) => void;
+  selectedRowKey?: string | null;
 };
 
 const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
@@ -101,6 +102,7 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
   formatShortDate,
   getTipoBadge,
   onRowClick,
+  selectedRowKey,
 }) => {
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollHint, setShowScrollHint] = useState(false);
@@ -133,6 +135,18 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
       window.removeEventListener('resize', updateScrollHint);
     };
   }, [rows]);
+
+  useEffect(() => {
+    if (!selectedRowKey || !tableScrollRef.current) {
+      return;
+    }
+
+    const rows = tableScrollRef.current.querySelectorAll<HTMLTableRowElement>('tbody tr[data-invoice-row-key]');
+    const target = Array.from(rows).find((r) => r.dataset.invoiceRowKey === selectedRowKey);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [selectedRowKey, rows]);
 
   return (
     <div className="mt-3 flex justify-center">
@@ -181,7 +195,12 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
                   return (
                     <tr
                       key={stableKey}
-                      className="cursor-pointer border-b border-slate-100 transition-colors duration-150 hover:bg-slate-50"
+                      data-invoice-row-key={stableKey}
+                      className={`cursor-pointer border-b border-slate-100 transition-colors duration-150 ${
+                        selectedRowKey === stableKey
+                          ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.08)]'
+                          : 'hover:bg-slate-50'
+                      }`}
                       onClick={() => onRowClick(row)}
                     >
                       <td className="whitespace-nowrap py-2 pr-3 pl-4">{String(row.numero ?? '')}</td>
@@ -476,6 +495,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
           formatCurrency={formatCurrency}
           formatShortDate={formatShortDate}
           getTipoBadge={getTipoBadge}
+          selectedRowKey={drawerRow ? String(drawerRow.id ?? drawerRow.drive_file_id ?? drawerRow.numero ?? '') : null}
           onRowClick={(row) => setDrawerRow(row)}
         />
       );

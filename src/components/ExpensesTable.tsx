@@ -471,6 +471,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Expense[]>([]);
   const [drawerRow, setDrawerRow] = React.useState<InvoiceDetailDrawerRow | null>(null);
+  const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [filters, setFilters] = React.useState<TableFiltersValue>({
@@ -637,6 +638,19 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     filters.startDate || filters.endDate || filters.clients.length > 0 || hasAmountFilter
   );
 
+  React.useEffect(() => {
+    if (!drawerRow?.id || !tableScrollRef.current) {
+      return;
+    }
+
+    const rowId = String(drawerRow.id);
+    const rows = tableScrollRef.current.querySelectorAll<HTMLTableRowElement>('tbody tr[data-invoice-row-id]');
+    const target = Array.from(rows).find((r) => r.dataset.invoiceRowId === rowId);
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [drawerRow]);
+
   const table = useReactTable({
     data: filteredData,
     columns,
@@ -773,7 +787,7 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       `}</style>
 
       <div className="rounded-md border relative z-0">
-        <div className="max-h-[520px] overflow-y-auto">
+        <div ref={tableScrollRef} className="max-h-[520px] overflow-y-auto">
           <Table className="table">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
@@ -795,7 +809,12 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
               {table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer"
+                  data-invoice-row-id={String(row.original.id)}
+                  className={`cursor-pointer transition-colors ${
+                    drawerRow?.id === row.original.id
+                      ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.08)]'
+                      : 'hover:bg-slate-50/70'
+                  }`}
                   onClick={() => {
                     setDrawerRow({
                       id: row.original.id,

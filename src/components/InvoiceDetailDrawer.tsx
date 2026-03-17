@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { Download, Eye, X } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export type InvoiceDetailDrawerRow = {
   id?: string | number;
@@ -30,8 +31,31 @@ type InvoiceDetailDrawerProps = {
   closeAnimationMs?: number;
 };
 
+type FacturaDetailRow = {
+  id: string | number;
+  numero: string | number | null;
+  fecha: string | null;
+  tipo: string | null;
+  divisa: string | null;
+  drive_type: string | null;
+  drive_file_id: string | null;
+  buyer_name: string | null;
+  buyer_tax_id: string | null;
+  seller_name: string | null;
+  seller_tax_id: string | null;
+  invoice_concept: string | null;
+  importe_sin_iva: number | string | null;
+  iva: number | string | null;
+  descuentos: number | string | null;
+  retenciones: number | string | null;
+  importe_total: number | string | null;
+};
+
 export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: InvoiceDetailDrawerProps) {
   const [isClosing, setIsClosing] = React.useState(false);
+  const [dbRow, setDbRow] = React.useState<FacturaDetailRow | null>(null);
+  const [isLoadingDetail, setIsLoadingDetail] = React.useState(true);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
@@ -46,6 +70,66 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
     };
   }, []);
 
+  React.useEffect(() => {
+    const numero = String(row.numero ?? '').trim();
+    const tipo = String(row.tipo ?? '').trim();
+
+    if (!numero) {
+      setDbRow(null);
+      setLoadError('No se encontró número de factura para consultar el detalle en DB.');
+      setIsLoadingDetail(false);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingDetail(true);
+    setLoadError(null);
+    setDbRow(null);
+
+    const loadDetail = async () => {
+      let query = supabase
+        .from('facturas')
+        .select(
+          'id, numero, fecha, tipo, divisa, drive_type, drive_file_id, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, updated_at'
+        )
+        .eq('numero', numero);
+
+      if (tipo) {
+        query = query.eq('tipo', tipo);
+      }
+
+      const { data, error } = await query.order('updated_at', { ascending: false }).limit(1);
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setLoadError('No se pudo cargar el detalle de la factura desde DB.');
+        setDbRow(null);
+        setIsLoadingDetail(false);
+        return;
+      }
+
+      const detail = Array.isArray(data) && data.length > 0 ? (data[0] as FacturaDetailRow) : null;
+      if (!detail) {
+        setLoadError('No existe una factura en DB para ese número.');
+        setDbRow(null);
+        setIsLoadingDetail(false);
+        return;
+      }
+
+      setDbRow(detail);
+      setIsLoadingDetail(false);
+    };
+
+    void loadDetail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [row]);
+
   const closeDrawer = () => {
     if (isClosing) {
       return;
@@ -56,8 +140,8 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
     }, closeAnimationMs);
   };
 
-  const driveType = String(row.drive_type ?? '').trim();
-  const driveFileId = String(row.drive_file_id ?? '').trim();
+  const driveType = String(dbRow?.drive_type ?? '').trim();
+  const driveFileId = String(dbRow?.drive_file_id ?? '').trim();
   const canOpen = Boolean(driveType && driveFileId);
 
   const previewHref = canOpen
@@ -71,7 +155,12 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
       )}&kind=download`
     : undefined;
 
-  const currency = row.divisa ?? 'EUR';
+  const currency = dbRow?.divisa ?? 'EUR';
+  const tipo = String(dbRow?.tipo ?? '').trim().toLowerCase();
+  const counterparty =
+    tipo === 'gastos'
+      ? dbRow?.seller_name ?? dbRow?.buyer_name ?? null
+      : dbRow?.buyer_name ?? dbRow?.seller_name ?? null;
   const renderValue = (value: unknown) => {
     const text = String(value ?? '').trim();
     return text ? text : '—';
@@ -188,7 +277,9 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
             <div className="flex items-center justify-between gap-3 bg-white px-5 py-4 border-b border-slate-200">
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-slate-900 truncate">Detalle de factura</div>
-                <div className="mt-0.5 text-[12px] text-slate-500 truncate">{String(row.numero ?? '—')}</div>
+                <div className="mt-0.5 text-[12px] text-slate-500 truncate">
+                  {String(dbRow?.numero ?? row.numero ?? '—')}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <a
@@ -233,54 +324,68 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
             </div>
 
             <div className="h-full overflow-y-auto px-5 py-4 pb-6">
-              <div className="space-y-3">
+              {isLoadingDetail ? (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+                  Cargando detalle completo desde base de datos…
+                </div>
+              ) : loadError ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{loadError}</div>
+              ) : (
+                <div className="space-y-3">
                 <Section title="Resumen">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <Field label="Número" value={renderValue(row.numero)} />
-                    <Field label="Fecha" value={formatShortDate(row.fecha)} />
-                    <Field label="Tipo" value={renderValue(row.tipo)} />
+                    <Field label="Número" value={renderValue(dbRow?.numero)} />
+                    <Field label="Fecha" value={formatShortDate(dbRow?.fecha)} />
+                    <Field label="Tipo" value={renderValue(dbRow?.tipo)} />
                   </div>
                   <div className="mt-3">
-                    <Field label="Contraparte" value={renderValue(row.counterparty)} />
+                    <Field label="Contraparte" value={renderValue(counterparty)} />
                   </div>
                 </Section>
 
                 <Section title="Comprador">
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
-                    <Field label="CIF/NIF" value={renderValue(row.buyer_tax_id)} />
-                    <Field label="Nombre" value={renderValue(row.buyer_name)} />
+                    <Field label="CIF/NIF" value={renderValue(dbRow?.buyer_tax_id)} />
+                    <Field label="Nombre" value={renderValue(dbRow?.buyer_name)} />
                   </div>
                 </Section>
 
                 <Section title="Vendedor">
                   <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-3">
-                    <Field label="CIF/NIF" value={renderValue(row.seller_tax_id)} />
-                    <Field label="Nombre" value={renderValue(row.seller_name)} />
+                    <Field label="CIF/NIF" value={renderValue(dbRow?.seller_tax_id)} />
+                    <Field label="Nombre" value={renderValue(dbRow?.seller_name)} />
                   </div>
                 </Section>
 
                 <Section title="Importes">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <Field label="IVA" value={<span className="font-mono">{renderMoney(row.iva)}</span>} />
-                    <Field label="Descuentos" value={<span className="font-mono">{renderMoney(row.descuentos)}</span>} />
-                    <Field label="Retenciones" value={<span className="font-mono">{renderMoney(row.retenciones)}</span>} />
+                    <Field label="IVA" value={<span className="font-mono">{renderMoney(dbRow?.iva)}</span>} />
+                    <Field
+                      label="Descuentos"
+                      value={<span className="font-mono">{renderMoney(dbRow?.descuentos)}</span>}
+                    />
+                    <Field
+                      label="Retenciones"
+                      value={<span className="font-mono">{renderMoney(dbRow?.retenciones)}</span>}
+                    />
                   </div>
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field
                       label="Importe sin IVA"
-                      value={<span className="font-mono font-semibold">{renderMoney(row.importe_sin_iva)}</span>}
+                      value={<span className="font-mono font-semibold">{renderMoney(dbRow?.importe_sin_iva)}</span>}
                     />
                     <Field
                       label="Importe total"
-                      value={<span className="font-mono font-semibold">{renderMoney(row.importe_total)}</span>}
+                      value={<span className="font-mono font-semibold">{renderMoney(dbRow?.importe_total)}</span>}
                     />
                   </div>
                 </Section>
 
                 <Section title="Concepto">
-                  <Field label="Descripción" value={renderValue(row.invoice_concept)} />
+                  <Field label="Descripción" value={renderValue(dbRow?.invoice_concept)} />
                 </Section>
               </div>
+              )}
             </div>
           </div>
         </div>
