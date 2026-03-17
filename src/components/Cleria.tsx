@@ -1,7 +1,7 @@
 "use client";
 
 import Image from 'next/image';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { ChevronUp, Sparkles } from 'lucide-react';
 import { InvoiceDetailDrawer, type InvoiceDetailDrawerRow } from '@/components/InvoiceDetailDrawer';
@@ -35,6 +35,8 @@ type CleriaMessageRow = {
 };
 
 const CLERIA_BACKEND_TYPES: CleriaBackendType[] = ['count', 'sum_total', 'sum_sin_iva', 'sum_iva', 'list', 'error'];
+const CONVERSATION_SWITCH_MIN_OVERLAY_MS = 320;
+const CONVERSATION_REVEAL_MS = 360;
 
 const isCleriaBackendType = (value: unknown): value is CleriaBackendType => {
   return typeof value === 'string' && CLERIA_BACKEND_TYPES.includes(value as CleriaBackendType);
@@ -141,10 +143,13 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
       return;
     }
 
-    const rows = tableScrollRef.current.querySelectorAll<HTMLTableRowElement>('tbody tr[data-invoice-row-key]');
+    const scrollEl = tableScrollRef.current;
+    const rows = scrollEl.querySelectorAll<HTMLTableRowElement>('tbody tr[data-invoice-row-key]');
     const target = Array.from(rows).find((r) => r.dataset.invoiceRowKey === selectedRowKey);
     if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const centeredTop = target.offsetTop - (scrollEl.clientHeight - target.offsetHeight) / 2;
+      const maxScrollTop = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      scrollEl.scrollTop = Math.max(0, Math.min(centeredTop, maxScrollTop));
     }
   }, [selectedRowKey, rows]);
 
@@ -228,19 +233,22 @@ const ScrollableResultsTable: React.FC<ScrollableResultsTableProps> = ({
   );
 };
 
-const WELCOME_MESSAGE: ChatMessage = {
-  id: 'welcome',
-  role: 'assistant',
-  content: '¡Hola! Soy Cler, ¿en qué puedo ayudarte?',
-};
-
 type CleriaProps = {
   conversationId: string | null;
   onConversationTitleMaybeUpdated?: () => void;
+  onRequestConversation?: () => Promise<string | null>;
+  prefetchConversationIds?: string[];
+  isBootstrapping?: boolean;
 };
 
-const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMaybeUpdated }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+const Cleria: React.FC<CleriaProps> = ({
+  conversationId,
+  onConversationTitleMaybeUpdated,
+  onRequestConversation,
+  prefetchConversationIds,
+  isBootstrapping = false,
+}) => {
+  const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [draft, setDraft] = useState('');
   const [isWaitingResponse, setIsWaitingResponse] = useState(false);
   const [waitingText, setWaitingText] = useState('');
@@ -251,35 +259,29 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
   const { user } = useDashboardSession();
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingUserMessageIdRef = useRef<string | null>(null);
+  const pendingConversationRequestRef = useRef<Promise<string | null> | null>(null);
+  const messagesCacheRef = useRef<Map<string, ChatMessage[]>>(new Map());
+  const loadedConversationIdsRef = useRef<Set<string>>(new Set());
+  const prefetchQueuedConversationIdsRef = useRef<Set<string>>(new Set());
+  const activeConversationRef = useRef<string | null>(conversationId);
+  const pendingInitialPositionRef = useRef(false);
+  const skipNextAutoScrollRef = useRef(false);
+  const hasCompletedInitialHydrationRef = useRef(false);
   const [drawerRow, setDrawerRow] = useState<CleriaListInvoiceRow | null>(null);
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
+  const [isConversationTransitioning, setIsConversationTransitioning] = useState(false);
+  const [isConversationHydrating, setIsConversationHydrating] = useState(false);
+  const conversationRevealTimeoutRef = useRef<number | null>(null);
+  const conversationHydrationStartedAtRef = useRef<number | null>(null);
+  const conversationHydrationEndTimeoutRef = useRef<number | null>(null);
 
-  const loadConversationMessages = useCallback(async () => {
-    if (!conversationId) {
-      setMessages([WELCOME_MESSAGE]);
-      return;
-    }
-
-    const res = await fetch(`/api/cleria/conversation/${encodeURIComponent(conversationId)}`, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-    });
-
-    if (!res.ok) {
-      setMessages([WELCOME_MESSAGE]);
-      return;
-    }
-
-    const data = (await res.json().catch(() => null)) as CleriaMessageRow[] | null;
+  const mapRowsToChatMessages = useCallback((data: CleriaMessageRow[] | null): ChatMessage[] => {
     if (!data) {
-      setMessages([WELCOME_MESSAGE]);
-      return;
+      return [];
     }
 
-    const mapped = (data as CleriaMessageRow[])
+    const mapped = data
       .filter((row) => row.role === 'assistant' || row.role === 'user')
       .map((row) => {
         const normalizedMetadata = parseMaybeJson(row.metadata);
@@ -308,20 +310,213 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
         return msg;
       });
 
-    setMessages(mapped.length > 0 ? mapped : [WELCOME_MESSAGE]);
-  }, [conversationId]);
+    return mapped;
+  }, []);
+
+  const triggerConversationReveal = useCallback(() => {
+    if (conversationRevealTimeoutRef.current != null) {
+      window.clearTimeout(conversationRevealTimeoutRef.current);
+    }
+
+    setIsConversationTransitioning(true);
+    conversationRevealTimeoutRef.current = window.setTimeout(() => {
+      setIsConversationTransitioning(false);
+      conversationRevealTimeoutRef.current = null;
+    }, CONVERSATION_REVEAL_MS);
+  }, []);
+
+  const startConversationHydration = useCallback(() => {
+    if (conversationHydrationEndTimeoutRef.current != null) {
+      window.clearTimeout(conversationHydrationEndTimeoutRef.current);
+      conversationHydrationEndTimeoutRef.current = null;
+    }
+    conversationHydrationStartedAtRef.current = performance.now();
+    setIsConversationHydrating(true);
+  }, []);
+
+  const finishConversationHydration = useCallback(() => {
+    const startedAt = conversationHydrationStartedAtRef.current;
+    if (startedAt == null) {
+      setIsConversationHydrating(false);
+      return;
+    }
+
+    const elapsed = performance.now() - startedAt;
+    const remaining = Math.max(0, CONVERSATION_SWITCH_MIN_OVERLAY_MS - elapsed);
+
+    if (remaining <= 0) {
+      conversationHydrationStartedAtRef.current = null;
+      setIsConversationHydrating(false);
+      return;
+    }
+
+    if (conversationHydrationEndTimeoutRef.current != null) {
+      window.clearTimeout(conversationHydrationEndTimeoutRef.current);
+    }
+
+    conversationHydrationEndTimeoutRef.current = window.setTimeout(() => {
+      conversationHydrationStartedAtRef.current = null;
+      conversationHydrationEndTimeoutRef.current = null;
+      setIsConversationHydrating(false);
+    }, remaining);
+  }, []);
+
+  const loadConversationMessages = useCallback(
+    async (targetConversationId: string, options?: { force?: boolean; revealOnSet?: boolean }) => {
+      const force = options?.force === true;
+      const revealOnSet = options?.revealOnSet === true;
+      const cached = messagesCacheRef.current.get(targetConversationId);
+
+      if (cached && !force) {
+        if (activeConversationRef.current === targetConversationId) {
+          setMessages(cached);
+        }
+        return cached;
+      }
+
+      const res = await fetch(`/api/cleria/conversation/${encodeURIComponent(targetConversationId)}`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const fallback = cached ?? [];
+        if (activeConversationRef.current === targetConversationId) {
+          setMessages(fallback);
+        }
+        return fallback;
+      }
+
+      const data = (await res.json().catch(() => null)) as CleriaMessageRow[] | null;
+      const nextMessages = mapRowsToChatMessages(data);
+
+      messagesCacheRef.current.set(targetConversationId, nextMessages);
+      loadedConversationIdsRef.current.add(targetConversationId);
+
+      if (activeConversationRef.current === targetConversationId) {
+        setMessages(nextMessages);
+        hasCompletedInitialHydrationRef.current = true;
+        if (revealOnSet) {
+          triggerConversationReveal();
+        }
+      }
+
+      return nextMessages;
+    },
+    [mapRowsToChatMessages, triggerConversationReveal]
+  );
 
   useEffect(() => {
-    void loadConversationMessages();
-  }, [loadConversationMessages]);
+    activeConversationRef.current = conversationId;
+    pendingInitialPositionRef.current = true;
+    setDrawerRow(null);
+    setIsWaitingResponse(false);
+    setWaitingText('');
+    pendingUserMessageIdRef.current = null;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+
+    if (!conversationId) {
+      setMessages([]);
+      hasCompletedInitialHydrationRef.current = true;
+      setIsConversationTransitioning(false);
+      setIsConversationHydrating(false);
+      conversationHydrationStartedAtRef.current = null;
+      if (conversationHydrationEndTimeoutRef.current != null) {
+        window.clearTimeout(conversationHydrationEndTimeoutRef.current);
+        conversationHydrationEndTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const cached = messagesCacheRef.current.get(conversationId);
+    setIsConversationTransitioning(false);
+
+    if (cached) {
+      setMessages(cached);
+      hasCompletedInitialHydrationRef.current = true;
+      setIsConversationHydrating(false);
+      conversationHydrationStartedAtRef.current = null;
+      if (conversationHydrationEndTimeoutRef.current != null) {
+        window.clearTimeout(conversationHydrationEndTimeoutRef.current);
+        conversationHydrationEndTimeoutRef.current = null;
+      }
+    } else {
+      startConversationHydration();
+      if (!hasCompletedInitialHydrationRef.current) {
+        setMessages(null);
+      }
+    }
+
+    if (!loadedConversationIdsRef.current.has(conversationId)) {
+      void loadConversationMessages(conversationId, { revealOnSet: true }).finally(() => {
+        if (activeConversationRef.current === conversationId) {
+          finishConversationHydration();
+        }
+      });
+    } else {
+      finishConversationHydration();
+    }
+
+    return () => {
+      if (conversationRevealTimeoutRef.current != null) {
+        window.clearTimeout(conversationRevealTimeoutRef.current);
+        conversationRevealTimeoutRef.current = null;
+      }
+      if (conversationHydrationEndTimeoutRef.current != null) {
+        window.clearTimeout(conversationHydrationEndTimeoutRef.current);
+        conversationHydrationEndTimeoutRef.current = null;
+      }
+    };
+  }, [conversationId, finishConversationHydration, loadConversationMessages, startConversationHydration]);
 
   useEffect(() => {
+    if (messages === null || messages.length === 0) {
+      return;
+    }
+
+    if (pendingInitialPositionRef.current) {
+      return;
+    }
+
     if (!shouldAutoScrollRef.current) {
       return;
     }
 
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
+
+    const el = scrollContainerRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  useLayoutEffect(() => {
+    if (!pendingInitialPositionRef.current) {
+      return;
+    }
+
+    if (messages === null) {
+      return;
+    }
+
+    pendingInitialPositionRef.current = false;
+    const el = scrollContainerRef.current;
+    if (!el || messages.length === 0) {
+      shouldAutoScrollRef.current = true;
+      return;
+    }
+
+    el.scrollTop = el.scrollHeight;
+    shouldAutoScrollRef.current = true;
+    skipNextAutoScrollRef.current = true;
+  }, [messages, conversationId]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -362,6 +557,26 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
   }, [isWaitingResponse]);
 
   useEffect(() => {
+    if (!prefetchConversationIds || prefetchConversationIds.length === 0) {
+      return;
+    }
+
+    const ids = prefetchConversationIds.filter(Boolean);
+    for (const id of ids) {
+      if (id === activeConversationRef.current) {
+        continue;
+      }
+      if (loadedConversationIdsRef.current.has(id) || prefetchQueuedConversationIdsRef.current.has(id)) {
+        continue;
+      }
+      prefetchQueuedConversationIdsRef.current.add(id);
+      void loadConversationMessages(id).finally(() => {
+        prefetchQueuedConversationIdsRef.current.delete(id);
+      });
+    }
+  }, [loadConversationMessages, prefetchConversationIds]);
+
+  useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
 
@@ -371,7 +586,9 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     el.style.height = `${finalHeight}px`;
   }, [draft]);
 
-  const isChatReady = Boolean(user?.id && conversationId);
+  const isChatReady = Boolean(user?.id);
+  const visibleMessages = useMemo(() => messages ?? [], [messages]);
+  const isHydratingMessages = messages === null;
 
   const canSend = useMemo(() => {
     if (!isChatReady) return false;
@@ -380,11 +597,15 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
   }, [draft, isChatReady, isWaitingResponse]);
 
   const hasStartedConversation = useMemo(
-    () => draft.trim().length > 0 || isWaitingResponse || messages.some((m) => m.role === 'user'),
-    [draft, isWaitingResponse, messages]
+    () =>
+      isHydratingMessages || draft.trim().length > 0 || isWaitingResponse || visibleMessages.some((m) => m.role === 'user'),
+    [draft, isHydratingMessages, isWaitingResponse, visibleMessages]
   );
+  const shouldShowWelcomeText = !isBootstrapping && !isHydratingMessages && !hasStartedConversation;
+  const isSuggestionsVisuallyCollapsed = suggestionsCollapsed || isBootstrapping || isHydratingMessages;
+  const showConversationSwitchOverlay = isConversationHydrating;
 
-  const hasUserMessages = useMemo(() => messages.some((m) => m.role === 'user'), [messages]);
+  const hasUserMessages = useMemo(() => visibleMessages.some((m) => m.role === 'user'), [visibleMessages]);
 
   useEffect(() => {
     setSuggestionsCollapsed(hasUserMessages);
@@ -443,7 +664,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     const out: TimelineItem[] = [];
     let lastLabel: string | null = null;
 
-    for (const m of messages) {
+    for (const m of visibleMessages) {
       const createdAt = m.createdAt ?? null;
       if (createdAt) {
         const label = formatDateLabel(createdAt);
@@ -457,7 +678,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     }
 
     return out;
-  }, [messages]);
+  }, [visibleMessages]);
 
   const emptySuggestions = useMemo(
     () => [
@@ -512,16 +733,41 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
       return;
     }
 
-    if (!conversationId) {
+    const targetConversationId = conversationId ?? (await (async () => {
+      if (!onRequestConversation) {
+        return null;
+      }
+
+      if (!pendingConversationRequestRef.current) {
+        pendingConversationRequestRef.current = onRequestConversation().finally(() => {
+          pendingConversationRequestRef.current = null;
+        });
+      }
+
+      return pendingConversationRequestRef.current;
+    })());
+
+    if (!targetConversationId) {
       return;
     }
 
-    const isFirstUserMessage = messages.some((m) => m.role === 'user') === false;
+    const isFirstUserMessage = visibleMessages.some((m) => m.role === 'user') === false;
 
     const nowIso = new Date().toISOString();
     const optimisticUserId = `${Date.now()}`;
+    const optimisticUserMessage: ChatMessage = {
+      id: optimisticUserId,
+      role: 'user',
+      content: text,
+      createdAt: nowIso,
+    };
 
-    setMessages((prev) => [...prev, { id: optimisticUserId, role: 'user', content: text, createdAt: nowIso }]);
+    setMessages((prev) => {
+      const next: ChatMessage[] = [...(prev ?? []), optimisticUserMessage];
+      messagesCacheRef.current.set(targetConversationId, next);
+      loadedConversationIdsRef.current.add(targetConversationId);
+      return next;
+    });
     setAnimatedMessageId(optimisticUserId);
     setSuggestionsCollapsed(true);
 
@@ -542,7 +788,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
         body: JSON.stringify({
           user_uid: user.id,
           empresa_id: user.empresaId,
-          conversation_id: conversationId,
+          conversation_id: targetConversationId,
           message: text,
         }),
       });
@@ -557,7 +803,7 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
         throw new Error('Webhook did not return ok status');
       }
 
-      await loadConversationMessages();
+      await loadConversationMessages(targetConversationId, { force: true });
 
       if (isFirstUserMessage) {
         onConversationTitleMaybeUpdated?.();
@@ -566,17 +812,20 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
       const isAborted = error instanceof DOMException && error.name === 'AbortError';
       if (!isAborted) {
         console.error('Error recibiendo respuesta de n8n (cleria_message)', error);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `${Date.now()}-assistant`,
-            role: 'assistant',
-            content: 'No se pudo obtener respuesta. Inténtalo de nuevo.',
-            responseType: 'error',
-            responseData: null,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
+        const optimisticErrorMessage: ChatMessage = {
+          id: `${Date.now()}-assistant`,
+          role: 'assistant',
+          content: 'No se pudo obtener respuesta. Inténtalo de nuevo.',
+          responseType: 'error',
+          responseData: null,
+          createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => {
+          const next: ChatMessage[] = [...(prev ?? []), optimisticErrorMessage];
+          messagesCacheRef.current.set(targetConversationId, next);
+          loadedConversationIdsRef.current.add(targetConversationId);
+          return next;
+        });
       }
     } finally {
       setIsWaitingResponse(false);
@@ -591,9 +840,16 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     const pendingId = pendingUserMessageIdRef.current;
     pendingUserMessageIdRef.current = null;
     if (pendingId) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === pendingId ? { ...m, clientStatus: 'cancelled' } : m))
-      );
+      setMessages((prev) => {
+        const next: ChatMessage[] = (prev ?? []).map((m) =>
+          m.id === pendingId ? { ...m, clientStatus: 'cancelled' as const } : m
+        );
+        if (activeConversationRef.current) {
+          messagesCacheRef.current.set(activeConversationRef.current, next);
+          loadedConversationIdsRef.current.add(activeConversationRef.current);
+        }
+        return next;
+      });
     }
     setIsWaitingResponse(false);
     setWaitingText('');
@@ -604,46 +860,12 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
     <div className="mx-auto flex h-full w-full max-w-[1360px] flex-col px-3 pb-3 pt-4 sm:px-5">
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
-          className={`absolute left-1/2 top-[-8px] z-10 -translate-x-1/2 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            hasStartedConversation
-              ? 'translate-y-0 opacity-100'
-              : '-translate-y-3 opacity-0 pointer-events-none'
+          className={`h-16 shrink-0 transition-opacity duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+            isConversationTransitioning ? 'opacity-90' : 'opacity-100'
           }`}
         >
-          <div className="cler-ia-pill-wrap scale-[0.96]">
-            <div className="cler-ia-halo cler-ia-halo-one" />
-            <div className="cler-ia-halo cler-ia-halo-two" />
-            <div className="cler-ia-halo cler-ia-halo-three" />
-            <div className="relative inline-flex items-center gap-3 rounded-full px-4 py-2.5">
-              <div className="absolute inset-[1px] rounded-full bg-white/84 backdrop-blur-md" />
-              <div className="cler-ia-pill-liquid absolute inset-[1px] rounded-full" />
-              <div className="relative h-9 w-9 flex-shrink-0">
-                <Image
-                  src="/brand/tab_cleria/cleria_color_logo.png"
-                  alt="Cler IA"
-                  fill
-                  sizes="36px"
-                  className="object-contain"
-                  priority
-                />
-              </div>
-              <div className="relative text-left">
-                <div className="text-lg font-semibold tracking-[-0.02em] text-slate-900">Cler IA</div>
-                <div className="text-[11px] text-slate-500">Asistente financiero</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          className={`transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-            hasStartedConversation
-              ? 'pointer-events-none max-h-0 -translate-y-4 opacity-0 mb-0 overflow-hidden'
-              : 'max-h-[260px] translate-y-0 opacity-100 mb-4 overflow-visible sm:mb-5'
-          }`}
-        >
-          <div className="flex flex-col items-center px-4 pb-4 pt-5 text-center">
-            <div className="cler-ia-pill-wrap transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]">
+          <div className="flex h-full items-center justify-center">
+            <div className="cler-ia-pill-wrap scale-[0.96]">
               <div className="cler-ia-halo cler-ia-halo-one" />
               <div className="cler-ia-halo cler-ia-halo-two" />
               <div className="cler-ia-halo cler-ia-halo-three" />
@@ -666,15 +888,32 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
                 </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <p className="mt-3 max-w-[760px] text-[12px] leading-5 text-gray-500 sm:text-[13px]">
+        <div className="relative h-[78px] shrink-0 overflow-hidden sm:h-[86px]">
+          <div
+            className={`absolute inset-0 flex items-center justify-center px-4 text-center transition-opacity duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+              shouldShowWelcomeText ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+          >
+            <p className="max-w-[760px] text-[12px] leading-5 text-gray-500 sm:text-[13px]">
               Cler IA está para ayudarte a saber cualquier cosa respecto a los datos financieros de tu empresa.
             </p>
           </div>
         </div>
 
-        <div className={`flex min-h-0 flex-1 flex-col transition-all duration-500 ${hasStartedConversation ? 'pt-20 sm:pt-24' : 'pt-0'}`}>
-        <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-auto px-2 py-2 pr-1 sm:px-3 sm:py-3">
+        <div className="flex h-full min-h-0 flex-1 flex-col">
+        <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        {showConversationSwitchOverlay ? (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[radial-gradient(90%_70%_at_50%_45%,rgba(255,255,255,0.88)_0%,rgba(255,255,255,0.72)_46%,rgba(255,255,255,0.58)_100%)] backdrop-blur-[2.5px]">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/96 px-3.5 py-1.5 text-[11px] font-medium text-slate-600 shadow-[0_8px_30px_rgba(15,23,42,0.12)]">
+              <span className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+              Cargando conversación...
+            </div>
+          </div>
+        ) : null}
+        <div ref={scrollContainerRef} className={`h-full flex-1 min-h-0 overflow-y-auto px-2 py-2 pr-1 sm:px-3 sm:py-3 ${isConversationTransitioning ? 'animate-cleria-chat-switch-in' : ''}`}>
           <div className="space-y-2.5">
             {timelineItems.map((item) => {
               if (item.kind === 'separator') {
@@ -761,15 +1000,16 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
             <div ref={messagesEndRef} />
           </div>
         </div>
+        </div>
 
-        <div className="mt-auto px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="mt-auto shrink-0 px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="relative mx-auto w-full max-w-[700px]">
             <div
               className={`pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2 origin-bottom transition-[transform,opacity] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                suggestionsCollapsed ? 'translate-y-3 scale-[0.98] opacity-0' : 'translate-y-0 scale-100 opacity-100'
+                isSuggestionsVisuallyCollapsed ? 'translate-y-3 scale-[0.98] opacity-0' : 'translate-y-0 scale-100 opacity-100'
               }`}
             >
-              <div className={`mx-auto w-full rounded-2xl border border-slate-200/90 bg-white/95 p-2.5 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-md ${suggestionsCollapsed ? '' : 'pointer-events-auto'}`}>
+              <div className={`mx-auto w-full rounded-2xl border border-slate-200/90 bg-white/95 p-2.5 shadow-[0_18px_40px_rgba(15,23,42,0.12)] backdrop-blur-md ${isSuggestionsVisuallyCollapsed ? '' : 'pointer-events-auto'}`}>
                 <div className="text-[12px] font-semibold text-gray-900">¿Qué quieres saber sobre tus facturas?</div>
                 <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                   {emptySuggestions.map((s) => (
@@ -797,10 +1037,11 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
               <button
                 type="button"
                 onClick={() => setSuggestionsCollapsed((prev) => !prev)}
+                disabled={isBootstrapping || isHydratingMessages}
                 className="inline-flex h-7 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-[10.5px] font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
               >
-                <ChevronUp className={`h-3.5 w-3.5 transition-transform duration-300 ${suggestionsCollapsed ? 'rotate-0' : 'rotate-180'}`} />
-                {suggestionsCollapsed ? 'Mostrar sugerencias' : 'Ocultar sugerencias'}
+                <ChevronUp className={`h-3.5 w-3.5 transition-transform duration-300 ${isSuggestionsVisuallyCollapsed ? 'rotate-0' : 'rotate-180'}`} />
+                {isSuggestionsVisuallyCollapsed ? 'Mostrar sugerencias' : 'Ocultar sugerencias'}
               </button>
             </div>
 
@@ -924,6 +1165,11 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
 
         .animate-cleria-user-in {
           animation: cleriaUserIn 520ms cubic-bezier(0.16, 1, 0.3, 1);
+          will-change: transform, opacity;
+        }
+
+        .animate-cleria-chat-switch-in {
+          animation: cleriaChatSwitchIn 360ms cubic-bezier(0.22, 1, 0.36, 1);
           will-change: transform, opacity;
         }
 
@@ -1073,6 +1319,17 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
           }
         }
 
+        @keyframes cleriaChatSwitchIn {
+          0% {
+            opacity: 0;
+            transform: translateY(16px) scale(0.975);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .cler-ia-shimmer {
             animation: none;
@@ -1088,7 +1345,8 @@ const Cleria: React.FC<CleriaProps> = ({ conversationId, onConversationTitleMayb
 
           .cler-ia-halo,
           .cler-ia-pill-liquid,
-          .animate-cleria-user-in {
+          .animate-cleria-user-in,
+          .animate-cleria-chat-switch-in {
             animation: none;
           }
         }

@@ -1,7 +1,7 @@
 "use client";
 
 import Cleria from '@/components/Cleria';
-import { Edit3, Search, MoreHorizontal, Pencil, Trash2, Sidebar, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Edit3, Search, MoreHorizontal, Pencil, Trash2, Sidebar, ChevronLeft, ChevronRight, X, Circle } from 'lucide-react';
 import React from 'react';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { useSearchParams } from 'next/navigation';
@@ -46,13 +46,42 @@ const SIDEBAR_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
   muy_pequeno: '[zoom:0.76]',
 };
 
+function SidebarSkeleton() {
+  return (
+    <div className="space-y-1 px-1.5 pb-3 pt-1">
+      {Array.from({ length: 8 }).map((_, idx) => (
+        <div key={`sidebar-skeleton-${idx}`} className="rounded-xl border border-transparent px-3 py-1.5">
+          <div className="h-4 w-full animate-pulse rounded-md bg-gray-200/80" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SearchDialogSkeleton() {
+  return (
+    <div className="space-y-3 px-1 py-1">
+      {Array.from({ length: 6 }).map((_, idx) => (
+        <div key={`search-skeleton-${idx}`} className="rounded-md px-2 py-1.5">
+          <div className="flex items-center gap-2.5">
+            <div className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-white/15" />
+            <div className="flex-1 space-y-1">
+              <div className="h-2.5 w-28 animate-pulse rounded bg-white/15" />
+              <div className="h-2.5 w-48 animate-pulse rounded bg-white/10" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ClerIAPageClient() {
   const { user, isLoading } = useDashboardSession();
   const searchParams = useSearchParams();
   const [conversations, setConversations] = React.useState<CleriaConversationRow[]>([]);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
-  const [isBootstrapping, setIsBootstrapping] = React.useState(false);
-  const didBootstrapRef = React.useRef(false);
+  const [isBootstrapping, setIsBootstrapping] = React.useState(true);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState('');
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -60,14 +89,22 @@ function ClerIAPageClient() {
   const [deleteTargetId, setDeleteTargetId] = React.useState<string | null>(null);
   const [isConversationsSidebarCollapsed, setIsConversationsSidebarCollapsed] = React.useState(false);
   const [visualScaleLevel, setVisualScaleLevel] = React.useState<VisualScaleLevel>('normal');
+  const [isSearchOpen, setIsSearchOpen] = React.useState(false);
+  const [searchDraft, setSearchDraft] = React.useState('');
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const sidebarScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const sidebarScrollIdleTimeoutRef = React.useRef<number | null>(null);
+  const sidebarScrollHintDelayTimeoutRef = React.useRef<number | null>(null);
+  const [isSidebarScrollActive, setIsSidebarScrollActive] = React.useState(false);
+  const [showSidebarScrollHint, setShowSidebarScrollHint] = React.useState(false);
 
   const empresaId = user?.empresaId ?? null;
 
-  const loadConversations = React.useCallback(async () => {
+  const loadConversations = React.useCallback(async (): Promise<CleriaConversationRow[]> => {
     if (!user?.id || empresaId == null) {
       setConversations([]);
       setActiveConversationId(null);
-      return;
+      return [];
     }
 
     const res = await fetch('/api/cleria/conversations', {
@@ -79,11 +116,13 @@ function ClerIAPageClient() {
 
     if (!res.ok) {
       setConversations([]);
-      return;
+      return [];
     }
 
     const data = (await res.json().catch(() => null)) as CleriaConversationRow[] | null;
-    setConversations(data ?? []);
+    const rows = data ?? [];
+    setConversations(rows);
+    return rows;
   }, [empresaId, user?.id]);
 
   const createConversation = React.useCallback(async () => {
@@ -114,90 +153,37 @@ function ClerIAPageClient() {
 
   const ensureDefaultConversation = React.useCallback(async () => {
     if (!user?.id || empresaId == null) {
+      setIsBootstrapping(false);
       return;
     }
-
-    if (didBootstrapRef.current) {
-      return;
-    }
-
-    didBootstrapRef.current = true;
 
     setIsBootstrapping(true);
-
     try {
-      const listRes = await fetch('/api/cleria/conversations', {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-        },
+      const rows = await loadConversations();
+      const idFromUrl = searchParams.get('conversationId');
+      const idFromUrlExists = idFromUrl ? rows.some((row) => row.id === idFromUrl) : false;
+
+      setActiveConversationId((prev) => {
+        if (prev && rows.some((row) => row.id === prev)) {
+          return prev;
+        }
+        if (idFromUrl && idFromUrlExists) {
+          return idFromUrl;
+        }
+        return rows[0]?.id ?? null;
       });
-
-      const convRows = listRes.ok ? ((await listRes.json().catch(() => null)) as CleriaConversationRow[] | null) : null;
-
-      const rows = convRows ?? [];
-      if (rows.length > 0) {
-        const latest = rows[0]!;
-        const latestTitle = (latest.title ?? '').trim() || 'Nuevo Chat';
-
-        const latestConversationRes = await fetch(`/api/cleria/conversation/${encodeURIComponent(latest.id)}`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-          },
-        });
-
-        const latestMessages = latestConversationRes.ok ? ((await latestConversationRes.json().catch(() => null)) as unknown[] | null) : null;
-        const latestIsEmpty = (latestMessages?.length ?? 0) === 0;
-
-        if (latestTitle === 'Nuevo Chat' && latestIsEmpty) {
-          setConversations(rows);
-          setActiveConversationId((prev) => prev ?? latest.id);
-          return;
-        }
-
-        const updatedAtMs = latest.updated_at ? new Date(latest.updated_at).getTime() : NaN;
-        const fiveMinutesMs = 5 * 60 * 1000;
-        const isStale = Number.isFinite(updatedAtMs) ? Date.now() - updatedAtMs >= fiveMinutesMs : false;
-
-        if (!latestIsEmpty && isStale) {
-          const createdId = await createConversation();
-          if (!createdId) {
-            setConversations(rows);
-            setActiveConversationId((prev) => prev ?? latest.id);
-            return;
-          }
-
-          setActiveConversationId(createdId);
-          await loadConversations();
-          return;
-        }
-
-        setConversations(rows);
-        setActiveConversationId((prev) => prev ?? latest.id);
-        return;
-      }
-
-      const createdId = await createConversation();
-      if (!createdId) {
-        await loadConversations();
-        return;
-      }
-
-      setActiveConversationId(createdId);
-      await loadConversations();
     } finally {
       setIsBootstrapping(false);
     }
-  }, [createConversation, empresaId, loadConversations, user?.id]);
+  }, [empresaId, loadConversations, searchParams, user?.id]);
 
-  // Sync active conversation with URL param when present
+  // Sync active conversation with URL param when present and valid
   React.useEffect(() => {
     const idFromUrl = searchParams.get('conversationId');
-    if (idFromUrl) {
+    if (idFromUrl && conversations.some((row) => row.id === idFromUrl)) {
       setActiveConversationId(idFromUrl);
     }
-  }, [searchParams]);
+  }, [conversations, searchParams]);
 
   React.useEffect(() => {
     if (!renamingId) return;
@@ -277,35 +263,25 @@ function ClerIAPageClient() {
   }, [renamingId, saveRename]);
 
   const handleNewChat = React.useCallback(async () => {
-    if (!user?.id || empresaId == null) {
-      return;
+    setActiveConversationId(null);
+    setRenamingId(null);
+    setRenameDraft('');
+  }, []);
+
+  const ensureConversationForFirstMessage = React.useCallback(async (): Promise<string | null> => {
+    const createdId = await createConversation();
+    if (!createdId) {
+      return null;
     }
 
-    const res = await fetch('/api/cleria/conversation', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        user_uid: user.id,
-        empresa_id: empresaId,
-      }),
+    const now = new Date().toISOString();
+    setConversations((prev) => {
+      const next = prev.filter((row) => row.id !== createdId);
+      return [{ id: createdId, title: 'Nuevo Chat', updated_at: now }, ...next];
     });
-
-    if (!res.ok) {
-      return;
-    }
-
-    const json = (await res.json().catch(() => null)) as { id?: string } | null;
-    const id = String(json?.id ?? '').trim();
-    if (!id) {
-      return;
-    }
-
-    setActiveConversationId(id);
-    await loadConversations();
-  }, [empresaId, loadConversations, user?.id]);
+    setActiveConversationId(createdId);
+    return createdId;
+  }, [createConversation]);
 
   const confirmDelete = React.useCallback((id: string) => {
     setDeleteTargetId(id);
@@ -338,17 +314,22 @@ function ClerIAPageClient() {
         setActiveConversationId(nextMostRecent.id);
         return;
       }
-      await handleNewChat();
+      setActiveConversationId(null);
     }
-  }, [activeConversationId, conversations, deleteTargetId, handleNewChat]);
+  }, [activeConversationId, conversations, deleteTargetId]);
 
   React.useEffect(() => {
     if (isLoading) {
       return;
     }
 
+    if (!user?.id || empresaId == null) {
+      setIsBootstrapping(false);
+      return;
+    }
+
     void ensureDefaultConversation();
-  }, [ensureDefaultConversation, isLoading]);
+  }, [empresaId, ensureDefaultConversation, isLoading, user?.id]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
@@ -379,6 +360,191 @@ function ClerIAPageClient() {
 
   const mainScaleClass = MAIN_SCALE_CLASS_BY_LEVEL[visualScaleLevel] ?? MAIN_SCALE_CLASS_BY_LEVEL.normal;
   const sidebarScaleClass = SIDEBAR_SCALE_CLASS_BY_LEVEL[visualScaleLevel] ?? SIDEBAR_SCALE_CLASS_BY_LEVEL.normal;
+  const prefetchConversationIds = React.useMemo(
+    () => conversations.slice(0, 5).map((conversation) => conversation.id),
+    [conversations]
+  );
+
+  const sortedConversations = React.useMemo(() => {
+    return [...conversations].sort((a, b) => {
+      const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return timeB - timeA;
+    });
+  }, [conversations]);
+
+  const filteredConversations = React.useMemo(() => {
+    const query = searchDraft.trim().toLowerCase();
+    if (!query) {
+      return sortedConversations;
+    }
+
+    return sortedConversations.filter((conversation) => {
+      const title = (conversation.title ?? '').trim().toLowerCase();
+      return title.includes(query);
+    });
+  }, [searchDraft, sortedConversations]);
+
+  const groupedSearchResults = React.useMemo(() => {
+    type GroupLabel = 'Hoy' | 'Ayer' | '7 días anteriores' | 'Anteriores';
+    const groups: Record<GroupLabel, CleriaConversationRow[]> = {
+      Hoy: [],
+      Ayer: [],
+      '7 días anteriores': [],
+      Anteriores: [],
+    };
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    for (const conversation of filteredConversations) {
+      const updatedAt = conversation.updated_at ? new Date(conversation.updated_at) : null;
+      if (!updatedAt || Number.isNaN(updatedAt.getTime())) {
+        groups.Anteriores.push(conversation);
+        continue;
+      }
+
+      const updatedStart = new Date(updatedAt.getFullYear(), updatedAt.getMonth(), updatedAt.getDate()).getTime();
+      const diffDays = Math.floor((todayStart - updatedStart) / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 0) {
+        groups.Hoy.push(conversation);
+        continue;
+      }
+
+      if (diffDays === 1) {
+        groups.Ayer.push(conversation);
+        continue;
+      }
+
+      if (diffDays <= 7) {
+        groups['7 días anteriores'].push(conversation);
+        continue;
+      }
+
+      groups.Anteriores.push(conversation);
+    }
+
+    const order: GroupLabel[] = ['Hoy', 'Ayer', '7 días anteriores', 'Anteriores'];
+    return order
+      .map((label) => ({ label, items: groups[label] }))
+      .filter((section) => section.items.length > 0);
+  }, [filteredConversations]);
+
+  React.useEffect(() => {
+    if (!isSearchOpen) {
+      return;
+    }
+
+    const id = window.setTimeout(() => {
+      searchInputRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(id);
+  }, [isSearchOpen]);
+
+  const openSearch = React.useCallback(() => {
+    setSearchDraft('');
+    setIsSearchOpen(true);
+  }, []);
+
+  const closeSearch = React.useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchDraft('');
+  }, []);
+
+  const selectConversationFromSearch = React.useCallback((id: string) => {
+    setActiveConversationId(id);
+    closeSearch();
+  }, [closeSearch]);
+
+  const handleSidebarHintClick = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const el = sidebarScrollRef.current;
+    if (!el) {
+      return;
+    }
+
+    const jump = Math.max(180, Math.round(el.clientHeight * 0.7));
+    const nextTop = Math.min(el.scrollTop + jump, el.scrollHeight - el.clientHeight);
+    el.scrollTo({ top: nextTop, behavior: 'smooth' });
+  }, []);
+
+  React.useEffect(() => {
+    const el = sidebarScrollRef.current;
+    if (!el || isConversationsSidebarCollapsed) {
+      setShowSidebarScrollHint(false);
+      setIsSidebarScrollActive(false);
+      if (sidebarScrollHintDelayTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollHintDelayTimeoutRef.current);
+        sidebarScrollHintDelayTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    const shouldShowHintFromPosition = () => {
+      const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const canScroll = el.scrollHeight - el.clientHeight > 12;
+      return canScroll && remaining > 12;
+    };
+
+    const scheduleHintReveal = () => {
+      if (sidebarScrollHintDelayTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollHintDelayTimeoutRef.current);
+        sidebarScrollHintDelayTimeoutRef.current = null;
+      }
+
+      if (!shouldShowHintFromPosition()) {
+        setShowSidebarScrollHint(false);
+        return;
+      }
+
+      sidebarScrollHintDelayTimeoutRef.current = window.setTimeout(() => {
+        sidebarScrollHintDelayTimeoutRef.current = null;
+        setShowSidebarScrollHint(shouldShowHintFromPosition());
+      }, 1000);
+    };
+
+    const onScroll = () => {
+      setIsSidebarScrollActive(true);
+      setShowSidebarScrollHint(false);
+      if (sidebarScrollIdleTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollIdleTimeoutRef.current);
+      }
+      sidebarScrollIdleTimeoutRef.current = window.setTimeout(() => {
+        setIsSidebarScrollActive(false);
+        sidebarScrollIdleTimeoutRef.current = null;
+        scheduleHintReveal();
+      }, 1000);
+
+      if (sidebarScrollHintDelayTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollHintDelayTimeoutRef.current);
+        sidebarScrollHintDelayTimeoutRef.current = null;
+      }
+
+      if (!shouldShowHintFromPosition()) {
+        setShowSidebarScrollHint(false);
+      }
+    };
+
+    scheduleHintReveal();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', scheduleHintReveal);
+
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', scheduleHintReveal);
+      if (sidebarScrollIdleTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollIdleTimeoutRef.current);
+        sidebarScrollIdleTimeoutRef.current = null;
+      }
+      if (sidebarScrollHintDelayTimeoutRef.current != null) {
+        window.clearTimeout(sidebarScrollHintDelayTimeoutRef.current);
+        sidebarScrollHintDelayTimeoutRef.current = null;
+      }
+    };
+  }, [conversations, isBootstrapping, isConversationsSidebarCollapsed]);
 
   return (
   <>
@@ -389,7 +555,7 @@ function ClerIAPageClient() {
         }`}
       >
         <aside className="relative hidden overflow-hidden border-r border-gray-200 bg-gray-50 text-gray-900 lg:flex lg:flex-col">
-          <div className={`h-full transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${sidebarScaleClass}`}>
+          <div className={`flex h-full min-h-0 flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${sidebarScaleClass}`}>
           <div className="relative px-0 pt-3 pb-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]">
             <button
               type="button"
@@ -423,6 +589,8 @@ function ClerIAPageClient() {
             <button
               type="button"
               className="grid w-full grid-cols-[40px_minmax(0,1fr)] items-center rounded-xl border border-transparent px-0 py-0.5 text-[13px] font-semibold text-gray-700 transition hover:bg-gray-100"
+              onClick={openSearch}
+              disabled={isBootstrapping}
             >
               <span className="flex h-7 w-full items-center justify-center">
                 <Search className="h-4 w-4 text-gray-700" />
@@ -447,11 +615,19 @@ function ClerIAPageClient() {
           </div>
 
           <div
-            className={`flex-1 overflow-hidden transition-all duration-300 ${
+            className={`flex min-h-0 flex-1 overflow-hidden transition-all duration-300 ${
               isConversationsSidebarCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
             }`}
           >
-          <div className="h-full overflow-y-auto px-1.5 pb-3">
+          <div
+            ref={sidebarScrollRef}
+            className={`sidebar-scroll-area relative h-full min-h-0 overflow-y-auto overscroll-contain px-1.5 pb-3 pr-1 ${
+              isSidebarScrollActive ? 'sidebar-scroll-active' : ''
+            }`}
+          >
+            {isBootstrapping ? (
+              <SidebarSkeleton />
+            ) : (
             <div className="space-y-1">
               {conversations.map((conv) => {
                 const isActive = conv.id === activeConversationId;
@@ -460,18 +636,15 @@ function ClerIAPageClient() {
                 return (
                   <div
                     key={conv.id}
-                    className={`group w-full flex items-center gap-2 rounded-xl border border-transparent px-3 py-1.5 text-[13px] transition ${
+                    className={`group w-full flex cursor-pointer items-center gap-2 rounded-xl border border-transparent px-3 py-1.5 text-[13px] transition ${
                       isActive ? 'bg-gray-200 text-gray-900' : 'text-gray-700 hover:bg-gray-100'
                     }`}
+                    onClick={() => {
+                      if (renamingId) return;
+                      setActiveConversationId(conv.id);
+                    }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (renamingId) return;
-                        setActiveConversationId(conv.id);
-                      }}
-                      className="min-w-0 flex-1 text-left"
-                    >
+                    <div className="min-w-0 flex-1 text-left">
                       {isRenamingThis ? (
                         <div
                           ref={renameContainerRef}
@@ -500,7 +673,7 @@ function ClerIAPageClient() {
                       ) : (
                         <span className="block truncate">{title}</span>
                       )}
-                    </button>
+                    </div>
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -541,6 +714,23 @@ function ClerIAPageClient() {
                 );
               })}
             </div>
+            )}
+            <div
+              className={`pointer-events-none sticky bottom-0 z-20 flex justify-center pb-2 pt-2 transition-all duration-300 ${
+                showSidebarScrollHint && !isBootstrapping && !isConversationsSidebarCollapsed
+                  ? 'translate-y-0 opacity-100'
+                  : 'translate-y-2 opacity-0'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={handleSidebarHintClick}
+                className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/90 px-2.5 py-1 text-[10px] font-medium text-slate-500 shadow-sm backdrop-blur-sm transition hover:bg-white"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-300 animate-pulse" />
+                Desliza...
+              </button>
+            </div>
           </div>
           </div>
           </div>
@@ -559,7 +749,13 @@ function ClerIAPageClient() {
 
           <main className="h-full overflow-hidden p-6">
             <div className={`h-full w-full ${mainScaleClass}`}>
-              <Cleria conversationId={activeConversationId} onConversationTitleMaybeUpdated={loadConversations} />
+              <Cleria
+                conversationId={activeConversationId}
+                onConversationTitleMaybeUpdated={loadConversations}
+                onRequestConversation={ensureConversationForFirstMessage}
+                prefetchConversationIds={prefetchConversationIds}
+                isBootstrapping={isBootstrapping}
+              />
             </div>
           </main>
         </div>
@@ -589,6 +785,115 @@ function ClerIAPageClient() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isSearchOpen} onOpenChange={(open) => (open ? setIsSearchOpen(true) : closeSearch())}>
+        <DialogContent hideCloseButton className="overflow-hidden rounded-2xl border border-white/15 bg-[#2F2F2F] p-0 text-slate-100 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:max-w-[640px]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Buscar chats</DialogTitle>
+            <DialogDescription>Busca y selecciona una conversación existente.</DialogDescription>
+          </DialogHeader>
+          <div className="flex h-[520px] flex-col">
+          <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3.5">
+            <Search className="h-4 w-4 text-slate-400" />
+            <input
+              ref={searchInputRef}
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="Buscar chats..."
+              className="h-8 w-full bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={closeSearch}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+              aria-label="Cerrar búsqueda"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3">
+            <button
+              type="button"
+              onClick={() => {
+                void handleNewChat();
+                closeSearch();
+              }}
+              className="mb-3 flex w-full items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-left text-sm font-medium text-slate-100 transition hover:bg-white/10"
+            >
+              <Edit3 className="h-4 w-4 text-slate-300" />
+              Nuevo chat
+            </button>
+
+            {isBootstrapping ? (
+              <SearchDialogSkeleton />
+            ) : groupedSearchResults.length === 0 ? (
+              <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-6 text-center text-sm text-slate-400">
+                No se encontraron chats.
+              </div>
+            ) : (
+              groupedSearchResults.map((section) => (
+                <div key={section.label} className="mb-3">
+                  <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400/90">{section.label}</div>
+                  <div className="space-y-0.5">
+                    {section.items.map((conversation) => {
+                      const isActive = conversation.id === activeConversationId;
+                      const title = (conversation.title ?? '').trim() || 'Nuevo Chat';
+
+                      return (
+                        <button
+                          key={conversation.id}
+                          type="button"
+                          onClick={() => selectConversationFromSearch(conversation.id)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] leading-5 transition ${
+                            isActive ? 'bg-white/16 text-white' : 'text-slate-200 hover:bg-white/10'
+                          }`}
+                        >
+                          <Circle className="h-3 w-3 shrink-0 text-slate-500" />
+                          <span className="truncate">{title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <style jsx>{`
+        .sidebar-scroll-area {
+          scrollbar-width: none;
+          scrollbar-color: transparent transparent;
+        }
+
+        .sidebar-scroll-area::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+
+        .sidebar-scroll-area::-webkit-scrollbar-thumb {
+          border-radius: 999px;
+          background: transparent;
+        }
+
+        .sidebar-scroll-area::-webkit-scrollbar-track {
+          background: transparent;
+        }
+
+        .sidebar-scroll-area:hover,
+        .sidebar-scroll-area.sidebar-scroll-active {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(148, 163, 184, 0.66) transparent;
+        }
+
+        .sidebar-scroll-area:hover::-webkit-scrollbar-thumb,
+        .sidebar-scroll-area.sidebar-scroll-active::-webkit-scrollbar-thumb {
+          background: rgba(148, 163, 184, 0.66);
+        }
+      `}</style>
     </>
   );
 }
