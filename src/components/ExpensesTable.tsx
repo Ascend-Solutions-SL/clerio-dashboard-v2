@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
- import * as ReactDOM from 'react-dom';
+import * as ReactDOM from 'react-dom';
 import {
   ColumnDef,
   flexRender,
@@ -29,6 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { InvoiceDetailDrawer, type InvoiceDetailDrawerRow } from '@/components/InvoiceDetailDrawer';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filters';
@@ -36,11 +37,11 @@ import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filt
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
 
- type PendingTooltipState = {
-   open: boolean;
-   x: number;
-   y: number;
- };
+type PendingTooltipState = {
+  open: boolean;
+  x: number;
+  y: number;
+};
 
 const normalizeFacturaValidada = (value: unknown): boolean | null => {
   if (value === true || value === false) {
@@ -260,13 +261,19 @@ export type Expense = {
   driveFileId: string | null;
   driveType: DriveType;
   facturaValidada: boolean | null;
+  sellerName?: string | null;
+  sellerTaxId?: string | null;
+  invoiceConcept?: string | null;
+  importeSinIvaRaw?: number | string | null;
+  importeTotalRaw?: number | string | null;
+  ivaRaw?: number | null;
 };
 
 export const columns: ColumnDef<Expense>[] = [
   {
     id: 'select',
     header: ({ table }) => (
-      <div className="w-12 flex justify-center">
+      <div className="w-12 flex justify-center" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
@@ -276,7 +283,7 @@ export const columns: ColumnDef<Expense>[] = [
       </div>
     ),
     cell: ({ row }) => (
-      <div className="w-12 flex justify-center">
+      <div className="w-12 flex justify-center" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
@@ -463,6 +470,7 @@ export const columns: ColumnDef<Expense>[] = [
 export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, refreshKey = 0 }: ExpensesTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Expense[]>([]);
+  const [drawerRow, setDrawerRow] = React.useState<InvoiceDetailDrawerRow | null>(null);
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [filters, setFilters] = React.useState<TableFiltersValue>({
@@ -528,10 +536,10 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
       const mapped = typedRows.map((row: FacturaRow) => {
         const subtotalValue = Math.abs(Number(row.importe_sin_iva) || 0);
         const totalValue = Math.abs(Number(row.importe_total) || 0);
-
-        const formatNegative = (value: number) => {
-          return `-${currencyFormatter.format(value)}`;
-        };
+        const ivaValue =
+          Number.isFinite(subtotalValue) && Number.isFinite(totalValue)
+            ? Number(totalValue) - Number(subtotalValue)
+            : null;
 
         return {
           id: row.id,
@@ -540,8 +548,8 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           invoice: row.numero,
           provider: row.seller_name ?? '',
           description: row.invoice_concept ?? '',
-          subtotal: formatNegative(subtotalValue),
-          total: formatNegative(totalValue),
+          subtotal: `-${currencyFormatter.format(subtotalValue)}`,
+          total: `-${currencyFormatter.format(totalValue)}`,
           subtotalValue,
           totalValue,
           driveFileId: row.drive_file_id ?? null,
@@ -549,6 +557,12 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
             ? row.drive_type
             : 'googledrive') as DriveType,
           facturaValidada: normalizeFacturaValidada(row.factura_validada),
+          sellerName: row.seller_name,
+          sellerTaxId: row.seller_tax_id,
+          invoiceConcept: row.invoice_concept,
+          importeSinIvaRaw: row.importe_sin_iva,
+          importeTotalRaw: row.importe_total,
+          ivaRaw: ivaValue,
         };
       });
 
@@ -779,7 +793,32 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setDrawerRow({
+                      id: row.original.id,
+                      numero: row.original.invoice,
+                      fecha: row.original.rawDate,
+                      tipo: 'Gastos',
+                      counterparty: row.original.provider,
+                      buyer_name: null,
+                      buyer_tax_id: null,
+                      seller_name: row.original.sellerName ?? row.original.provider ?? null,
+                      seller_tax_id: row.original.sellerTaxId ?? null,
+                      invoice_concept: row.original.invoiceConcept ?? row.original.description ?? null,
+                      importe_total: row.original.importeTotalRaw ?? row.original.totalValue,
+                      importe_sin_iva: row.original.importeSinIvaRaw ?? row.original.subtotalValue,
+                      iva: row.original.ivaRaw ?? null,
+                      descuentos: null,
+                      retenciones: null,
+                      divisa: 'EUR',
+                      drive_type: row.original.driveType,
+                      drive_file_id: row.original.driveFileId,
+                    });
+                  }}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
@@ -798,6 +837,8 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
           </Table>
         </div>
       </div>
+
+      {drawerRow ? <InvoiceDetailDrawer row={drawerRow} onClose={() => setDrawerRow(null)} /> : null}
 
     </div>
   );

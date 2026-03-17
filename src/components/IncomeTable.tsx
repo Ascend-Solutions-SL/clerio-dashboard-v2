@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
- import * as ReactDOM from 'react-dom';
+import * as ReactDOM from 'react-dom';
 import {
   ColumnDef,
   flexRender,
@@ -29,6 +29,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { InvoiceDetailDrawer, type InvoiceDetailDrawerRow } from '@/components/InvoiceDetailDrawer';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filters';
@@ -260,13 +261,19 @@ export type Income = {
   driveFileId: string | null;
   driveType: DriveType;
   facturaValidada: boolean | null;
+  buyerName?: string | null;
+  buyerTaxId?: string | null;
+  invoiceConcept?: string | null;
+  importeSinIvaRaw?: number | string | null;
+  importeTotalRaw?: number | string | null;
+  ivaRaw?: number | null;
 };
 
 export const columns: ColumnDef<Income>[] = [
   {
     id: 'select',
     header: ({ table }) => (
-      <div className="w-12 flex justify-center">
+      <div className="w-12 flex justify-center" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={table.getIsAllPageRowsSelected()}
           onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
@@ -276,7 +283,7 @@ export const columns: ColumnDef<Income>[] = [
       </div>
     ),
     cell: ({ row }) => (
-      <div className="w-12 flex justify-center">
+      <div className="w-12 flex justify-center" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
@@ -440,6 +447,7 @@ export const columns: ColumnDef<Income>[] = [
 export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refreshKey = 0 }: IncomeTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Income[]>([]);
+  const [drawerRow, setDrawerRow] = React.useState<InvoiceDetailDrawerRow | null>(null);
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [filters, setFilters] = React.useState<TableFiltersValue>({
@@ -505,6 +513,10 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       const mapped = typedRows.map((row: FacturaRow) => {
         const subtotalValue = Number(row.importe_sin_iva ?? 0);
         const totalValue = Number(row.importe_total ?? 0);
+        const ivaValue =
+          Number.isFinite(subtotalValue) && Number.isFinite(totalValue)
+            ? Number(totalValue) - Number(subtotalValue)
+            : null;
 
         return {
           id: row.id,
@@ -522,6 +534,12 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
             ? row.drive_type
             : 'googledrive') as DriveType,
           facturaValidada: normalizeFacturaValidada(row.factura_validada),
+          buyerName: row.buyer_name,
+          buyerTaxId: row.buyer_tax_id,
+          invoiceConcept: row.invoice_concept,
+          importeSinIvaRaw: row.importe_sin_iva,
+          importeTotalRaw: row.importe_total,
+          ivaRaw: ivaValue,
         };
       });
 
@@ -752,7 +770,32 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    setDrawerRow({
+                      id: row.original.id,
+                      numero: row.original.invoice,
+                      fecha: row.original.rawDate,
+                      tipo: 'Ingresos',
+                      counterparty: row.original.client,
+                      buyer_name: row.original.buyerName ?? row.original.client ?? null,
+                      buyer_tax_id: row.original.buyerTaxId ?? null,
+                      seller_name: null,
+                      seller_tax_id: null,
+                      invoice_concept: row.original.invoiceConcept ?? row.original.description ?? null,
+                      importe_total: row.original.importeTotalRaw ?? row.original.totalValue,
+                      importe_sin_iva: row.original.importeSinIvaRaw ?? row.original.subtotalValue,
+                      iva: row.original.ivaRaw ?? null,
+                      descuentos: null,
+                      retenciones: null,
+                      divisa: 'EUR',
+                      drive_type: row.original.driveType,
+                      drive_file_id: row.original.driveFileId,
+                    });
+                  }}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
@@ -771,6 +814,8 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
           </Table>
         </div>
       </div>
+
+      {drawerRow ? <InvoiceDetailDrawer row={drawerRow} onClose={() => setDrawerRow(null)} /> : null}
     </div>
   );
 }
