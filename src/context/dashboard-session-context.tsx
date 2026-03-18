@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
@@ -24,11 +24,42 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSessionExpired, setIsSessionExpired] = useState(false);
+  const redirectInFlightRef = useRef(false);
+  const redirectTimeoutRef = useRef<number | null>(null);
 
   const markSessionExpired = useCallback(() => {
     setUser(null);
     setIsLoading(false);
     setIsSessionExpired(true);
+  }, []);
+
+  const redirectToLogin = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (redirectInFlightRef.current) {
+      return;
+    }
+    redirectInFlightRef.current = true;
+
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    const url = new URL('/login', window.location.origin);
+    if (redirect !== '/') {
+      url.searchParams.set('redirect', redirect);
+    }
+    url.searchParams.set('reason', 'expired');
+
+    const root = document.documentElement;
+    const body = document.body;
+    root.style.setProperty('overflow', 'hidden');
+    body.style.transition = 'opacity 180ms ease, filter 220ms ease';
+    body.style.opacity = '0.72';
+    body.style.filter = 'blur(1.5px)';
+
+    redirectTimeoutRef.current = window.setTimeout(() => {
+      window.location.assign(url.toString());
+    }, 170);
   }, []);
 
   const touchAuthActivity = useCallback(async () => {
@@ -42,26 +73,17 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       });
 
       if (res.status === 401) {
-        markSessionExpired();
+        redirectToLogin();
+        return;
+      }
+
+      if (res.redirected && res.url.includes('/login')) {
+        redirectToLogin();
       }
     } catch {
       // ignore
     }
-  }, [markSessionExpired]);
-
-  const redirectToLogin = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const redirect = `${window.location.pathname}${window.location.search}`;
-    const url = new URL('/login', window.location.origin);
-    if (redirect !== '/') {
-      url.searchParams.set('redirect', redirect);
-    }
-    url.searchParams.set('reason', 'expired');
-    window.location.assign(url.toString());
-  }, []);
+  }, [redirectToLogin]);
 
   const throttledTouch = useMemo(() => {
     let last = 0;
@@ -142,6 +164,15 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       setIsLoading(false);
     }
   }, [pathname, throttledTouch]);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimeoutRef.current != null) {
+        window.clearTimeout(redirectTimeoutRef.current);
+        redirectTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
