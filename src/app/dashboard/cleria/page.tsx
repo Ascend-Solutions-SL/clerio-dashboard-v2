@@ -28,7 +28,11 @@ type CleriaConversationRow = {
 
 type VisualScaleLevel = 'muy_grande' | 'grande' | 'normal' | 'pequeno' | 'muy_pequeno';
 
+const conversationsCacheByUser = new Map<string, CleriaConversationRow[]>();
+const activeConversationCacheByUser = new Map<string, string | null>();
+
 const VISUAL_SCALE_KEY = 'dashboard-visual-scale-level';
+const CLERIA_INITIAL_ASSISTANT_MESSAGE = 'Hola, soy Cler IA y estoy aquí para ayudarte con los datos financieros de tu empresa.';
 
 const MAIN_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
   muy_grande: '[zoom:0.98]',
@@ -97,8 +101,27 @@ function ClerIAPageClient() {
   const sidebarScrollHintDelayTimeoutRef = React.useRef<number | null>(null);
   const [isSidebarScrollActive, setIsSidebarScrollActive] = React.useState(false);
   const [showSidebarScrollHint, setShowSidebarScrollHint] = React.useState(false);
+  const layoutContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const hasAutoCollapsedForNarrowRef = React.useRef(false);
+  const hasInitializedConversationsRef = React.useRef(false);
 
   const empresaId = user?.empresaId ?? null;
+
+  const areConversationRowsEqual = React.useCallback((a: CleriaConversationRow[], b: CleriaConversationRow[]) => {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    for (let index = 0; index < a.length; index += 1) {
+      const current = a[index];
+      const next = b[index];
+      if (current.id !== next.id || current.title !== next.title || current.updated_at !== next.updated_at) {
+        return false;
+      }
+    }
+
+    return true;
+  }, []);
 
   const loadConversations = React.useCallback(async (): Promise<CleriaConversationRow[]> => {
     if (!user?.id || empresaId == null) {
@@ -115,41 +138,15 @@ function ClerIAPageClient() {
     });
 
     if (!res.ok) {
-      setConversations([]);
-      return [];
+      return conversations;
     }
 
     const data = (await res.json().catch(() => null)) as CleriaConversationRow[] | null;
     const rows = data ?? [];
-    setConversations(rows);
+    conversationsCacheByUser.set(user.id, rows);
+    setConversations((prev) => (areConversationRowsEqual(prev, rows) ? prev : rows));
     return rows;
-  }, [empresaId, user?.id]);
-
-  const createConversation = React.useCallback(async () => {
-    if (!user?.id || empresaId == null) {
-      return null;
-    }
-
-    const createRes = await fetch('/api/cleria/conversation', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        user_uid: user.id,
-        empresa_id: empresaId,
-      }),
-    });
-
-    if (!createRes.ok) {
-      return null;
-    }
-
-    const created = (await createRes.json().catch(() => null)) as { id?: string } | null;
-    const createdId = String(created?.id ?? '').trim();
-    return createdId || null;
-  }, [empresaId, user?.id]);
+  }, [areConversationRowsEqual, conversations, empresaId, user?.id]);
 
   const ensureDefaultConversation = React.useCallback(async () => {
     if (!user?.id || empresaId == null) {
@@ -157,25 +154,39 @@ function ClerIAPageClient() {
       return;
     }
 
-    setIsBootstrapping(true);
+    const shouldShowBootstrapping = conversations.length === 0;
+    if (shouldShowBootstrapping) {
+      setIsBootstrapping(true);
+    }
+
     try {
       const rows = await loadConversations();
       const idFromUrl = searchParams.get('conversationId');
       const idFromUrlExists = idFromUrl ? rows.some((row) => row.id === idFromUrl) : false;
 
       setActiveConversationId((prev) => {
-        if (prev && rows.some((row) => row.id === prev)) {
-          return prev;
+        const resolved = (() => {
+          if (prev && rows.some((row) => row.id === prev)) {
+            return prev;
+          }
+          if (idFromUrl && idFromUrlExists) {
+            return idFromUrl;
+          }
+          return rows[0]?.id ?? null;
+        })();
+
+        if (user?.id) {
+          activeConversationCacheByUser.set(user.id, resolved);
         }
-        if (idFromUrl && idFromUrlExists) {
-          return idFromUrl;
-        }
-        return rows[0]?.id ?? null;
+
+        return resolved;
       });
     } finally {
-      setIsBootstrapping(false);
+      if (shouldShowBootstrapping) {
+        setIsBootstrapping(false);
+      }
     }
-  }, [empresaId, loadConversations, searchParams, user?.id]);
+  }, [conversations.length, empresaId, loadConversations, searchParams, user?.id]);
 
   // Sync active conversation with URL param when present and valid
   React.useEffect(() => {
@@ -184,6 +195,13 @@ function ClerIAPageClient() {
       setActiveConversationId(idFromUrl);
     }
   }, [conversations, searchParams]);
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+    activeConversationCacheByUser.set(user.id, activeConversationId);
+  }, [activeConversationId, user?.id]);
 
   React.useEffect(() => {
     if (!renamingId) return;
@@ -264,12 +282,45 @@ function ClerIAPageClient() {
 
   const handleNewChat = React.useCallback(async () => {
     setActiveConversationId(null);
+    if (user?.id) {
+      activeConversationCacheByUser.set(user.id, null);
+    }
     setRenamingId(null);
     setRenameDraft('');
-  }, []);
+  }, [user?.id]);
 
   const ensureConversationForFirstMessage = React.useCallback(async (): Promise<string | null> => {
-    const createdId = await createConversation();
+    if (activeConversationId) {
+      return activeConversationId;
+    }
+
+    const createdId = await (async () => {
+      if (!user?.id || empresaId == null) {
+        return null;
+      }
+
+      const createRes = await fetch('/api/cleria/conversation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          user_uid: user.id,
+          empresa_id: empresaId,
+          initial_assistant_message: CLERIA_INITIAL_ASSISTANT_MESSAGE,
+        }),
+      });
+
+      if (!createRes.ok) {
+        return null;
+      }
+
+      const created = (await createRes.json().catch(() => null)) as { id?: string } | null;
+      const id = String(created?.id ?? '').trim();
+      return id || null;
+    })();
+
     if (!createdId) {
       return null;
     }
@@ -277,11 +328,18 @@ function ClerIAPageClient() {
     const now = new Date().toISOString();
     setConversations((prev) => {
       const next = prev.filter((row) => row.id !== createdId);
-      return [{ id: createdId, title: 'Nuevo Chat', updated_at: now }, ...next];
+      const rows = [{ id: createdId, title: 'Nuevo Chat', updated_at: now }, ...next];
+      if (user?.id) {
+        conversationsCacheByUser.set(user.id, rows);
+      }
+      return rows;
     });
     setActiveConversationId(createdId);
+    if (user?.id) {
+      activeConversationCacheByUser.set(user.id, createdId);
+    }
     return createdId;
-  }, [createConversation]);
+  }, [activeConversationId, empresaId, user?.id]);
 
   const confirmDelete = React.useCallback((id: string) => {
     setDeleteTargetId(id);
@@ -325,11 +383,37 @@ function ClerIAPageClient() {
 
     if (!user?.id || empresaId == null) {
       setIsBootstrapping(false);
+      hasInitializedConversationsRef.current = false;
       return;
     }
 
-    void ensureDefaultConversation();
-  }, [empresaId, ensureDefaultConversation, isLoading, user?.id]);
+    if (!hasInitializedConversationsRef.current) {
+      hasInitializedConversationsRef.current = true;
+      const cachedRows = conversationsCacheByUser.get(user.id) ?? [];
+      const cachedActiveId = activeConversationCacheByUser.get(user.id) ?? null;
+
+      if (cachedRows.length > 0) {
+        setConversations((prev) => (areConversationRowsEqual(prev, cachedRows) ? prev : cachedRows));
+        setActiveConversationId((prev) => {
+          if (prev && cachedRows.some((row) => row.id === prev)) {
+            return prev;
+          }
+          if (cachedActiveId && cachedRows.some((row) => row.id === cachedActiveId)) {
+            return cachedActiveId;
+          }
+          return cachedRows[0]?.id ?? null;
+        });
+        setIsBootstrapping(false);
+        void loadConversations();
+        return;
+      }
+
+      void ensureDefaultConversation();
+      return;
+    }
+
+    void loadConversations();
+  }, [empresaId, ensureDefaultConversation, isLoading, loadConversations, user?.id]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
@@ -455,8 +539,11 @@ function ClerIAPageClient() {
 
   const selectConversationFromSearch = React.useCallback((id: string) => {
     setActiveConversationId(id);
+    if (user?.id) {
+      activeConversationCacheByUser.set(user.id, id);
+    }
     closeSearch();
-  }, [closeSearch]);
+  }, [closeSearch, user?.id]);
 
   const handleSidebarHintClick = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -546,20 +633,70 @@ function ClerIAPageClient() {
     };
   }, [conversations, isBootstrapping, isConversationsSidebarCollapsed]);
 
+  React.useEffect(() => {
+    const el = layoutContainerRef.current;
+    if (!el) {
+      return;
+    }
+
+    const expandedSidebarWidth = 220;
+    const minChatToSidebarRatio = 3;
+    const minTotalWidthBeforeAutoCollapse = expandedSidebarWidth + expandedSidebarWidth * minChatToSidebarRatio;
+
+    const evaluateAutoCollapse = () => {
+      const width = el.clientWidth;
+      const isNarrow = width > 0 && width < minTotalWidthBeforeAutoCollapse;
+
+      if (!isNarrow) {
+        if (hasAutoCollapsedForNarrowRef.current && isConversationsSidebarCollapsed) {
+          setIsConversationsSidebarCollapsed(false);
+        }
+        hasAutoCollapsedForNarrowRef.current = false;
+        return;
+      }
+
+      if (!hasAutoCollapsedForNarrowRef.current && !isConversationsSidebarCollapsed) {
+        setIsConversationsSidebarCollapsed(true);
+        hasAutoCollapsedForNarrowRef.current = true;
+      }
+    };
+
+    evaluateAutoCollapse();
+
+    const resizeObserver = new ResizeObserver(() => {
+      evaluateAutoCollapse();
+    });
+    resizeObserver.observe(el);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [isConversationsSidebarCollapsed]);
+
+  const toggleConversationsSidebar = React.useCallback(() => {
+    setIsConversationsSidebarCollapsed((prev) => {
+      const next = !prev;
+      if (!next) {
+        hasAutoCollapsedForNarrowRef.current = true;
+      }
+      return next;
+    });
+  }, []);
+
   return (
   <>
-    <div className="h-full w-full bg-white">
+    <div ref={layoutContainerRef} className="h-full w-full bg-white">
       <div
         className={`relative grid h-full grid-cols-1 overflow-hidden transition-[grid-template-columns] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          isConversationsSidebarCollapsed ? 'lg:grid-cols-[40px_minmax(0,1fr)]' : 'lg:grid-cols-[220px_minmax(0,1fr)]'
+          isConversationsSidebarCollapsed ? 'grid-cols-[40px_minmax(0,1fr)]' : 'grid-cols-[220px_minmax(0,1fr)]'
         }`}
       >
-        <aside className="relative hidden overflow-hidden border-r border-gray-200 bg-gray-50 text-gray-900 lg:flex lg:flex-col">
+        <aside className="relative overflow-hidden border-r border-gray-200 bg-gray-50 text-gray-900 flex flex-col">
           <div className={`flex h-full min-h-0 flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${sidebarScaleClass}`}>
           <div className="relative px-0 pt-3 pb-3 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]">
             <button
               type="button"
-              onClick={() => setIsConversationsSidebarCollapsed((prev) => !prev)}
+              onClick={toggleConversationsSidebar}
               className={`absolute top-3 z-10 inline-flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-xl text-gray-700 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:bg-gray-100 ${
                 isConversationsSidebarCollapsed ? 'left-5' : 'left-[calc(100%-20px)]'
               }`}
@@ -738,8 +875,8 @@ function ClerIAPageClient() {
 
         <button
           type="button"
-          onClick={() => setIsConversationsSidebarCollapsed((prev) => !prev)}
-          className={`absolute top-1/2 z-20 hidden -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 p-1 text-gray-500 shadow-sm backdrop-blur-sm transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-gray-700 lg:inline-flex ${
+          onClick={toggleConversationsSidebar}
+          className={`absolute top-1/2 z-20 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 p-1 text-gray-500 shadow-sm backdrop-blur-sm transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-gray-700 inline-flex ${
             isConversationsSidebarCollapsed ? 'left-[40px] -translate-x-1/2' : 'left-[220px] -translate-x-1/2'
           }`}
           aria-label={isConversationsSidebarCollapsed ? 'Desplegar conversaciones' : 'Plegar conversaciones'}

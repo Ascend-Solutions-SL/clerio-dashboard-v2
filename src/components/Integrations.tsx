@@ -13,38 +13,65 @@ type CleriaConversationRow = {
   updated_at: string | null;
 };
 
+const conversationsPreviewCache = new Map<string, CleriaConversationRow[]>();
+let lastConversationsPreviewCacheKey: string | null = null;
+
 const Integrations = () => {
   const { user, isLoading } = useDashboardSession();
   const router = useRouter();
-  const [conversations, setConversations] = React.useState<CleriaConversationRow[]>([]);
+  const [conversations, setConversations] = React.useState<CleriaConversationRow[]>(() => {
+    const cacheKey = user?.id ?? lastConversationsPreviewCacheKey ?? '';
+    return cacheKey ? conversationsPreviewCache.get(cacheKey) ?? [] : [];
+  });
   const [isLoadingConvs, setIsLoadingConvs] = React.useState(false);
 
   React.useEffect(() => {
     const load = async () => {
       if (!user?.id) {
-        setConversations([]);
+        if (!isLoading) {
+          setConversations([]);
+          setIsLoadingConvs(false);
+          lastConversationsPreviewCacheKey = null;
+        }
         return;
       }
-      setIsLoadingConvs(true);
+
+      const cacheKey = user.id;
+      const cached = conversationsPreviewCache.get(cacheKey);
+      lastConversationsPreviewCacheKey = cacheKey;
+      if (cached) {
+        setConversations(cached);
+      }
+
+      setIsLoadingConvs(!cached);
       try {
         const res = await fetch('/api/cleria/conversations', {
           method: 'GET',
           headers: { Accept: 'application/json' },
         });
         if (!res.ok) {
-          setConversations([]);
+          if (!cached) {
+            setConversations([]);
+          }
           return;
         }
         const data = (await res.json().catch(() => null)) as CleriaConversationRow[] | null;
         const cleaned = (data ?? []).filter((c) => (c.title ?? '').trim().toLowerCase() !== 'nuevo chat');
-        setConversations(cleaned);
+        const didChange = JSON.stringify(cached ?? []) !== JSON.stringify(cleaned);
+        if (didChange) {
+          conversationsPreviewCache.set(cacheKey, cleaned);
+          lastConversationsPreviewCacheKey = cacheKey;
+          setConversations(cleaned);
+        }
       } finally {
         setIsLoadingConvs(false);
       }
     };
 
     void load();
-  }, [user?.id]);
+  }, [isLoading, user?.id]);
+
+  const shouldShowLoading = isLoadingConvs || (isLoading && conversations.length === 0);
 
   const handleOpenConversation = (id: string) => {
     router.push(`/dashboard/cleria?conversationId=${encodeURIComponent(id)}`);
@@ -74,7 +101,7 @@ const Integrations = () => {
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
         <div className="space-y-1">
-          {isLoading || isLoadingConvs ? (
+          {shouldShowLoading ? (
             <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-500">
               <div className="h-3 w-3 rounded-full border-2 border-slate-200 border-t-slate-500 animate-spin" />
               Cargando conversaciones…

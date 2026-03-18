@@ -14,9 +14,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let body: { user_uid?: string; empresa_id?: number };
+  let body: { user_uid?: string; empresa_id?: number; initial_assistant_message?: string };
   try {
-    body = (await request.json()) as { user_uid?: string; empresa_id?: number };
+    body = (await request.json()) as { user_uid?: string; empresa_id?: number; initial_assistant_message?: string };
   } catch {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
   }
@@ -54,6 +54,31 @@ export async function POST(request: NextRequest) {
 
   if (error || !inserted) {
     return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 });
+  }
+
+  const initialAssistantMessage = String(body.initial_assistant_message ?? '').trim();
+  if (initialAssistantMessage) {
+    const { error: insertInitialMessageError } = await supabase
+      .schema('public')
+      .from('cleria_messages')
+      .insert({
+        conversation_id: inserted.id,
+        role: 'assistant',
+        content: initialAssistantMessage,
+        type: null,
+        metadata: null,
+      });
+
+    if (insertInitialMessageError) {
+      await supabase
+        .schema('public')
+        .from('cleria_conversations')
+        .delete()
+        .eq('id', inserted.id)
+        .eq('user_uid', user.id);
+
+      return NextResponse.json({ error: 'Failed to initialize conversation' }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ id: inserted.id });

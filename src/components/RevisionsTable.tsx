@@ -8,7 +8,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import { Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
+import { usePathname } from 'next/navigation';
 
 type DriveType = 'googledrive' | 'onedrive';
 
@@ -175,7 +176,7 @@ interface RevisionsTableProps {
   scope?: 'pending' | 'history';
 }
 
-export function RevisionsTable({
+export default function RevisionsTable({
   onPorRevisarCountChange,
   onNoFacturasCountChange,
   onHistoricoCountChange,
@@ -187,6 +188,7 @@ export function RevisionsTable({
 }: RevisionsTableProps) {
   const { toast } = useToast();
   const { user, isLoading } = useDashboardSession();
+  const pathname = usePathname();
   const [data, setData] = React.useState<RevisionRow[]>([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [tipoFilter, setTipoFilter] = React.useState<'all' | 'Ingresos' | 'Gastos' | 'Por Revisar' | 'No Factura'>('all');
@@ -251,15 +253,62 @@ export function RevisionsTable({
   const [validateConfirmStep, setValidateConfirmStep] = React.useState<0 | 1>(0);
   const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
   const [showAmountsMismatchHint, setShowAmountsMismatchHint] = React.useState(false);
+  const [showInvalidTipoWarning, setShowInvalidTipoWarning] = React.useState(false);
   const amountsMismatchAcceptedRef = React.useRef(false);
   const validateConfirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [realtimeRefreshKey, setRealtimeRefreshKey] = React.useState(0);
   const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const unlockedNoFacturaIdsRef = React.useRef<Set<number>>(new Set());
+  const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const rowElementRefs = React.useRef<Map<number, HTMLTableRowElement>>(new Map());
+  const lastAutoScrolledInvoiceIdRef = React.useRef<number | null>(null);
+  const autoScrollRafRef = React.useRef<number | null>(null);
+  const closeAnimationTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [closingInvoiceId, setClosingInvoiceId] = React.useState<number | null>(null);
+  const hydratedReviewInvoiceIdRef = React.useRef<number | null>(null);
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
   const scope = scopeProp ?? scopeState;
+
+  const scrollInvoiceRowToTop = React.useCallback((invoiceId: number, durationMs = 420) => {
+    const container = tableScrollRef.current;
+    const rowEl = rowElementRefs.current.get(invoiceId);
+    if (!container || !rowEl) {
+      return;
+    }
+
+    const targetTop = Math.max(0, rowEl.offsetTop - 2);
+    const startTop = container.scrollTop;
+    const distance = targetTop - startTop;
+
+    if (Math.abs(distance) < 1) {
+      container.scrollTop = targetTop;
+      return;
+    }
+
+    if (autoScrollRafRef.current != null) {
+      cancelAnimationFrame(autoScrollRafRef.current);
+      autoScrollRafRef.current = null;
+    }
+
+    const startAt = performance.now();
+
+    const step = (now: number) => {
+      const elapsed = now - startAt;
+      const progress = Math.min(1, elapsed / durationMs);
+      const eased = 1 - (1 - progress) * (1 - progress) * (1 - progress);
+      container.scrollTop = startTop + distance * eased;
+      if (progress < 1) {
+        autoScrollRafRef.current = requestAnimationFrame(step);
+      } else {
+        autoScrollRafRef.current = null;
+      }
+    };
+
+    autoScrollRafRef.current = requestAnimationFrame(step);
+  }, []);
 
   React.useEffect(() => {
     if (isLoading) {
@@ -304,6 +353,25 @@ export function RevisionsTable({
   }, [businessName, empresaId, isLoading]);
 
   React.useEffect(() => {
+    if (mode !== 'review' || selectedId == null) {
+      return;
+    }
+
+    if (lastAutoScrolledInvoiceIdRef.current === selectedId) {
+      return;
+    }
+
+    lastAutoScrolledInvoiceIdRef.current = selectedId;
+    scrollInvoiceRowToTop(selectedId, 460);
+  }, [mode, selectedId, scrollInvoiceRowToTop]);
+
+  React.useEffect(() => {
+    if (mode !== 'review') {
+      lastAutoScrolledInvoiceIdRef.current = null;
+    }
+  }, [mode]);
+
+  React.useEffect(() => {
     if (scopeProp) {
       setScopeState(scopeProp);
     }
@@ -318,14 +386,25 @@ export function RevisionsTable({
   }, [selected, mode]);
 
   React.useEffect(() => {
+    if (mode !== 'review') {
+      hydratedReviewInvoiceIdRef.current = null;
+      return;
+    }
+
     if (!selected) {
       return;
     }
 
+    if (hydratedReviewInvoiceIdRef.current === selected.id) {
+      return;
+    }
+
+    hydratedReviewInvoiceIdRef.current = selected.id;
     setShowAmountsMismatchHint(false);
     amountsMismatchAcceptedRef.current = false;
     const isNoFactura = selected.tipo === 'No Factura';
-    setNfUnlock(!isNoFactura);
+    const isAlreadyUnlocked = isNoFactura && unlockedNoFacturaIdsRef.current.has(selected.id);
+    setNfUnlock(!isNoFactura || isAlreadyUnlocked);
 
     setReviewForm({
       numero: selected.numero ?? '',
@@ -341,7 +420,27 @@ export function RevisionsTable({
       importeSinIva: selected.importeSinIva == null ? '' : String(selected.importeSinIva),
       importeTotal: selected.importeTotal == null ? '' : String(selected.importeTotal),
     });
-  }, [selected]);
+  }, [mode, selected]);
+
+  React.useEffect(() => {
+    if (pathname && !pathname.startsWith('/dashboard/revisiones')) {
+      unlockedNoFacturaIdsRef.current.clear();
+      setNfUnlock(false);
+    }
+  }, [pathname]);
+
+  React.useEffect(() => {
+    return () => {
+      if (closeAnimationTimeoutRef.current) {
+        clearTimeout(closeAnimationTimeoutRef.current);
+        closeAnimationTimeoutRef.current = null;
+      }
+      if (autoScrollRafRef.current != null) {
+        cancelAnimationFrame(autoScrollRafRef.current);
+        autoScrollRafRef.current = null;
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     if (isLoading) {
@@ -488,18 +587,6 @@ export function RevisionsTable({
     onHistoricoCountChange,
   ]);
 
-  const advanceToNext = React.useCallback(
-    (currentId: number) => {
-      const idx = data.findIndex((r) => r.id === currentId);
-      const next = idx >= 0 ? data[idx + 1] ?? data[idx - 1] ?? null : data[0] ?? null;
-
-      if (next) {
-        onSelect?.(next.id, next);
-      }
-    },
-    [data, onSelect]
-  );
-
   const parseOptionalNumber = (raw: string) => {
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -548,6 +635,18 @@ export function RevisionsTable({
 
   const handleValidateAndNext = async () => {
     if (!selected) {
+      return;
+    }
+
+    const tipoToValidate = String(reviewForm.tipo ?? '').trim();
+    const isAllowedTipo = tipoToValidate === 'No Factura' || tipoToValidate === 'Ingresos' || tipoToValidate === 'Gastos';
+    if (!isAllowedTipo) {
+      setShowInvalidTipoWarning(true);
+      setValidateConfirmStep(0);
+      if (validateConfirmTimeoutRef.current) {
+        clearTimeout(validateConfirmTimeoutRef.current);
+        validateConfirmTimeoutRef.current = null;
+      }
       return;
     }
 
@@ -750,25 +849,17 @@ export function RevisionsTable({
         description: 'Se ha marcado como No Factura.',
       });
 
-      const idx = data.findIndex((r) => r.id === selected.id);
-      const next = idx >= 0 ? data[idx + 1] ?? data[idx - 1] ?? null : data[0] ?? null;
-
       setData((prev) => {
         if (scope === 'pending') {
           return prev.filter((r) => r.id !== selected.id);
         }
         return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
       });
-      if (next) {
-        setShowAmountsMismatchHint(false);
-        amountsMismatchAcceptedRef.current = false;
-        setNfUnlock(next.tipo !== 'No Factura');
-        onSelect?.(next.id, next);
-        setMode('review');
-      } else if (scope === 'pending') {
-        setNfUnlock(true);
-        setMode('list');
-      }
+
+      setShowAmountsMismatchHint(false);
+      amountsMismatchAcceptedRef.current = false;
+      setNfUnlock(true);
+      setMode('list');
     } catch (error) {
       toast({
         title: 'No se pudo guardar',
@@ -906,6 +997,63 @@ export function RevisionsTable({
     return copy.map((x) => x.row);
   }, [data, dateSort]);
 
+  const moveSelection = React.useCallback(
+    (currentId: number, direction: 'prev' | 'next', keepReviewMode: boolean) => {
+      const idx = sortedData.findIndex((r) => r.id === currentId);
+      if (idx < 0) {
+        return;
+      }
+
+      const next = direction === 'next' ? sortedData[idx + 1] ?? null : sortedData[idx - 1] ?? null;
+      if (!next) {
+        return;
+      }
+
+      if (closeAnimationTimeoutRef.current) {
+        clearTimeout(closeAnimationTimeoutRef.current);
+        closeAnimationTimeoutRef.current = null;
+      }
+
+      setClosingInvoiceId(null);
+      setValidateConfirmStep(0);
+      setShowAmountsMismatchConfirm(false);
+      setShowAmountsMismatchHint(false);
+      amountsMismatchAcceptedRef.current = false;
+      onSelect?.(next.id, next);
+      setMode(keepReviewMode ? 'review' : 'list');
+      lastAutoScrolledInvoiceIdRef.current = keepReviewMode ? next.id : null;
+      requestAnimationFrame(() => {
+        scrollInvoiceRowToTop(next.id, 420);
+      });
+    },
+    [onSelect, scrollInvoiceRowToTop, sortedData]
+  );
+
+  const advanceToNext = React.useCallback(
+    (currentId: number) => {
+      const idx = sortedData.findIndex((r) => r.id === currentId);
+      const next = idx >= 0 ? sortedData[idx + 1] ?? sortedData[idx - 1] ?? null : sortedData[0] ?? null;
+
+      if (!next) {
+        return;
+      }
+
+      if (closeAnimationTimeoutRef.current) {
+        clearTimeout(closeAnimationTimeoutRef.current);
+        closeAnimationTimeoutRef.current = null;
+      }
+
+      setClosingInvoiceId(null);
+      onSelect?.(next.id, next);
+      setMode('review');
+      lastAutoScrolledInvoiceIdRef.current = next.id;
+      requestAnimationFrame(() => {
+        scrollInvoiceRowToTop(next.id, 420);
+      });
+    },
+    [onSelect, scrollInvoiceRowToTop, sortedData]
+  );
+
   const table = useReactTable({
     data: sortedData,
     columns,
@@ -921,6 +1069,13 @@ export function RevisionsTable({
       maxSize: Number.MAX_SAFE_INTEGER,
     },
   });
+
+  const selectedSortedIndex = React.useMemo(
+    () => (selectedId == null ? -1 : sortedData.findIndex((row) => row.id === selectedId)),
+    [selectedId, sortedData]
+  );
+  const hasPreviousInvoice = selectedSortedIndex > 0;
+  const hasNextInvoice = selectedSortedIndex >= 0 && selectedSortedIndex < sortedData.length - 1;
 
   return (
     <div
@@ -960,15 +1115,31 @@ export function RevisionsTable({
         </div>
       ) : null}
 
+      {showInvalidTipoWarning ? (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/20 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="text-sm font-semibold text-slate-900">Pendiente de revisar -&gt; Tipo de factura</div>
+            <div className="mt-2 text-sm text-slate-700">
+              No se puede validar una factura de tipo &quot;Por Revisar&quot;. Por favor, comprueba y corrige los datos de la factura.
+            </div>
+            <div className="mt-4 flex items-center justify-end">
+              <Button type="button" className="h-8 bg-slate-900 hover:bg-slate-800 text-xs" onClick={() => setShowInvalidTipoWarning(false)}>
+                Entendido
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {mode === 'list' ? (
-        <div className="flex flex-col gap-2 mb-3">
+        <div className="mb-3 flex min-h-[52px] flex-col justify-center gap-2">
           <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">Tipo</div>
                 <div className="w-[96px]">
                   <Select value={tipoFilter} onValueChange={(value) => setTipoFilter(value as typeof tipoFilter)}>
-                    <SelectTrigger className="h-6 px-2 text-[11px] w-full">
+                    <SelectTrigger className="h-7 px-2 text-[11px] w-full">
                       <SelectValue placeholder="Todas" />
                     </SelectTrigger>
                     <SelectContent>
@@ -986,7 +1157,7 @@ export function RevisionsTable({
                 <div className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">Período</div>
                 <div className="w-[120px]">
                   <Select value={period} onValueChange={(value) => setPeriod(value as typeof period)}>
-                    <SelectTrigger className="h-6 px-2 text-[11px] w-full">
+                    <SelectTrigger className="h-7 px-2 text-[11px] w-full">
                       <SelectValue placeholder="Período" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1004,14 +1175,14 @@ export function RevisionsTable({
                 <div className="flex items-center gap-2">
                   <Input
                     type="date"
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                     value={customRange.startDate}
                     onChange={(e) => setCustomRange((prev) => ({ ...prev, startDate: e.target.value }))}
                   />
                   <span className="text-xs text-slate-400">—</span>
                   <Input
                     type="date"
-                    className="h-7 px-2 text-xs"
+                    className="h-8 px-2 text-xs"
                     value={customRange.endDate}
                     onChange={(e) => setCustomRange((prev) => ({ ...prev, endDate: e.target.value }))}
                   />
@@ -1024,7 +1195,7 @@ export function RevisionsTable({
                 <Input
                   type="search"
                   placeholder="Buscar..."
-                  className="w-full rounded-lg bg-background pl-7 md:w-[150px] h-6 text-[11px]"
+                  className="w-full rounded-lg bg-background pl-7 md:w-[150px] h-7 text-[11px]"
                   value={globalFilter ?? ''}
                   onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGlobalFilter(event.target.value)}
                 />
@@ -1033,22 +1204,60 @@ export function RevisionsTable({
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => setMode('list')}>
-            Volver a la lista
-          </Button>
-          <Button
-            type="button"
-            className={
-              validateConfirmStep === 0
-                ? 'h-8 bg-emerald-600 hover:bg-emerald-700 text-xs'
-                : 'h-8 bg-amber-600 hover:bg-amber-700 text-xs ring-2 ring-amber-300'
-            }
-            disabled={!selected || isSaving || (selected?.tipo === 'No Factura' && !nfUnlock)}
-            onClick={() => void handleValidateAndNext()}
-          >
-            {validateConfirmStep === 0 ? 'Validar y siguiente' : 'Confirmar'}
-          </Button>
+        <div className="mb-3 min-h-[52px] grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <div className="flex justify-start">
+            <Button type="button" variant="outline" className="h-8 text-xs" onClick={() => setMode('list')}>
+              Volver a la lista
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              disabled={!selected || isSaving || !hasPreviousInvoice}
+              onClick={() => {
+                if (selectedId == null) {
+                  return;
+                }
+                moveSelection(selectedId, 'prev', mode === 'review');
+              }}
+              aria-label="Factura anterior"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-8 p-0"
+              disabled={!selected || isSaving || !hasNextInvoice}
+              onClick={() => {
+                if (selectedId == null) {
+                  return;
+                }
+                moveSelection(selectedId, 'next', mode === 'review');
+              }}
+              aria-label="Factura siguiente"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              className={
+                validateConfirmStep === 0
+                  ? 'h-8 bg-emerald-600 hover:bg-emerald-700 text-xs'
+                  : 'h-8 bg-amber-600 hover:bg-amber-700 text-xs ring-2 ring-amber-300'
+              }
+              disabled={!selected || isSaving || (selected?.tipo === 'No Factura' && !nfUnlock)}
+              onClick={() => void handleValidateAndNext()}
+            >
+              {validateConfirmStep === 0 ? 'Validar y siguiente' : 'Confirmar'}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1108,261 +1317,334 @@ export function RevisionsTable({
           width: ${scope === 'history' ? '94px' : '110px'};
           min-width: ${scope === 'history' ? '94px' : '110px'};
         }
+
+        .revisions-expanded-panel {
+          animation: revisionsExpandIn 420ms cubic-bezier(0.16, 1, 0.3, 1);
+          transform-origin: top center;
+          will-change: opacity, transform;
+        }
+
+        .revisions-expanded-panel.closing {
+          animation: revisionsExpandOut 320ms cubic-bezier(0.4, 0, 1, 1) forwards;
+        }
+
+        @keyframes revisionsExpandIn {
+          from {
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes revisionsExpandOut {
+          from {
+            opacity: 1;
+            transform: translateY(0);
+          }
+          to {
+            opacity: 0;
+            transform: translateY(-6px);
+          }
+        }
       `}</style>
 
-      {mode === 'list' ? (
-        <div className="flex-1 min-h-0 rounded-md border overflow-hidden">
-          <div className="h-full overflow-y-auto">
-            <Table className="revisions-table text-xs">
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} className="truncate">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(header.column.columnDef.header, header.getContext())}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    className={`${row.original.id === selectedId ? getSelectedRowClasses(true) : getRowClasses(row.original.tipo)} cursor-pointer`}
-                    onClick={() => {
-                      onSelect?.(row.original.id, row.original);
-                      setMode('review');
-                    }}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className="truncate">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
-      ) : (
-        <div className="relative flex-1 min-h-0 overflow-y-auto rounded-md border border-slate-200 bg-white p-3">
-          {selected?.tipo === 'No Factura' && !nfUnlock ? (
-            <div className="absolute inset-0 z-10 bg-slate-950/24 backdrop-blur-sm">
-              <div className="flex h-full items-start justify-center px-3">
-                <div className="mt-14 w-full max-w-md rounded-lg bg-white px-3 py-2 text-center shadow-lg">
-                  <div className="text-xs font-semibold text-slate-900">
-                    ¿Es un documento que debas contabilizar?
-                  </div>
-                  <div className="mt-2 flex flex-wrap justify-center gap-2">
-                    <Button
-                      type="button"
-                      className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
+      <div className="flex-1 min-h-0 rounded-md border overflow-hidden">
+        <div ref={tableScrollRef} className="h-full overflow-y-auto">
+          <Table className="revisions-table text-xs">
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="truncate">
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.map((row) => {
+                const isSelected = row.original.id === selectedId;
+                const shouldExpand = mode === 'review' && isSelected && !!selected;
+                const isClosing = closingInvoiceId === row.original.id;
+                const shouldRenderExpanded = shouldExpand || isClosing;
+
+                return (
+                  <React.Fragment key={row.id}>
+                    <TableRow
+                      ref={(node) => {
+                        if (node) {
+                          rowElementRefs.current.set(row.original.id, node);
+                        } else {
+                          rowElementRefs.current.delete(row.original.id);
+                        }
+                      }}
+                      className={`${isSelected ? getSelectedRowClasses(true) : getRowClasses(row.original.tipo)} cursor-pointer transition-colors duration-200`}
                       onClick={() => {
-                        setNfUnlock(true);
-                        setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
+                        if (isSelected && mode === 'review') {
+                          if (closeAnimationTimeoutRef.current) {
+                            clearTimeout(closeAnimationTimeoutRef.current);
+                            closeAnimationTimeoutRef.current = null;
+                          }
+                          lastAutoScrolledInvoiceIdRef.current = row.original.id;
+                          scrollInvoiceRowToTop(row.original.id, 300);
+                          setClosingInvoiceId(row.original.id);
+                          setMode('list');
+                          setValidateConfirmStep(0);
+                          closeAnimationTimeoutRef.current = setTimeout(() => {
+                            setClosingInvoiceId((prev) => (prev === row.original.id ? null : prev));
+                            closeAnimationTimeoutRef.current = null;
+                          }, 320);
+                          return;
+                        }
+
+                        if (closeAnimationTimeoutRef.current) {
+                          clearTimeout(closeAnimationTimeoutRef.current);
+                          closeAnimationTimeoutRef.current = null;
+                        }
+                        setClosingInvoiceId(null);
+                        onSelect?.(row.original.id, row.original);
+                        setValidateConfirmStep(0);
+                        setMode('review');
+                        lastAutoScrolledInvoiceIdRef.current = null;
                       }}
                     >
-                      Sí
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-7 text-xs"
-                      disabled={isSaving}
-                      onClick={() => void handleNoFacturaConfirm()}
-                    >
-                      No
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-          {selected ? (
-            <div className="mt-3 relative overflow-hidden rounded-md">
-              <div className={selected.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-[1px] select-none' : ''}>
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Número</div>
-                      <Input
-                        className="h-9 text-xs"
-                        value={reviewForm.numero}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, numero: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Fecha</div>
-                      <Input
-                        type="date"
-                        className="h-9 text-xs"
-                        value={reviewForm.fecha}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, fecha: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <div className="pl-1 text-xs font-medium text-slate-600">Tipo</div>
-                      <select
-                        className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
-                        value={reviewForm.tipo}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, tipo: e.target.value }))}
-                      >
-                        <option value="Ingresos">Ingresos</option>
-                        <option value="Gastos">Gastos</option>
-                        <option value="Por Revisar">Por Revisar</option>
-                        <option value="No Factura">No Factura</option>
-                      </select>
-                    </div>
-                  </div>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="truncate">
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
 
-                  <div className="mt-2" />
+                    {shouldRenderExpanded ? (
+                      <TableRow className="bg-slate-50/70">
+                        <TableCell colSpan={table.getVisibleFlatColumns().length} className="!p-0">
+                          <div className={`revisions-expanded-panel relative m-2 overflow-hidden rounded-lg border border-slate-300 bg-white p-3 shadow-[0_18px_42px_rgba(15,23,42,0.16)] text-left ${isClosing ? 'closing' : ''}`}>
+                            <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-slate-300/80 to-transparent" />
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-slate-300/70 to-transparent" />
+                            {selected?.tipo === 'No Factura' && !nfUnlock ? (
+                              <div className="absolute inset-0 z-10 bg-slate-950/24 backdrop-blur-sm">
+                                <div className="flex h-full items-start justify-center px-3">
+                                  <div className="mt-8 w-full max-w-md rounded-lg bg-white px-3 py-2 text-center shadow-lg">
+                                    <div className="text-xs font-semibold text-slate-900">¿Es un documento que debas contabilizar?</div>
+                                    <div className="mt-2 flex flex-wrap justify-center gap-2">
+                                      <Button
+                                        type="button"
+                                        className="h-7 bg-slate-900 hover:bg-slate-900 text-xs"
+                                        onClick={() => {
+                                          if (selected) {
+                                            unlockedNoFacturaIdsRef.current.add(selected.id);
+                                          }
+                                          setNfUnlock(true);
+                                          setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
+                                        }}
+                                      >
+                                        Sí
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-7 text-xs"
+                                        disabled={isSaving}
+                                        onClick={() => void handleNoFacturaConfirm()}
+                                      >
+                                        No
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : null}
 
-                  <div className="space-y-2">
-                    <div className="text-[13px] font-semibold text-slate-800">Datos Comprador</div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                        <Input
-                          className="h-8 text-xs"
-                          value={reviewForm.buyerTaxId}
-                          onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
-                        <Input
-                          className="h-8 text-xs"
-                          value={reviewForm.buyerName}
-                          onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                            <div className={selected?.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-[1px] select-none' : ''}>
+                              <div className="grid grid-cols-1 gap-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                  <div>
+                                    <div className="text-left pl-1 text-xs font-medium text-slate-600">Número</div>
+                                    <Input
+                                      className="h-9 text-xs"
+                                      value={reviewForm.numero}
+                                      onChange={(e) => setReviewForm((p) => ({ ...p, numero: e.target.value }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div className="text-left pl-1 text-xs font-medium text-slate-600">Fecha</div>
+                                    <Input
+                                      type="date"
+                                      className="h-9 text-xs"
+                                      value={reviewForm.fecha}
+                                      onChange={(e) => setReviewForm((p) => ({ ...p, fecha: e.target.value }))}
+                                    />
+                                  </div>
+                                  <div>
+                                    <div className="text-left pl-1 text-xs font-medium text-slate-600">Tipo</div>
+                                    <select
+                                      className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
+                                      value={reviewForm.tipo}
+                                      onChange={(e) => {
+                                        setReviewForm((p) => ({ ...p, tipo: e.target.value }));
+                                      }}
+                                    >
+                                      <option value="Ingresos">Ingresos</option>
+                                      <option value="Gastos">Gastos</option>
+                                      <option value="Por Revisar">Por Revisar</option>
+                                      <option value="No Factura">No Factura</option>
+                                    </select>
+                                  </div>
+                                </div>
 
-                  <div className="mt-2" />
+                                <div className="mt-2" />
 
-                  <div className="space-y-2">
-                    <div className="text-[13px] font-semibold text-slate-800">Datos Vendedor</div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                        <Input
-                          className="h-8 text-xs"
-                          value={reviewForm.sellerTaxId}
-                          onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
-                        <Input
-                          className="h-8 text-xs"
-                          value={reviewForm.sellerName}
-                          onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                                <div className="space-y-2">
+                                  <div className="text-left text-[13px] font-semibold text-slate-800">Datos Comprador</div>
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                                      <Input
+                                        className="h-8 text-xs"
+                                        value={reviewForm.buyerTaxId}
+                                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
+                                      <Input
+                                        className="h-8 text-xs"
+                                        value={reviewForm.buyerName}
+                                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
 
-                  <div className="mt-2" />
+                                <div className="mt-2" />
 
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">IVA</div>
-                        <div className="relative">
-                          <Input
-                            inputMode="decimal"
-                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            value={reviewForm.iva}
-                            onChange={(e) => setReviewForm((p) => ({ ...p, iva: e.target.value }))}
-                          />
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                            EUR
+                                <div className="space-y-2">
+                                  <div className="text-left text-[13px] font-semibold text-slate-800">Datos Vendedor</div>
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                                      <Input
+                                        className="h-8 text-xs"
+                                        value={reviewForm.sellerTaxId}
+                                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
+                                      />
+                                    </div>
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
+                                      <Input
+                                        className="h-8 text-xs"
+                                        value={reviewForm.sellerName}
+                                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-2" />
+
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">IVA</div>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="decimal"
+                                          className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          value={reviewForm.iva}
+                                          onChange={(e) => setReviewForm((p) => ({ ...p, iva: e.target.value }))}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                                          EUR
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Descuentos</div>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="decimal"
+                                          className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          value={reviewForm.descuentos}
+                                          onChange={(e) => setReviewForm((p) => ({ ...p, descuentos: e.target.value }))}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                                          EUR
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Retenciones</div>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="decimal"
+                                          className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          value={reviewForm.retenciones}
+                                          onChange={(e) => setReviewForm((p) => ({ ...p, retenciones: e.target.value }))}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                                          EUR
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Importe sin IVA</div>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="decimal"
+                                          className="h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          value={reviewForm.importeSinIva}
+                                          onChange={(e) => setReviewForm((p) => ({ ...p, importeSinIva: e.target.value }))}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                                          EUR
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Importe Total</div>
+                                      <div className="relative">
+                                        <Input
+                                          inputMode="decimal"
+                                          className={`h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                            showAmountsMismatchHint && amountsCheck.status === 'mismatch'
+                                              ? 'ring-2 ring-red-300 ring-offset-2 ring-offset-white'
+                                              : ''
+                                          }`}
+                                          value={reviewForm.importeTotal}
+                                          onChange={(e) => setReviewForm((p) => ({ ...p, importeTotal: e.target.value }))}
+                                        />
+                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                                          EUR
+                                        </div>
+                                      </div>
+                                      {showAmountsMismatchHint && amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
+                                        <div className="mt-1 pl-1 text-[11px] font-semibold text-red-700">
+                                          Check importes incorrecto. Suma = {amountsCheck.expected.toFixed(2)}€
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Descuentos</div>
-                        <div className="relative">
-                          <Input
-                            inputMode="decimal"
-                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            value={reviewForm.descuentos}
-                            onChange={(e) => setReviewForm((p) => ({ ...p, descuentos: e.target.value }))}
-                          />
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                            EUR
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Retenciones</div>
-                        <div className="relative">
-                          <Input
-                            inputMode="decimal"
-                            className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            value={reviewForm.retenciones}
-                            onChange={(e) => setReviewForm((p) => ({ ...p, retenciones: e.target.value }))}
-                          />
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                            EUR
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Importe sin IVA</div>
-                        <div className="relative">
-                          <Input
-                            inputMode="decimal"
-                            className="h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            value={reviewForm.importeSinIva}
-                            onChange={(e) => setReviewForm((p) => ({ ...p, importeSinIva: e.target.value }))}
-                          />
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                            EUR
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="pl-1 text-xs font-medium text-slate-600">Importe Total</div>
-                        <div className="relative">
-                          <Input
-                            inputMode="decimal"
-                            className={`h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                              showAmountsMismatchHint && amountsCheck.status === 'mismatch'
-                                ? 'ring-2 ring-red-300 ring-offset-2 ring-offset-white'
-                                : ''
-                            }`}
-                            value={reviewForm.importeTotal}
-                            onChange={(e) => setReviewForm((p) => ({ ...p, importeTotal: e.target.value }))}
-                          />
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                            EUR
-                          </div>
-                        </div>
-                        {showAmountsMismatchHint && amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
-                          <div className="mt-1 pl-1 text-[11px] font-semibold text-red-700">
-                            Check importes incorrecto. Suma = {amountsCheck.expected.toFixed(2)}€
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-600">No hay facturas pendientes.</div>
-          )}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </React.Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
-      )}
+      </div>
 
       {hasActiveFilters && (
         <div className="flex items-center justify-between mt-4 flex-wrap gap-2">

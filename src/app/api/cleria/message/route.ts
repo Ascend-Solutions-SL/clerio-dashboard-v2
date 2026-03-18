@@ -5,7 +5,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
 type Body = {
   conversation_id: string;
   user_uid: string;
-  empresa_id: number;
+  empresa_id: number | string | null;
   message: string;
 };
 
@@ -75,9 +75,10 @@ export async function POST(request: NextRequest) {
 
   const conversationId = String(body?.conversation_id ?? '').trim();
   const userUid = String(body?.user_uid ?? '').trim();
+  const requestedEmpresaIdRaw = body?.empresa_id;
   const message = String(body?.message ?? '').trim();
 
-  if (!conversationId || !userUid || !message) {
+  if (!conversationId || !userUid || !message || requestedEmpresaIdRaw == null || `${requestedEmpresaIdRaw}`.trim() === '') {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
   }
 
@@ -102,10 +103,6 @@ export async function POST(request: NextRequest) {
 
   const empresaId = profile?.empresa_id ?? null;
   if (empresaId == null) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  if (Number(body.empresa_id) !== empresaId) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
@@ -148,6 +145,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const isUntitledConversation = String(conversation.title ?? '').trim().toLowerCase() === 'nuevo chat';
+  if (isUntitledConversation) {
+    const title = await generateTitleFromMessage(message);
+    if (title) {
+      const { error: titleError } = await supabase
+        .schema('public')
+        .from('cleria_conversations')
+        .update({ title, updated_at: new Date().toISOString() })
+        .eq('id', conversationId)
+        .eq('user_uid', user.id)
+        .eq('empresa_id', empresaId);
+
+      if (titleError) {
+        console.error('cleria/message: failed to update title', titleError);
+      }
+    }
+  }
+
   const markCancelled = async () => {
     const { error } = await supabase
       .schema('public')
@@ -174,29 +189,6 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  const persistAssistantError = async (content: string, detail?: string) => {
-    const metadata = {
-      status: 'error',
-      ignore_in_context: true,
-      detail: detail || null,
-    };
-
-    const { error } = await supabase
-      .schema('public')
-      .from('cleria_messages')
-      .insert({
-        conversation_id: conversationId,
-        role: 'assistant',
-        content,
-        type: 'error',
-        metadata,
-      });
-
-    if (error) {
-      console.error('cleria/message: failed to persist assistant error', error);
-    }
-  };
-
   let n8nRes: Response;
   try {
     n8nRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook/cleria_message', {
@@ -204,7 +196,6 @@ export async function POST(request: NextRequest) {
       headers: {
         'Content-Type': 'application/json',
       },
-      signal: request.signal,
       body: JSON.stringify({
         conversation_id: conversationId,
         user_uid: user.id,
@@ -222,10 +213,6 @@ export async function POST(request: NextRequest) {
     console.error('cleria/message: failed to reach n8n', err);
 
     await markUserErrored();
-    await persistAssistantError(
-      'No se pudo obtener respuesta. Inténtalo de nuevo.',
-      err instanceof Error ? err.message : undefined
-    );
 
     return NextResponse.json({ status: 'ok', conversation_id: conversationId }, { status: 200 });
   }
@@ -234,10 +221,9 @@ export async function POST(request: NextRequest) {
     const text = await n8nRes.text().catch(() => '');
 
     await markUserErrored();
-    await persistAssistantError(
-      'No se pudo obtener respuesta. Inténtalo de nuevo.',
-      text || `n8n error (${n8nRes.status})`
-    );
+    if (text) {
+      console.error('cleria/message: n8n returned non-ok response', text);
+    }
 
     return NextResponse.json({ status: 'ok', conversation_id: conversationId }, { status: 200 });
   }
@@ -259,21 +245,6 @@ export async function POST(request: NextRequest) {
     console.error('cleria/message: failed to clear pending metadata', clearMetadataError);
   }
 
-  const { count, error: countError } = await supabase
-    .schema('public')
-    .from('cleria_messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversationId)
-    .eq('role', 'user');
-
-  if (countError) {
-    console.error('cleria/message: failed to count messages', countError);
-    return NextResponse.json(
-      { error: 'Failed to read conversation messages', detail: isDev ? countError.message : undefined },
-      { status: 500 }
-    );
-  }
-
   const { error: updatedError } = await supabase
     .schema('public')
     .from('cleria_conversations')
@@ -286,21 +257,6 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to update conversation', detail: isDev ? updatedError.message : undefined },
       { status: 500 }
     );
-  }
-
-  if (count === 1) {
-    const title = await generateTitleFromMessage(message);
-    if (title) {
-      const { error: titleError } = await supabase
-        .schema('public')
-        .from('cleria_conversations')
-        .update({ title, updated_at: new Date().toISOString() })
-        .eq('id', conversationId);
-
-      if (titleError) {
-        console.error('cleria/message: failed to update title', titleError);
-      }
-    }
   }
 
   return NextResponse.json({ status: 'ok', conversation_id: conversationId });

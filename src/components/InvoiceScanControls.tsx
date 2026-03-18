@@ -27,7 +27,14 @@ type HoldedKeyStatusResponse = {
   connected?: boolean;
 };
 
+type InvoiceScanMetaCacheEntry = {
+  emailType: string | null;
+  lastScanAt: string | null;
+  isHoldedConnected: boolean;
+};
+
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
+const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
 
 const formatElapsedSince = (iso: string | null) => {
   if (!iso) {
@@ -61,12 +68,42 @@ const formatElapsedSince = (iso: string | null) => {
 export function InvoiceScanControls({ onScanned, showHoldedScan = false }: InvoiceScanControlsProps) {
   const { user } = useDashboardSession();
   const { toast } = useToast();
+  const cacheKey = `${user?.id ?? 'anonymous'}|${showHoldedScan ? 'holded' : 'generic'}`;
+  const cachedMeta = invoiceScanMetaCache.get(cacheKey);
   const [loading, setLoading] = React.useState(false);
   const [holdedLoading, setHoldedLoading] = React.useState(false);
-  const [lastScanAt, setLastScanAt] = React.useState<string | null>(null);
-  const [emailType, setEmailType] = React.useState<string | null>(null);
-  const [isBootstrapping, setIsBootstrapping] = React.useState(true);
-  const [isHoldedConnected, setIsHoldedConnected] = React.useState(false);
+  const [lastScanAt, setLastScanAt] = React.useState<string | null>(() => cachedMeta?.lastScanAt ?? null);
+  const [emailType, setEmailType] = React.useState<string | null>(() => cachedMeta?.emailType ?? null);
+  const [isBootstrapping, setIsBootstrapping] = React.useState(() => !Boolean(cachedMeta));
+  const [isHoldedConnected, setIsHoldedConnected] = React.useState(() => cachedMeta?.isHoldedConnected ?? false);
+
+  React.useEffect(() => {
+    const cached = invoiceScanMetaCache.get(cacheKey);
+    if (cached) {
+      setEmailType(cached.emailType);
+      setLastScanAt(cached.lastScanAt);
+      setIsHoldedConnected(cached.isHoldedConnected);
+      setIsBootstrapping(false);
+      return;
+    }
+
+    setEmailType(null);
+    setLastScanAt(null);
+    setIsHoldedConnected(false);
+    setIsBootstrapping(true);
+  }, [cacheKey]);
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      return;
+    }
+
+    invoiceScanMetaCache.set(cacheKey, {
+      emailType,
+      lastScanAt,
+      isHoldedConnected,
+    });
+  }, [cacheKey, emailType, isHoldedConnected, lastScanAt, user?.id]);
 
   const loadScanMeta = React.useCallback(async () => {
     if (!user?.id) {
@@ -77,7 +114,8 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       return;
     }
 
-    setIsBootstrapping(true);
+    const cached = invoiceScanMetaCache.get(cacheKey);
+    setIsBootstrapping(!cached);
 
     const [{ data: authUser, error: authUserError }, { data: lastLog, error: logError }, holdedStatusResult] =
       await Promise.all([
@@ -114,26 +152,31 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     const typedAuthUser = authUser as AuthUserScanSettings | null;
     const typedLastLog = lastLog as ScanLogRow | null;
 
-    setEmailType(typedAuthUser?.email_type?.trim() || null);
-    setLastScanAt(typedLastLog?.created_at ?? null);
+    const nextEmailType = authUserError ? (cached?.emailType ?? null) : typedAuthUser?.email_type?.trim() || null;
+    const nextLastScanAt = logError ? (cached?.lastScanAt ?? null) : typedLastLog?.created_at ?? null;
+
+    setEmailType(nextEmailType);
+    setLastScanAt(nextLastScanAt);
 
     if (showHoldedScan) {
       try {
         if (holdedStatusResult && holdedStatusResult.ok) {
           const payload = (await holdedStatusResult.json()) as HoldedKeyStatusResponse;
           setIsHoldedConnected(Boolean(payload.connected));
-        } else {
-          setIsHoldedConnected(false);
+        } else if (cached) {
+          setIsHoldedConnected(cached.isHoldedConnected);
         }
       } catch {
-        setIsHoldedConnected(false);
+        if (cached) {
+          setIsHoldedConnected(cached.isHoldedConnected);
+        }
       }
     } else {
       setIsHoldedConnected(false);
     }
 
     setIsBootstrapping(false);
-  }, [showHoldedScan, user?.id]);
+  }, [cacheKey, showHoldedScan, user?.id]);
 
   React.useEffect(() => {
     void loadScanMeta();

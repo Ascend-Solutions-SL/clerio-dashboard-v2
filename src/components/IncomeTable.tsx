@@ -36,6 +36,7 @@ import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filt
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
+const incomeDataCache = new Map<string, Income[]>();
 
 type PendingTooltipState = {
   open: boolean;
@@ -447,6 +448,7 @@ export const columns: ColumnDef<Income>[] = [
 export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refreshKey = 0 }: IncomeTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Income[]>([]);
+  const [isDataHydrated, setIsDataHydrated] = React.useState(false);
   const [drawerRow, setDrawerRow] = React.useState<InvoiceDetailDrawerRow | null>(null);
   const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -461,6 +463,15 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
+  const queryCacheKey = `${empresaId ?? 'none'}|${businessName}|${filters.startDate}|${filters.endDate}`;
+
+  React.useEffect(() => {
+    const cached = incomeDataCache.get(queryCacheKey);
+    if (cached) {
+      setSourceData(cached);
+      setIsDataHydrated(true);
+    }
+  }, [queryCacheKey]);
 
   // Load table data (date filter at source)
   React.useEffect(() => {
@@ -470,6 +481,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
 
     if (!businessName && empresaId == null) {
       setSourceData([]);
+      setIsDataHydrated(true);
       return;
     }
 
@@ -505,7 +517,10 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
       }
 
       if (error || !rows) {
-        setSourceData([]);
+        if (!incomeDataCache.has(queryCacheKey)) {
+          setSourceData([]);
+        }
+        setIsDataHydrated(true);
         return;
       }
 
@@ -544,7 +559,15 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
         };
       });
 
-      setSourceData(mapped);
+      const cached = incomeDataCache.get(queryCacheKey) ?? null;
+      const didChange = JSON.stringify(cached) !== JSON.stringify(mapped);
+      if (didChange) {
+        incomeDataCache.set(queryCacheKey, mapped);
+        setSourceData(mapped);
+      } else if (cached) {
+        setSourceData(cached);
+      }
+      setIsDataHydrated(true);
     };
 
     void loadData();
@@ -552,7 +575,7 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
     return () => {
       isMounted = false;
     };
-  }, [isLoading, businessName, empresaId, filters.startDate, filters.endDate, refreshKey]);
+  }, [isLoading, businessName, empresaId, filters.startDate, filters.endDate, queryCacheKey, refreshKey]);
 
   const filteredData = React.useMemo(() => {
     let next = sourceData;
@@ -572,10 +595,13 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
   }, [sourceData, filters.clients, filters.minAmount, filters.maxAmount]);
 
   React.useEffect(() => {
+    if (!isDataHydrated) {
+      return;
+    }
     const total = filteredData.reduce((sum, row) => sum + (Number(row.totalValue) || 0), 0);
     onTotalIncomeChange?.(total);
     onInvoiceCountChange?.(filteredData.length);
-  }, [filteredData, onTotalIncomeChange, onInvoiceCountChange]);
+  }, [filteredData, isDataHydrated, onTotalIncomeChange, onInvoiceCountChange]);
 
   const clients = React.useMemo(
     () =>

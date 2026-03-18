@@ -37,6 +37,8 @@ type CleriaMessageRow = {
 const CLERIA_BACKEND_TYPES: CleriaBackendType[] = ['count', 'sum_total', 'sum_sin_iva', 'sum_iva', 'list', 'error'];
 const CONVERSATION_SWITCH_MIN_OVERLAY_MS = 320;
 const CONVERSATION_REVEAL_MS = 360;
+const PENDING_REFRESH_INTERVAL_MS = 2200;
+const INITIAL_ASSISTANT_MESSAGE = 'Hola, soy Cler IA y estoy aquí para ayudarte con los datos financieros de tu empresa.';
 
 const isCleriaBackendType = (value: unknown): value is CleriaBackendType => {
   return typeof value === 'string' && CLERIA_BACKEND_TYPES.includes(value as CleriaBackendType);
@@ -250,7 +252,8 @@ const Cleria: React.FC<CleriaProps> = ({
 }) => {
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [draft, setDraft] = useState('');
-  const [isWaitingResponse, setIsWaitingResponse] = useState(false);
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
+  const [pendingStartedAtIso, setPendingStartedAtIso] = useState<string | null>(null);
   const [waitingText, setWaitingText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -267,6 +270,9 @@ const Cleria: React.FC<CleriaProps> = ({
   const pendingInitialPositionRef = useRef(false);
   const skipNextAutoScrollRef = useRef(false);
   const hasCompletedInitialHydrationRef = useRef(false);
+  const pendingConversationIdRef = useRef<string | null>(null);
+  const pendingPollingIntervalRef = useRef<number | null>(null);
+  const optimisticPendingMessageByConversationRef = useRef<Map<string, ChatMessage>>(new Map());
   const [drawerRow, setDrawerRow] = useState<CleriaListInvoiceRow | null>(null);
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
@@ -311,6 +317,13 @@ const Cleria: React.FC<CleriaProps> = ({
       });
 
     return mapped;
+  }, []);
+
+  const stopPendingRefresh = useCallback(() => {
+    if (pendingPollingIntervalRef.current != null) {
+      window.clearInterval(pendingPollingIntervalRef.current);
+      pendingPollingIntervalRef.current = null;
+    }
   }, []);
 
   const triggerConversationReveal = useCallback(() => {
@@ -392,31 +405,66 @@ const Cleria: React.FC<CleriaProps> = ({
       const data = (await res.json().catch(() => null)) as CleriaMessageRow[] | null;
       const nextMessages = mapRowsToChatMessages(data);
 
-      messagesCacheRef.current.set(targetConversationId, nextMessages);
+      const pendingOptimisticMessage = optimisticPendingMessageByConversationRef.current.get(targetConversationId);
+      const nextMessagesWithPending = (() => {
+        if (!pendingOptimisticMessage) {
+          return nextMessages;
+        }
+
+        const pendingContent = pendingOptimisticMessage.content.trim();
+        const pendingTime = pendingOptimisticMessage.createdAt ? new Date(pendingOptimisticMessage.createdAt).getTime() : 0;
+        const hasPersistedEquivalent = nextMessages.some((message) => {
+          if (message.role !== 'user') {
+            return false;
+          }
+          if (message.content.trim() !== pendingContent) {
+            return false;
+          }
+          if (!message.createdAt) {
+            return false;
+          }
+          const dbTime = new Date(message.createdAt).getTime();
+          return Number.isFinite(dbTime) && dbTime >= pendingTime - 15_000;
+        });
+
+        if (hasPersistedEquivalent) {
+          optimisticPendingMessageByConversationRef.current.delete(targetConversationId);
+          return nextMessages;
+        }
+
+        return [...nextMessages, pendingOptimisticMessage];
+      })();
+
+      messagesCacheRef.current.set(targetConversationId, nextMessagesWithPending);
       loadedConversationIdsRef.current.add(targetConversationId);
 
       if (activeConversationRef.current === targetConversationId) {
-        setMessages(nextMessages);
+        setMessages(nextMessagesWithPending);
         hasCompletedInitialHydrationRef.current = true;
         if (revealOnSet) {
           triggerConversationReveal();
         }
       }
 
-      return nextMessages;
+      return nextMessagesWithPending;
     },
     [mapRowsToChatMessages, triggerConversationReveal]
+  );
+
+  const startPendingRefresh = useCallback(
+    (targetConversationId: string) => {
+      stopPendingRefresh();
+      pendingPollingIntervalRef.current = window.setInterval(() => {
+        void loadConversationMessages(targetConversationId, { force: true });
+      }, PENDING_REFRESH_INTERVAL_MS);
+    },
+    [loadConversationMessages, stopPendingRefresh]
   );
 
   useEffect(() => {
     activeConversationRef.current = conversationId;
     pendingInitialPositionRef.current = true;
     setDrawerRow(null);
-    setIsWaitingResponse(false);
-    setWaitingText('');
-    pendingUserMessageIdRef.current = null;
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = null;
 
     if (!conversationId) {
       setMessages([]);
@@ -458,6 +506,7 @@ const Cleria: React.FC<CleriaProps> = ({
       });
     } else {
       finishConversationHydration();
+      void loadConversationMessages(conversationId, { force: true });
     }
 
     return () => {
@@ -534,7 +583,10 @@ const Cleria: React.FC<CleriaProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!isWaitingResponse) {
+    const isWaitingForActiveConversation =
+      pendingConversationId !== null && conversationId !== null && pendingConversationId === conversationId;
+
+    if (!isWaitingForActiveConversation) {
       setWaitingText('');
       return;
     }
@@ -554,7 +606,7 @@ const Cleria: React.FC<CleriaProps> = ({
     return () => {
       window.clearInterval(id);
     };
-  }, [isWaitingResponse]);
+  }, [conversationId, pendingConversationId]);
 
   useEffect(() => {
     if (!prefetchConversationIds || prefetchConversationIds.length === 0) {
@@ -587,8 +639,55 @@ const Cleria: React.FC<CleriaProps> = ({
   }, [draft]);
 
   const isChatReady = Boolean(user?.id);
-  const visibleMessages = useMemo(() => messages ?? [], [messages]);
+  const visibleMessages = useMemo(() => {
+    const base = messages ?? [];
+    if (conversationId || base.length > 0) {
+      return base;
+    }
+
+    return [
+      {
+        id: 'local-initial-assistant-message',
+        role: 'assistant',
+        content: INITIAL_ASSISTANT_MESSAGE,
+        createdAt: null,
+      } satisfies ChatMessage,
+    ];
+  }, [conversationId, messages]);
   const isHydratingMessages = messages === null;
+
+  const isWaitingResponse = pendingConversationId !== null;
+  const hasAssistantReplyForPending = useMemo(() => {
+    if (!pendingStartedAtIso) {
+      return false;
+    }
+
+    const pendingStartedAtMs = new Date(pendingStartedAtIso).getTime();
+    if (!Number.isFinite(pendingStartedAtMs)) {
+      return false;
+    }
+
+    return visibleMessages.some((message) => {
+      if (message.role !== 'assistant') {
+        return false;
+      }
+      if (message.id === 'local-initial-assistant-message') {
+        return false;
+      }
+      if (!message.createdAt) {
+        return false;
+      }
+
+      const assistantCreatedAtMs = new Date(message.createdAt).getTime();
+      return Number.isFinite(assistantCreatedAtMs) && assistantCreatedAtMs >= pendingStartedAtMs - 1_000;
+    });
+  }, [pendingStartedAtIso, visibleMessages]);
+
+  const isWaitingForActiveConversation =
+    pendingConversationId !== null &&
+    conversationId !== null &&
+    pendingConversationId === conversationId &&
+    !hasAssistantReplyForPending;
 
   const canSend = useMemo(() => {
     if (!isChatReady) return false;
@@ -598,8 +697,11 @@ const Cleria: React.FC<CleriaProps> = ({
 
   const hasStartedConversation = useMemo(
     () =>
-      isHydratingMessages || draft.trim().length > 0 || isWaitingResponse || visibleMessages.some((m) => m.role === 'user'),
-    [draft, isHydratingMessages, isWaitingResponse, visibleMessages]
+      isHydratingMessages ||
+      draft.trim().length > 0 ||
+      isWaitingForActiveConversation ||
+      visibleMessages.some((m) => m.role === 'user'),
+    [draft, isHydratingMessages, isWaitingForActiveConversation, visibleMessages]
   );
   const shouldShowWelcomeText = !isBootstrapping && !isHydratingMessages && !hasStartedConversation;
   const isSuggestionsVisuallyCollapsed = suggestionsCollapsed || isBootstrapping || isHydratingMessages;
@@ -763,18 +865,35 @@ const Cleria: React.FC<CleriaProps> = ({
     };
 
     setMessages((prev) => {
-      const next: ChatMessage[] = [...(prev ?? []), optimisticUserMessage];
+      const base = prev ?? [];
+      const shouldInjectInitialAssistant = !conversationId && base.length === 0;
+      const initialAssistant = shouldInjectInitialAssistant
+        ? [
+            {
+              id: 'local-initial-assistant-message',
+              role: 'assistant',
+              content: INITIAL_ASSISTANT_MESSAGE,
+              createdAt: null,
+            } satisfies ChatMessage,
+          ]
+        : [];
+
+      const next: ChatMessage[] = [...base, ...initialAssistant, optimisticUserMessage];
       messagesCacheRef.current.set(targetConversationId, next);
       loadedConversationIdsRef.current.add(targetConversationId);
       return next;
     });
+    optimisticPendingMessageByConversationRef.current.set(targetConversationId, optimisticUserMessage);
     setAnimatedMessageId(optimisticUserId);
     setSuggestionsCollapsed(true);
 
     setDraft('');
     pendingUserMessageIdRef.current = optimisticUserId;
 
-    setIsWaitingResponse(true);
+    setPendingStartedAtIso(nowIso);
+    setPendingConversationId(targetConversationId);
+    pendingConversationIdRef.current = targetConversationId;
+    startPendingRefresh(targetConversationId);
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
     try {
@@ -805,30 +924,23 @@ const Cleria: React.FC<CleriaProps> = ({
 
       await loadConversationMessages(targetConversationId, { force: true });
 
-      if (isFirstUserMessage) {
+      if (isFirstUserMessage || !conversationId) {
         onConversationTitleMaybeUpdated?.();
       }
     } catch (error) {
       const isAborted = error instanceof DOMException && error.name === 'AbortError';
       if (!isAborted) {
         console.error('Error recibiendo respuesta de n8n (cleria_message)', error);
-        const optimisticErrorMessage: ChatMessage = {
-          id: `${Date.now()}-assistant`,
-          role: 'assistant',
-          content: 'No se pudo obtener respuesta. Inténtalo de nuevo.',
-          responseType: 'error',
-          responseData: null,
-          createdAt: new Date().toISOString(),
-        };
-        setMessages((prev) => {
-          const next: ChatMessage[] = [...(prev ?? []), optimisticErrorMessage];
-          messagesCacheRef.current.set(targetConversationId, next);
-          loadedConversationIdsRef.current.add(targetConversationId);
-          return next;
-        });
+        await loadConversationMessages(targetConversationId, { force: true });
       }
     } finally {
-      setIsWaitingResponse(false);
+      optimisticPendingMessageByConversationRef.current.delete(targetConversationId);
+      stopPendingRefresh();
+      if (pendingConversationIdRef.current === targetConversationId) {
+        pendingConversationIdRef.current = null;
+        setPendingConversationId(null);
+      }
+      setPendingStartedAtIso(null);
       abortControllerRef.current = null;
       pendingUserMessageIdRef.current = null;
     }
@@ -851,10 +963,24 @@ const Cleria: React.FC<CleriaProps> = ({
         return next;
       });
     }
-    setIsWaitingResponse(false);
+    if (pendingConversationIdRef.current) {
+      optimisticPendingMessageByConversationRef.current.delete(pendingConversationIdRef.current);
+    }
+    stopPendingRefresh();
+    pendingConversationIdRef.current = null;
+    setPendingConversationId(null);
+    setPendingStartedAtIso(null);
     setWaitingText('');
     inputRef.current?.focus();
   };
+
+  useEffect(() => {
+    return () => {
+      stopPendingRefresh();
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    };
+  }, [stopPendingRefresh]);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[1360px] flex-col px-3 pb-3 pt-4 sm:px-5">
@@ -970,7 +1096,7 @@ const Cleria: React.FC<CleriaProps> = ({
               );
             })}
 
-            {isWaitingResponse ? (
+            {isWaitingForActiveConversation ? (
               <div className="flex flex-col items-start gap-1.5">
                 <div className="flex items-center justify-start gap-2">
                   <div className="relative h-7 w-7 flex-shrink-0">

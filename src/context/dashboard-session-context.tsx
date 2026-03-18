@@ -11,7 +11,9 @@ interface DashboardSessionState {
   user: SessionUser | null;
   isLoading: boolean;
   error: string | null;
+  isSessionExpired: boolean;
   refresh: () => Promise<void>;
+  redirectToLogin: () => void;
 }
 
 const DashboardSessionContext = createContext<DashboardSessionState | undefined>(undefined);
@@ -21,19 +23,44 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
   const [user, setUser] = useState<SessionUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSessionExpired, setIsSessionExpired] = useState(false);
+
+  const markSessionExpired = useCallback(() => {
+    setUser(null);
+    setIsLoading(false);
+    setIsSessionExpired(true);
+  }, []);
 
   const touchAuthActivity = useCallback(async () => {
     try {
-      await fetch('/api/auth/touch', {
+      const res = await fetch('/api/auth/touch', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
       });
+
+      if (res.status === 401) {
+        markSessionExpired();
+      }
     } catch {
       // ignore
     }
+  }, [markSessionExpired]);
+
+  const redirectToLogin = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    const url = new URL('/login', window.location.origin);
+    if (redirect !== '/') {
+      url.searchParams.set('redirect', redirect);
+    }
+    url.searchParams.set('reason', 'expired');
+    window.location.assign(url.toString());
   }, []);
 
   const throttledTouch = useMemo(() => {
@@ -61,8 +88,13 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
 
       if (userError || !user) {
         setUser(null);
+        if (pathname !== '/login' && pathname !== '/onboarding') {
+          setIsSessionExpired(true);
+        }
         return;
       }
+
+      setIsSessionExpired(false);
 
       throttledTouch();
 
@@ -93,30 +125,49 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
     } catch (fetchError) {
       const reason = fetchError instanceof Error ? fetchError.message : 'Error desconocido';
       setError(reason);
+
+      const reasonLower = reason.toLowerCase();
+      if (
+        pathname !== '/login' &&
+        pathname !== '/onboarding' &&
+        (reasonLower.includes('unauthorized') ||
+          reasonLower.includes('invalid refresh token') ||
+          reasonLower.includes('refresh token') ||
+          reasonLower.includes('jwt') ||
+          reasonLower.includes('token'))
+      ) {
+        setIsSessionExpired(true);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [throttledTouch]);
+  }, [pathname, throttledTouch]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     const { data: subscription } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!session?.user) {
-        setUser(null);
+        if (pathname !== '/login' && pathname !== '/onboarding') {
+          markSessionExpired();
+        } else {
+          setUser(null);
+        }
         return;
       }
+      setIsSessionExpired(false);
       void loadSession();
     });
 
     return () => {
       subscription.subscription.unsubscribe();
     };
-  }, [loadSession]);
+  }, [loadSession, markSessionExpired, pathname]);
 
   useEffect(() => {
     if (pathname === '/login' || pathname === '/onboarding') {
       setUser(null);
       setIsLoading(false);
+      setIsSessionExpired(false);
       return;
     }
     void loadSession();
@@ -163,9 +214,11 @@ const DashboardSessionProvider = ({ children }: { children: React.ReactNode }) =
       user,
       isLoading,
       error,
+      isSessionExpired,
       refresh: loadSession,
+      redirectToLogin,
     }),
-    [error, isLoading, loadSession, user]
+    [error, isLoading, isSessionExpired, loadSession, redirectToLogin, user]
   );
 
   return <DashboardSessionContext.Provider value={value}>{children}</DashboardSessionContext.Provider>;

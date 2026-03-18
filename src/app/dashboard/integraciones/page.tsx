@@ -8,11 +8,17 @@ import { DriveConnectButton } from '@/features/integrations/drive/components/Dri
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
+
+type IntegrationsStatusCacheEntry = {
+  integrations: Integration[];
+  holdedApiKeyMasked: string | null;
+};
+
+const integrationsStatusCache = new Map<string, IntegrationsStatusCacheEntry>();
+let lastIntegrationsStatusCacheKey: string | null = null;
 
 type IntegrationCategory = 'popular' | 'ingresos' | 'gastos';
 type IntegrationStatus = 'connected' | 'disconnected';
@@ -184,8 +190,11 @@ const baseIntegrations: Integration[] = [
 ];
 
 const IntegracionesPage = () => {
-  const { user } = useDashboardSession();
-  const [integrations, setIntegrations] = useState<Integration[]>(baseIntegrations);
+  const { user, isLoading } = useDashboardSession();
+  const cacheKey = user?.id ?? '';
+  const resolvedCacheKey = cacheKey || lastIntegrationsStatusCacheKey || '';
+  const cachedStatus = resolvedCacheKey ? integrationsStatusCache.get(resolvedCacheKey) : null;
+  const [integrations, setIntegrations] = useState<Integration[]>(() => cachedStatus?.integrations ?? baseIntegrations);
   const integrationsRef = useRef<Integration[]>(baseIntegrations);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -202,11 +211,38 @@ const IntegracionesPage = () => {
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isHoldedModalOpen, setIsHoldedModalOpen] = useState(false);
   const [holdedApiKeyInput, setHoldedApiKeyInput] = useState('');
-  const [holdedApiKeyMasked, setHoldedApiKeyMasked] = useState<string | null>(null);
+  const [holdedApiKeyMasked, setHoldedApiKeyMasked] = useState<string | null>(() => cachedStatus?.holdedApiKeyMasked ?? null);
   const [holdedApiKeyError, setHoldedApiKeyError] = useState<string | null>(null);
   const [isSavingHoldedApiKey, setIsSavingHoldedApiKey] = useState(false);
   const [isEditingHoldedApiKey, setIsEditingHoldedApiKey] = useState(false);
-  const [isStatusesLoading, setIsStatusesLoading] = useState(true);
+  const [isStatusesLoading, setIsStatusesLoading] = useState(() => !Boolean(cachedStatus));
+
+  useEffect(() => {
+    if (!cacheKey) {
+      if (isLoading) {
+        return;
+      }
+
+      setIntegrations(baseIntegrations);
+      setHoldedApiKeyMasked(null);
+      setIsStatusesLoading(true);
+      lastIntegrationsStatusCacheKey = null;
+      return;
+    }
+
+    lastIntegrationsStatusCacheKey = cacheKey;
+    const cached = integrationsStatusCache.get(cacheKey);
+    if (cached) {
+      setIntegrations(cached.integrations);
+      setHoldedApiKeyMasked(cached.holdedApiKeyMasked);
+      setIsStatusesLoading(false);
+      return;
+    }
+
+    setIntegrations(baseIntegrations);
+    setHoldedApiKeyMasked(null);
+    setIsStatusesLoading(true);
+  }, [cacheKey, isLoading]);
 
   const filteredIntegrations = useMemo(() => {
     const normalizedQuery = search.trim().toLowerCase();
@@ -233,7 +269,33 @@ const IntegracionesPage = () => {
   }, [integrations]);
 
   useEffect(() => {
+    if (!cacheKey) {
+      return;
+    }
+
+    integrationsStatusCache.set(cacheKey, {
+      integrations,
+      holdedApiKeyMasked,
+    });
+  }, [cacheKey, holdedApiKeyMasked, integrations]);
+
+  useEffect(() => {
     let isMounted = true;
+
+    if (!cacheKey) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    if (integrationsStatusCache.has(cacheKey)) {
+      if (isMounted) {
+        setIsStatusesLoading(false);
+      }
+      return () => {
+        isMounted = false;
+      };
+    }
 
     const fetchStatuses = async () => {
       if (isMounted) {
@@ -278,21 +340,31 @@ const IntegracionesPage = () => {
       >;
 
       const holdedMeta = connectedMap.holded;
-      setHoldedApiKeyMasked(holdedMeta?.maskedApiKey ?? null);
+      const nextHoldedApiKeyMasked = holdedMeta?.maskedApiKey ?? null;
+      setHoldedApiKeyMasked(nextHoldedApiKeyMasked);
 
-      setIntegrations((prev) =>
-        prev.map((integration) => {
-          const statusMeta = connectedMap[integration.id];
-          if (!statusMeta) {
-            return integration;
-          }
+      const nextIntegrations = integrationsRef.current.map((integration) => {
+        const statusMeta = connectedMap[integration.id];
+        if (!statusMeta) {
+          return integration;
+        }
 
-          return {
-            ...integration,
-            status: statusMeta.connected ? 'connected' : 'disconnected',
-          };
-        })
-      );
+        return {
+          ...integration,
+          status: (statusMeta.connected ? 'connected' : 'disconnected') as IntegrationStatus,
+        };
+      });
+
+      const didChange = JSON.stringify(integrationsRef.current) !== JSON.stringify(nextIntegrations);
+      if (didChange) {
+        setIntegrations(nextIntegrations);
+      }
+
+      integrationsStatusCache.set(cacheKey, {
+        integrations: didChange ? nextIntegrations : integrationsRef.current,
+        holdedApiKeyMasked: nextHoldedApiKeyMasked,
+      });
+      lastIntegrationsStatusCacheKey = cacheKey;
 
       window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: Boolean(holdedMeta?.connected) } }));
 
@@ -306,7 +378,7 @@ const IntegracionesPage = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [cacheKey]);
 
   useEffect(() => {
     setActiveTab('all');

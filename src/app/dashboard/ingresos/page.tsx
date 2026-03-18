@@ -7,13 +7,21 @@ import { ArrowUpCircle, FileText, Link2 } from 'lucide-react';
 import { useInvoices } from '@/context/InvoiceContext';
 import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 import InvoiceScanControls from '@/components/InvoiceScanControls';
+import { useDashboardSession } from '@/context/dashboard-session-context';
+
+const holdedStatusCache = new Map<string, boolean>();
 
 const IngresosPage = () => {
   const { setIncomeData } = useInvoices();
+  const { user } = useDashboardSession();
+  const holdedCacheKey = user?.id ?? 'anonymous';
   const [totalIncome, setTotalIncome] = React.useState<number>(0);
   const [invoiceCount, setInvoiceCount] = React.useState<number>(0);
   const [tableRefreshKey, setTableRefreshKey] = React.useState<number>(0);
-  const [isHoldedConnected, setIsHoldedConnected] = React.useState<boolean | null>(null);
+  const [isHoldedConnected, setIsHoldedConnected] = React.useState<boolean | null>(() => {
+    const cached = holdedStatusCache.get(holdedCacheKey);
+    return cached === undefined ? null : cached;
+  });
   const prevData = useRef({ total: 0, count: 0 });
 
   useEffect(() => {
@@ -27,8 +35,12 @@ const IngresosPage = () => {
     let isMounted = true;
 
     const loadHoldedStatus = async () => {
+      const cached = holdedStatusCache.get(holdedCacheKey);
+      if (isMounted && cached !== undefined) {
+        setIsHoldedConnected(cached);
+      }
+
       try {
-        if (isMounted) setIsHoldedConnected(null);
         const response = await fetch('/api/holded/key', {
           method: 'GET',
           credentials: 'include',
@@ -36,16 +48,24 @@ const IngresosPage = () => {
         });
 
         if (!response.ok) {
-          if (isMounted) setIsHoldedConnected(false);
+          if (isMounted && cached === undefined) {
+            setIsHoldedConnected(false);
+            holdedStatusCache.set(holdedCacheKey, false);
+          }
           return;
         }
 
         const payload = (await response.json()) as { connected?: boolean };
         if (isMounted) {
-          setIsHoldedConnected(Boolean(payload.connected));
+          const nextConnected = Boolean(payload.connected);
+          setIsHoldedConnected(nextConnected);
+          holdedStatusCache.set(holdedCacheKey, nextConnected);
         }
       } catch {
-        if (isMounted) setIsHoldedConnected(false);
+        if (isMounted && cached === undefined) {
+          setIsHoldedConnected(false);
+          holdedStatusCache.set(holdedCacheKey, false);
+        }
       }
     };
 
@@ -54,13 +74,14 @@ const IngresosPage = () => {
     return () => {
       isMounted = false;
     };
-  }, [tableRefreshKey]);
+  }, [holdedCacheKey, tableRefreshKey]);
 
   useEffect(() => {
     const handler = (event: Event) => {
       const customEvent = event as CustomEvent<{ connected?: boolean }>;
       if (typeof customEvent.detail?.connected === 'boolean') {
         setIsHoldedConnected(customEvent.detail.connected);
+        holdedStatusCache.set(holdedCacheKey, customEvent.detail.connected);
       }
     };
 
@@ -68,7 +89,7 @@ const IngresosPage = () => {
     return () => {
       window.removeEventListener('holded-status-changed', handler);
     };
-  }, []);
+  }, [holdedCacheKey]);
 
   const getIncomeFontSize = (value: number) => {
     const valueStr = value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -109,7 +130,7 @@ const IngresosPage = () => {
                           isHoldedConnected === null ? 'text-gray-500' : isHoldedConnected ? 'text-green-500' : 'text-red-500'
                         }`}
                       >
-                        {isHoldedConnected === null ? 'Cargando...' : isHoldedConnected ? 'Connected' : 'Disconnected'}
+                        {isHoldedConnected === null ? 'Cargando...' : isHoldedConnected ? 'Conectado' : 'Desconectado'}
                       </span>
                     </div>
                   </div>

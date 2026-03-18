@@ -139,6 +139,7 @@ export default function DashboardHome() {
   }, [dateRange.endDate, dateRange.startDate, hasDateFilter, hasPartialDateFilter, isSessionLoading, user?.businessName, user?.empresaId]);
 
   const sourceTotals = cardsTotals ?? data;
+  const shouldShowCardsPlaceholder = !sourceTotals && (loading || cardsLoading);
 
   const totalInvoices = sourceTotals ? sourceTotals.incomeCount + sourceTotals.expenseCount : 0;
   const totalIncome = sourceTotals?.totalIncome ?? 0;
@@ -437,7 +438,7 @@ export default function DashboardHome() {
             <div className="flex flex-col md:flex-row md:justify-between gap-4 md:gap-6">
             <StatCard
               title="Facturas Procesadas"
-              value={loading || cardsLoading ? '—' : totalInvoices.toString()}
+              value={shouldShowCardsPlaceholder ? '—' : totalInvoices.toString()}
               percentage={22}
               Icon={FileText}
               size="compact"
@@ -445,7 +446,7 @@ export default function DashboardHome() {
             />
             <StatCard
               title="Ingresos"
-              value={loading || cardsLoading ? '—' : `${formatCurrency(totalIncome)}€`}
+              value={shouldShowCardsPlaceholder ? '—' : `${formatCurrency(totalIncome)}€`}
               percentage={41}
               Icon={ArrowUpCircle}
               size="compact"
@@ -454,7 +455,7 @@ export default function DashboardHome() {
             />
             <StatCard
               title="Gastos"
-              value={loading || cardsLoading ? '—' : `${formatCurrency(totalExpenses)}€`}
+              value={shouldShowCardsPlaceholder ? '—' : `${formatCurrency(totalExpenses)}€`}
               percentage={-16}
               Icon={ArrowDownCircle}
               size="compact"

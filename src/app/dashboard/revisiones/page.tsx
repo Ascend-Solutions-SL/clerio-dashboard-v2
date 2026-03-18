@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { Clock, Download } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
-import { RevisionsTable } from '@/components/RevisionsTable';
+import RevisionsTable from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
 
 const RevisionesPageContent = () => {

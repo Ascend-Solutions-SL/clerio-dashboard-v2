@@ -137,17 +137,23 @@ const BalanceChart = () => {
     return 'total';
   }, [activeTab]);
 
-  if (loading) {
+  const hasRenderableData = Boolean(data?.monthlyData);
+  const isChartLoadingState = !hasRenderableData && (loading || (!data && !error));
+
+  if (isChartLoadingState) {
     return (
       <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">Balance actual</h2>
-            <p className="text-sm text-gray-500">Cargando datos...</p>
+            <h2 className="text-lg font-bold text-gray-800">Datos mensuales</h2>
+            <p className="text-sm text-gray-500">Actualizando información...</p>
           </div>
         </div>
         <div className="h-[300px] flex items-center justify-center">
-          <div className="animate-pulse text-gray-400">Cargando gráfico...</div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+            Cargando gráfico...
+          </div>
         </div>
       </div>
     );
@@ -158,14 +164,14 @@ const BalanceChart = () => {
       <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div className="flex justify-between items-center mb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-800">Error</h2>
-            <p className="text-sm text-red-500">{error ?? 'No se pudieron cargar los datos financieros.'}</p>
+            <h2 className="text-lg font-bold text-gray-800">Datos mensuales</h2>
+            <p className="text-sm text-slate-500">No hemos podido actualizar el gráfico por ahora.</p>
           </div>
         </div>
         <div className="h-[300px] flex items-center justify-center">
           <button 
             onClick={() => refresh()}
-            className="px-4 py-2 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200"
+            className="h-9 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
           >
             Reintentar
           </button>

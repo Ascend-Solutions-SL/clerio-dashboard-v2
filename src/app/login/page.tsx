@@ -68,6 +68,7 @@ function LoginForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emailChecked, setEmailChecked] = useState(false);
+  const [showSessionExpiredNotice, setShowSessionExpiredNotice] = useState(false);
 
   const emailRedirectTo = useMemo(() => {
     if (!ENV.APP_BASE_URL) {
@@ -118,8 +119,11 @@ function LoginForm() {
 
   useEffect(() => {
     if (reason !== 'expired') {
+      setShowSessionExpiredNotice(false);
       return;
     }
+
+    setShowSessionExpiredNotice(true);
 
     const clear = async () => {
       const supabase = createSupabaseBrowserClient();
@@ -127,7 +131,15 @@ function LoginForm() {
       await fetch('/api/auth/touch', { method: 'DELETE', credentials: 'include' });
     };
 
+    const hideNoticeTimeout = window.setTimeout(() => {
+      setShowSessionExpiredNotice(false);
+    }, 3800);
+
     void clear();
+
+    return () => {
+      window.clearTimeout(hideNoticeTimeout);
+    };
   }, [reason]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -275,6 +287,15 @@ function LoginForm() {
 
   return (
     <main className="min-h-screen bg-white flex">
+      {showSessionExpiredNotice ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="pointer-events-auto w-full max-w-md rounded-2xl border border-emerald-200 bg-emerald-50/95 px-4 py-3 text-center shadow-[0_10px_30px_rgba(16,185,129,0.18)] backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="text-sm font-semibold text-emerald-800">Tu sesión ha caducado</div>
+            <div className="mt-1 text-xs text-emerald-700">Por seguridad, vuelve a iniciar sesión para continuar.</div>
+          </div>
+        </div>
+      ) : null}
+
       {/* ── Left Panel ── */}
       <div className="w-full lg:w-1/2 flex flex-col relative px-6 pt-2 pb-8 lg:py-8 overflow-y-auto">
         {/* Logo - absolute top left */}

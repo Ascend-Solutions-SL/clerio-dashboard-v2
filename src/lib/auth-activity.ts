@@ -1,6 +1,6 @@
 export const AUTH_ACTIVITY_COOKIE_NAME = 'clerio_auth_activity';
 
-export const DEFAULT_IDLE_TIMEOUT_SECONDS = 5 * 60;
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 60;
 export const DEFAULT_MAX_SESSION_SECONDS = 24 * 60 * 60;
 
 const encoder = new TextEncoder();
@@ -61,10 +61,9 @@ const sign = async (data: string, secret: string) => {
 };
 
 export const getAuthActivityConfig = () => {
-  const idleTimeoutSecondsRaw = process.env.AUTH_IDLE_TIMEOUT_SECONDS;
   const maxSessionSecondsRaw = process.env.AUTH_MAX_SESSION_SECONDS;
 
-  const idleTimeoutSeconds = idleTimeoutSecondsRaw ? Number(idleTimeoutSecondsRaw) : DEFAULT_IDLE_TIMEOUT_SECONDS;
+  const idleTimeoutSeconds = DEFAULT_IDLE_TIMEOUT_SECONDS;
   const maxSessionSeconds = maxSessionSecondsRaw ? Number(maxSessionSecondsRaw) : DEFAULT_MAX_SESSION_SECONDS;
 
   return {
