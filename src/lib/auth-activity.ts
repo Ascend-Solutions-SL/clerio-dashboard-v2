@@ -1,6 +1,6 @@
 export const AUTH_ACTIVITY_COOKIE_NAME = 'clerio_auth_activity';
 
-export const DEFAULT_IDLE_TIMEOUT_SECONDS = 60;
+export const DEFAULT_IDLE_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
 export const DEFAULT_MAX_SESSION_SECONDS = 24 * 60 * 60;
 
 const encoder = new TextEncoder();
