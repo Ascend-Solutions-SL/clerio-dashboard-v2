@@ -249,6 +249,8 @@ export default function RevisionsTable({
     importeTotal: '',
   });
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isRowsLoading, setIsRowsLoading] = React.useState(true);
+  const [hasLoadedRowsOnce, setHasLoadedRowsOnce] = React.useState(false);
   const [nfUnlock, setNfUnlock] = React.useState(false);
   const [validateConfirmStep, setValidateConfirmStep] = React.useState<0 | 1>(0);
   const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
@@ -261,6 +263,7 @@ export default function RevisionsTable({
   const confettiTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevPendingRowsCountRef = React.useRef<number | null>(null);
   const [showPendingConfetti, setShowPendingConfetti] = React.useState(false);
+  const suppressedPendingIdsRef = React.useRef<Map<number, number>>(new Map());
   const unlockedNoFacturaIdsRef = React.useRef<Set<number>>(new Set());
   const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const rowElementRefs = React.useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -454,10 +457,16 @@ export default function RevisionsTable({
       return;
     }
 
+    if (!hasLoadedRowsOnce) {
+      setIsRowsLoading(true);
+    }
+
     if (!businessName && empresaId == null) {
       setData([]);
       onPorRevisarCountChange?.(0);
       onNoFacturasCountChange?.(0);
+      setHasLoadedRowsOnce(true);
+      setIsRowsLoading(false);
       return;
     }
 
@@ -526,6 +535,8 @@ export default function RevisionsTable({
         onPorRevisarCountChange?.(pendingCountRes.count ?? 0);
         onNoFacturasCountChange?.(0);
         onHistoricoCountChange?.(historyCountRes.count ?? 0);
+        setHasLoadedRowsOnce(true);
+        setIsRowsLoading(false);
         return;
       }
 
@@ -567,8 +578,26 @@ export default function RevisionsTable({
         };
       });
 
-      setData(mapped);
-      onDataLoaded?.(mapped);
+      let finalRows = mapped;
+      if (scope === 'pending') {
+        const now = Date.now();
+        const fetchedIds = new Set(mapped.map((row) => row.id));
+
+        suppressedPendingIdsRef.current.forEach((expiresAt, id) => {
+          if (expiresAt <= now || !fetchedIds.has(id)) {
+            suppressedPendingIdsRef.current.delete(id);
+          }
+        });
+
+        if (suppressedPendingIdsRef.current.size > 0) {
+          finalRows = mapped.filter((row) => !suppressedPendingIdsRef.current.has(row.id));
+        }
+      }
+
+      setData(finalRows);
+      onDataLoaded?.(finalRows);
+      setHasLoadedRowsOnce(true);
+      setIsRowsLoading(false);
     };
 
     void loadData();
@@ -578,6 +607,7 @@ export default function RevisionsTable({
     };
   }, [
     isLoading,
+    hasLoadedRowsOnce,
     businessName,
     empresaId,
     tipoFilter,
@@ -1071,9 +1101,19 @@ export default function RevisionsTable({
       const idx = sortedData.findIndex((r) => r.id === currentId);
       const next = idx >= 0 ? sortedData[idx + 1] ?? sortedData[idx - 1] ?? null : sortedData[0] ?? null;
 
-      if (!next) {
-        return;
+      if (scope === 'pending') {
+        suppressedPendingIdsRef.current.set(currentId, Date.now() + 12000);
       }
+
+      setData((prev) => {
+        if (scope === 'pending') {
+          return prev.filter((row) => row.id !== currentId);
+        }
+        return prev;
+      });
+
+      setShowAmountsMismatchHint(false);
+      amountsMismatchAcceptedRef.current = false;
 
       if (closeAnimationTimeoutRef.current) {
         clearTimeout(closeAnimationTimeoutRef.current);
@@ -1081,6 +1121,13 @@ export default function RevisionsTable({
       }
 
       setClosingInvoiceId(null);
+
+      if (!next) {
+        setMode('list');
+        lastAutoScrolledInvoiceIdRef.current = null;
+        return;
+      }
+
       onSelect?.(next.id, next);
       setMode('review');
       lastAutoScrolledInvoiceIdRef.current = next.id;
@@ -1088,7 +1135,7 @@ export default function RevisionsTable({
         scrollInvoiceRowToTop(next.id, 420);
       });
     },
-    [onSelect, scrollInvoiceRowToTop, sortedData]
+    [onSelect, scope, scrollInvoiceRowToTop, sortedData]
   );
 
   const table = useReactTable({
@@ -1114,6 +1161,7 @@ export default function RevisionsTable({
   const hasPreviousInvoice = selectedSortedIndex > 0;
   const hasNextInvoice = selectedSortedIndex >= 0 && selectedSortedIndex < sortedData.length - 1;
   const rowsCount = table.getRowModel().rows.length;
+  const showLoadingRowsState = mode === 'list' && isRowsLoading && rowsCount === 0;
   const showPendingCelebration = mode === 'list' && scope === 'pending' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
   const showHistoryEmptyState = mode === 'list' && scope === 'history' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
 
@@ -1782,7 +1830,13 @@ export default function RevisionsTable({
           </Table>
         </div>
 
-        {showPendingCelebration ? (
+        {showLoadingRowsState ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+            <div className="text-center text-sm font-medium text-slate-500/80">Cargando facturas…</div>
+          </div>
+        ) : null}
+
+        {showPendingCelebration && !showLoadingRowsState ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
             <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-amber-200 bg-white/95 px-6 py-8 text-center shadow-[0_22px_48px_rgba(15,23,42,0.18)] backdrop-blur-[1px]">
               <div className="text-4xl leading-none">🥳</div>
@@ -1809,7 +1863,7 @@ export default function RevisionsTable({
           </div>
         ) : null}
 
-        {showHistoryEmptyState ? (
+        {showHistoryEmptyState && !showLoadingRowsState ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
             <div className="text-center text-[19px] font-medium tracking-[-0.01em] text-slate-500/70">
               Todavía no tienes ninguna factura validada
