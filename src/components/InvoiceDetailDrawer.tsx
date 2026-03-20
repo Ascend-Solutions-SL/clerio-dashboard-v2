@@ -155,7 +155,21 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
       )}&kind=download`
     : undefined;
 
-  const currency = dbRow?.divisa ?? 'EUR';
+  const currency = React.useMemo(() => {
+    const raw = String(dbRow?.divisa ?? '').trim().toUpperCase();
+
+    if (/^[A-Z]{3}$/.test(raw)) {
+      try {
+        // Validate against Intl to avoid RangeError
+        new Intl.NumberFormat('es-ES', { style: 'currency', currency: raw, minimumFractionDigits: 2 });
+        return raw;
+      } catch {
+        // fall back below
+      }
+    }
+
+    return 'EUR';
+  }, [dbRow?.divisa]);
   const tipo = String(dbRow?.tipo ?? '').trim().toLowerCase();
   const counterparty =
     tipo === 'gastos'
