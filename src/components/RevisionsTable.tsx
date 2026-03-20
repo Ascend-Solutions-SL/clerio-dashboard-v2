@@ -8,7 +8,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,8 +126,8 @@ const resolveContraparte = (row: RevisionRow) => {
     return row.sellerName || '—';
   }
 
-  if (row.tipo === 'Por Revisar') {
-    return 'Por Revisar';
+  if (row.tipo === 'Por Revisar' || row.tipo === 'Desconocido') {
+    return 'Desconocido';
   }
 
   if (row.tipo === 'No Factura') {
@@ -146,7 +146,7 @@ const getTipoBadgeClasses = (tipo: string) => {
 };
 
 const getRowClasses = (tipo: string) => {
-  if (tipo === 'Por Revisar') {
+  if (tipo === 'Por Revisar' || tipo === 'Desconocido') {
     return 'bg-amber-50/40';
   }
 
@@ -191,7 +191,7 @@ export default function RevisionsTable({
   const pathname = usePathname();
   const [data, setData] = React.useState<RevisionRow[]>([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
-  const [tipoFilter, setTipoFilter] = React.useState<'all' | 'Ingresos' | 'Gastos' | 'Por Revisar' | 'No Factura'>('all');
+  const [tipoFilter, setTipoFilter] = React.useState<'all' | 'Ingresos' | 'Gastos' | 'Desconocido' | 'No Factura'>('all');
   const [mode, setMode] = React.useState<'list' | 'review'>('list');
   const [scopeState, setScopeState] = React.useState<'pending' | 'history'>('pending');
 
@@ -237,7 +237,7 @@ export default function RevisionsTable({
   const [reviewForm, setReviewForm] = React.useState({
     numero: '',
     fecha: '',
-    tipo: 'Por Revisar',
+    tipo: 'Desconocido',
     buyerName: '',
     buyerTaxId: '',
     sellerName: '',
@@ -258,6 +258,9 @@ export default function RevisionsTable({
   const validateConfirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [realtimeRefreshKey, setRealtimeRefreshKey] = React.useState(0);
   const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confettiTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevPendingRowsCountRef = React.useRef<number | null>(null);
+  const [showPendingConfetti, setShowPendingConfetti] = React.useState(false);
   const unlockedNoFacturaIdsRef = React.useRef<Set<number>>(new Set());
   const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const rowElementRefs = React.useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -409,7 +412,7 @@ export default function RevisionsTable({
     setReviewForm({
       numero: selected.numero ?? '',
       fecha: selected.rawDate ?? '',
-      tipo: selected.tipo ?? 'Por Revisar',
+      tipo: selected.tipo ?? 'Desconocido',
       buyerName: selected.buyerName ?? '',
       buyerTaxId: selected.buyerTaxId ?? '',
       sellerName: selected.sellerName ?? '',
@@ -434,6 +437,10 @@ export default function RevisionsTable({
       if (closeAnimationTimeoutRef.current) {
         clearTimeout(closeAnimationTimeoutRef.current);
         closeAnimationTimeoutRef.current = null;
+      }
+      if (confettiTimeoutRef.current) {
+        clearTimeout(confettiTimeoutRef.current);
+        confettiTimeoutRef.current = null;
       }
       if (autoScrollRafRef.current != null) {
         cancelAnimationFrame(autoScrollRafRef.current);
@@ -806,6 +813,16 @@ export default function RevisionsTable({
     }
   };
 
+  const handleSwapCounterpartyData = () => {
+    setReviewForm((prev) => ({
+      ...prev,
+      buyerTaxId: prev.sellerTaxId,
+      buyerName: prev.sellerName,
+      sellerTaxId: prev.buyerTaxId,
+      sellerName: prev.buyerName,
+    }));
+  };
+
   const clearAmountsMismatchFlow = () => {
     setShowAmountsMismatchConfirm(false);
     amountsMismatchAcceptedRef.current = false;
@@ -881,6 +898,25 @@ export default function RevisionsTable({
   const columns = React.useMemo<ColumnDef<RevisionRow>[]>(() => {
     const base: ColumnDef<RevisionRow>[] = [
       {
+        id: 'estado',
+        header: () => <div className="text-center font-semibold">Estado</div>,
+        cell: ({ row }) => {
+          const isReviewed = Boolean(row.original.reviewed);
+          return (
+            <div className="flex justify-center">
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                  isReviewed ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900'
+                }`}
+              >
+                {isReviewed ? 'Validada' : 'Pendiente'}
+              </span>
+            </div>
+          );
+        },
+        size: 92,
+      },
+      {
         id: 'tipo',
         header: () => <div className="text-center font-semibold">Tipo</div>,
         cell: ({ row }) => {
@@ -893,12 +929,12 @@ export default function RevisionsTable({
                   tipo
                 )}`}
               >
-                {tipo === 'No Factura' ? 'No factura' : tipo}
+                {tipo === 'No Factura' ? 'No factura' : tipo === 'Por Revisar' ? 'Desconocido' : tipo}
               </span>
             </div>
           );
         },
-        size: 120,
+        size: 98,
       },
       {
         id: 'fecha',
@@ -971,6 +1007,7 @@ export default function RevisionsTable({
   const sortedData = React.useMemo(() => {
     const tipoRank: Record<string, number> = {
       'No Factura': 0,
+      Desconocido: 1,
       'Por Revisar': 1,
       Ingresos: 2,
       Gastos: 3,
@@ -1076,6 +1113,45 @@ export default function RevisionsTable({
   );
   const hasPreviousInvoice = selectedSortedIndex > 0;
   const hasNextInvoice = selectedSortedIndex >= 0 && selectedSortedIndex < sortedData.length - 1;
+  const rowsCount = table.getRowModel().rows.length;
+  const showPendingCelebration = mode === 'list' && scope === 'pending' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
+  const showHistoryEmptyState = mode === 'list' && scope === 'history' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
+
+  React.useEffect(() => {
+    const canCelebrate = scope === 'pending' && !hasActiveFilters && !globalFilter.trim();
+
+    if (!canCelebrate) {
+      prevPendingRowsCountRef.current = rowsCount;
+      if (confettiTimeoutRef.current) {
+        clearTimeout(confettiTimeoutRef.current);
+        confettiTimeoutRef.current = null;
+      }
+      setShowPendingConfetti(false);
+      return;
+    }
+
+    const previousRows = prevPendingRowsCountRef.current;
+    if (rowsCount === 0 && previousRows != null && previousRows > 0) {
+      setShowPendingConfetti(true);
+      if (confettiTimeoutRef.current) {
+        clearTimeout(confettiTimeoutRef.current);
+      }
+      confettiTimeoutRef.current = setTimeout(() => {
+        setShowPendingConfetti(false);
+        confettiTimeoutRef.current = null;
+      }, 5000);
+    }
+
+    if (rowsCount > 0) {
+      if (confettiTimeoutRef.current) {
+        clearTimeout(confettiTimeoutRef.current);
+        confettiTimeoutRef.current = null;
+      }
+      setShowPendingConfetti(false);
+    }
+
+    prevPendingRowsCountRef.current = rowsCount;
+  }, [globalFilter, hasActiveFilters, rowsCount, scope]);
 
   return (
     <div
@@ -1118,9 +1194,9 @@ export default function RevisionsTable({
       {showInvalidTipoWarning ? (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/20 p-4">
           <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
-            <div className="text-sm font-semibold text-slate-900">Pendiente de revisar -&gt; Tipo de factura</div>
+            <div className="text-sm font-semibold text-slate-900">Pendiente de revisión -&gt; Tipo de factura</div>
             <div className="mt-2 text-sm text-slate-700">
-              No se puede validar una factura de tipo &quot;Por Revisar&quot;. Por favor, comprueba y corrige los datos de la factura.
+              No se puede validar una factura de tipo &quot;Desconocido&quot;. Por favor, comprueba y corrige los datos de la factura.
             </div>
             <div className="mt-4 flex items-center justify-end">
               <Button type="button" className="h-8 bg-slate-900 hover:bg-slate-800 text-xs" onClick={() => setShowInvalidTipoWarning(false)}>
@@ -1146,7 +1222,7 @@ export default function RevisionsTable({
                       <SelectItem value="all">Todas</SelectItem>
                       <SelectItem value="Ingresos">Ingresos</SelectItem>
                       <SelectItem value="Gastos">Gastos</SelectItem>
-                      <SelectItem value="Por Revisar">Por Revisar</SelectItem>
+                      <SelectItem value="Desconocido">Desconocido</SelectItem>
                       <SelectItem value="No Factura">No factura</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1272,7 +1348,7 @@ export default function RevisionsTable({
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          padding: 0.625rem 0.75rem;
+          padding: 0.78rem 0.75rem;
           text-align: center;
         }
 
@@ -1286,8 +1362,8 @@ export default function RevisionsTable({
 
         .revisions-table th:nth-child(1),
         .revisions-table td:nth-child(1) {
-          width: 100px;
-          min-width: 100px;
+          width: 88px;
+          min-width: 88px;
           padding-left: 0.75rem;
           padding-right: 0.75rem;
         }
@@ -1302,20 +1378,66 @@ export default function RevisionsTable({
 
         .revisions-table th:nth-child(3),
         .revisions-table td:nth-child(3) {
-          width: ${scope === 'history' ? '64%' : '44%'};
-          min-width: ${scope === 'history' ? '320px' : '220px'};
+          width: 94px;
+          min-width: 94px;
         }
 
         .revisions-table th:nth-child(4),
         .revisions-table td:nth-child(4) {
-          width: ${scope === 'history' ? '94px' : '100px'};
-          min-width: ${scope === 'history' ? '94px' : '100px'};
+          width: ${scope === 'history' ? '61%' : '68%'};
+          min-width: ${scope === 'history' ? '320px' : '300px'};
         }
 
         .revisions-table th:nth-child(5),
         .revisions-table td:nth-child(5) {
-          width: ${scope === 'history' ? '94px' : '110px'};
-          min-width: ${scope === 'history' ? '94px' : '110px'};
+          width: 120px;
+          min-width: 120px;
+        }
+
+        .revisions-table th:nth-child(6),
+        .revisions-table td:nth-child(6) {
+          width: 110px;
+          min-width: 110px;
+        }
+
+        .revisions-confetti-piece {
+          position: absolute;
+          top: -16px;
+          width: 8px;
+          height: 14px;
+          border-radius: 999px;
+          opacity: 0.9;
+          animation: revisionsConfettiFall 1800ms linear infinite;
+        }
+
+        .revisions-confetti-burst {
+          animation: revisionsConfettiBurstFade 5000ms ease-out forwards;
+        }
+
+        @keyframes revisionsConfettiFall {
+          0% {
+            transform: translateY(-14px) rotate(0deg);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(210px) rotate(360deg);
+            opacity: 0;
+          }
+        }
+
+        @keyframes revisionsConfettiBurstFade {
+          0% {
+            opacity: 1;
+          }
+          75% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+          }
         }
 
         .revisions-expanded-panel {
@@ -1351,7 +1473,7 @@ export default function RevisionsTable({
         }
       `}</style>
 
-      <div className="flex-1 min-h-0 rounded-md border overflow-hidden">
+      <div className="relative flex-1 min-h-0 rounded-md border overflow-hidden">
         <div ref={tableScrollRef} className="h-full overflow-y-auto">
           <Table className="revisions-table text-xs">
             <TableHeader>
@@ -1439,7 +1561,7 @@ export default function RevisionsTable({
                                             unlockedNoFacturaIdsRef.current.add(selected.id);
                                           }
                                           setNfUnlock(true);
-                                          setReviewForm((prev) => ({ ...prev, tipo: 'Por Revisar' }));
+                                          setReviewForm((prev) => ({ ...prev, tipo: 'Desconocido' }));
                                         }}
                                       >
                                         Sí
@@ -1490,61 +1612,76 @@ export default function RevisionsTable({
                                     >
                                       <option value="Ingresos">Ingresos</option>
                                       <option value="Gastos">Gastos</option>
-                                      <option value="Por Revisar">Por Revisar</option>
+                                      <option value="Desconocido">Desconocido</option>
                                       <option value="No Factura">No Factura</option>
                                     </select>
                                   </div>
                                 </div>
 
-                                <div className="mt-2" />
-
-                                <div className="space-y-2">
-                                  <div className="text-left text-[13px] font-semibold text-slate-800">Datos Comprador</div>
-                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                                    <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                                      <Input
-                                        className="h-8 text-xs"
-                                        value={reviewForm.buyerTaxId}
-                                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
-                                      />
+                                <div className="space-y-3">
+                                  <div className="relative">
+                                    <div className="space-y-3">
+                                      <div className="text-left text-[13px] font-semibold text-slate-800">Datos Comprador</div>
+                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                                        <div>
+                                          <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                                          <Input
+                                            className="h-9 text-xs"
+                                            value={reviewForm.buyerTaxId}
+                                            onChange={(e) => setReviewForm((p) => ({ ...p, buyerTaxId: e.target.value }))}
+                                          />
+                                        </div>
+                                        <div className="sm:max-w-[75%]">
+                                          <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
+                                          <Input
+                                            className="h-9 text-xs"
+                                            value={reviewForm.buyerName}
+                                            onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
+                                          />
+                                        </div>
+                                      </div>
                                     </div>
-                                    <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre comprador</div>
-                                      <Input
-                                        className="h-8 text-xs"
-                                        value={reviewForm.buyerName}
-                                        onChange={(e) => setReviewForm((p) => ({ ...p, buyerName: e.target.value }))}
-                                      />
+
+                                    <div className="mt-5" />
+
+                                    <div className="space-y-3">
+                                      <div className="text-left text-[13px] font-semibold text-slate-800">Datos Vendedor</div>
+                                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
+                                        <div>
+                                          <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
+                                          <Input
+                                            className="h-9 text-xs"
+                                            value={reviewForm.sellerTaxId}
+                                            onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
+                                          />
+                                        </div>
+                                        <div className="sm:max-w-[75%]">
+                                          <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
+                                          <Input
+                                            className="h-9 text-xs"
+                                            value={reviewForm.sellerName}
+                                            onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="mt-3 flex items-center gap-2 sm:absolute sm:right-0 sm:top-[58%] sm:mt-0 sm:-translate-y-1/2">
+                                      <span className="text-xs font-medium text-slate-600">Intercambiar</span>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        className="h-9 w-9 p-0"
+                                        onClick={handleSwapCounterpartyData}
+                                        aria-label="Intercambiar datos comprador y vendedor"
+                                      >
+                                        <RefreshCw className="h-[17px] w-[17px] text-slate-800" />
+                                      </Button>
                                     </div>
                                   </div>
                                 </div>
 
-                                <div className="mt-2" />
-
-                                <div className="space-y-2">
-                                  <div className="text-left text-[13px] font-semibold text-slate-800">Datos Vendedor</div>
-                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[150px_1fr]">
-                                    <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">CIF/NIF</div>
-                                      <Input
-                                        className="h-8 text-xs"
-                                        value={reviewForm.sellerTaxId}
-                                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerTaxId: e.target.value }))}
-                                      />
-                                    </div>
-                                    <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Nombre vendedor</div>
-                                      <Input
-                                        className="h-8 text-xs"
-                                        value={reviewForm.sellerName}
-                                        onChange={(e) => setReviewForm((p) => ({ ...p, sellerName: e.target.value }))}
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="mt-2" />
+                                <div className="mt-5" />
 
                                 <div className="space-y-3">
                                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1644,6 +1781,41 @@ export default function RevisionsTable({
             </TableBody>
           </Table>
         </div>
+
+        {showPendingCelebration ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
+            <div className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-amber-200 bg-white/95 px-6 py-8 text-center shadow-[0_22px_48px_rgba(15,23,42,0.18)] backdrop-blur-[1px]">
+              <div className="text-4xl leading-none">🥳</div>
+              <div className="mt-3 text-lg font-semibold tracking-[-0.01em] text-slate-900">
+                ¡Enhorabuena! No tienes ninguna factura pendiente de validar
+              </div>
+              <div className="mt-2 text-sm text-slate-600">Todo está al día. Buen trabajo.</div>
+              {showPendingConfetti ? (
+                <div className="revisions-confetti-burst pointer-events-none absolute inset-x-4 top-0 h-52 overflow-hidden" aria-hidden>
+                  {Array.from({ length: 14 }).map((_, index) => (
+                    <span
+                      key={`confetti-${index}`}
+                      className="revisions-confetti-piece"
+                      style={{
+                        left: `${6 + index * 6.4}%`,
+                        animationDelay: `${index * 120}ms`,
+                        backgroundColor: ['#f59e0b', '#22c55e', '#0ea5e9', '#fb7185'][index % 4],
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {showHistoryEmptyState ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+            <div className="text-center text-[19px] font-medium tracking-[-0.01em] text-slate-500/70">
+              Todavía no tienes ninguna factura validada
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {hasActiveFilters && (
