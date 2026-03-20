@@ -10,9 +10,21 @@ import { supabaseAdmin } from '@/lib/supabaseAdmin';
 const N8N_DRIVE_INTEGRATION_WEBHOOK_URL =
   'https://v-ascendsolutions.app.n8n.cloud/webhook/drive-integration';
 
-const buildRedirectUrl = (origin: string, path: string, status: 'success' | 'error', reason?: string) => {
+const buildRedirectUrl = (
+  origin: string,
+  path: string,
+  status: 'success' | 'error',
+  reason?: string,
+  reconnectStage?: 'success'
+) => {
   const url = new URL(path, origin);
+  url.searchParams.delete('skipDriveIntegrationWebhook');
   url.searchParams.set('drive', status);
+
+  if (reconnectStage) {
+    url.searchParams.set('scanReconnect', '1');
+    url.searchParams.set('scanFlowStage', reconnectStage);
+  }
 
   if (reason) {
     url.searchParams.set('reason', reason);
@@ -54,11 +66,23 @@ export async function GET(request: NextRequest) {
 
   let userUid: string;
   let redirectPath: string;
+  let isScanReconnectFlow = false;
 
   try {
     const statePayload = parseDriveOAuthState(state);
     userUid = statePayload.userUid;
     redirectPath = statePayload.redirectPath ?? '/dashboard/integraciones';
+
+    try {
+      const redirectUrl = new URL(redirectPath, origin);
+      const hasReconnectFlag = redirectUrl.searchParams.get('scanReconnect') === '1';
+      const reconnectStage = redirectUrl.searchParams.get('scanFlowStage');
+      const hasLegacyReconnectFlag = redirectUrl.searchParams.get('skipDriveIntegrationWebhook') === '1';
+      isScanReconnectFlow =
+        hasReconnectFlag || reconnectStage === 'drive' || reconnectStage === 'success' || hasLegacyReconnectFlag;
+    } catch {
+      isScanReconnectFlow = false;
+    }
 
     if (redirectPath === '/onboarding') {
       redirectPath = '/onboarding?step=3&integrationStage=storage';
@@ -94,25 +118,41 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const payload = {
-      user_uid: userUid,
-      google_user_id: driveProfile.sub,
-      google_email: driveProfile.email,
-      access_token: tokenResponse.access_token,
-      refresh_token: refreshToken,
-      expires_at: expiresAt,
-      scopes,
-      drive_deposit_folder_id: '',
-      drive_org_folder_id: '',
-      updated_at: new Date().toISOString(),
-    };
+    if (existingRecord?.id) {
+      const updateResult = await supabaseAdmin
+        .from('drive_accounts')
+        .update({
+          access_token: tokenResponse.access_token,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_uid', userUid);
 
-    const upsertResult = await supabaseAdmin.from('drive_accounts').upsert(payload, {
-      onConflict: 'user_uid',
-    });
+      if (updateResult.error) {
+        throw updateResult.error;
+      }
+    } else {
+      const payload = {
+        user_uid: userUid,
+        google_user_id: driveProfile.sub,
+        google_email: driveProfile.email,
+        access_token: tokenResponse.access_token,
+        refresh_token: refreshToken,
+        expires_at: expiresAt,
+        scopes,
+        drive_deposit_folder_id: '',
+        drive_org_folder_id: '',
+        updated_at: new Date().toISOString(),
+      };
 
-    if (upsertResult.error) {
-      throw upsertResult.error;
+      const upsertResult = await supabaseAdmin.from('drive_accounts').upsert(payload, {
+        onConflict: 'user_uid',
+      });
+
+      if (upsertResult.error) {
+        throw upsertResult.error;
+      }
     }
 
     try {
@@ -129,7 +169,13 @@ export async function GET(request: NextRequest) {
       console.error('Failed to trigger n8n drive integration webhook', webhookError);
     }
 
-    const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');
+    const redirectUrl = buildRedirectUrl(
+      origin,
+      redirectPath,
+      'success',
+      undefined,
+      isScanReconnectFlow ? 'success' : undefined
+    );
     return NextResponse.redirect(redirectUrl, { status: 302 });
   } catch (callbackError) {
     const reason =

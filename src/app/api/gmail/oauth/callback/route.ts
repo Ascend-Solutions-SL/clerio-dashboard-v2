@@ -96,23 +96,39 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const payload = {
-      user_uid: userUid,
-      google_user_id: googleProfile?.sub ?? null,
-      google_email: googleProfile?.email ?? null,
-      access_token: tokenResponse.access_token,
-      refresh_token: refreshToken,
-      expires_at: expiresAt,
-      scopes,
-      updated_at: new Date().toISOString(),
-    };
+    if (existingRecord?.id) {
+      const updateResult = await supabaseAdmin
+        .from('gmail_accounts')
+        .update({
+          access_token: tokenResponse.access_token,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_uid', userUid);
 
-    const upsertResult = await supabaseAdmin.from('gmail_accounts').upsert(payload, {
-      onConflict: 'user_uid',
-    });
+      if (updateResult.error) {
+        throw updateResult.error;
+      }
+    } else {
+      const payload = {
+        user_uid: userUid,
+        google_user_id: googleProfile?.sub ?? null,
+        google_email: googleProfile?.email ?? null,
+        access_token: tokenResponse.access_token,
+        refresh_token: refreshToken,
+        expires_at: expiresAt,
+        scopes,
+        updated_at: new Date().toISOString(),
+      };
 
-    if (upsertResult.error) {
-      throw upsertResult.error;
+      const upsertResult = await supabaseAdmin.from('gmail_accounts').upsert(payload, {
+        onConflict: 'user_uid',
+      });
+
+      if (upsertResult.error) {
+        throw upsertResult.error;
+      }
     }
 
     const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');
