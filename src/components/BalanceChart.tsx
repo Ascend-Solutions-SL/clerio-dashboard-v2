@@ -5,66 +5,28 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useFinancialData } from '@/context/FinancialDataContext';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const getNiceCeil = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return 0;
+const getNiceStep = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+
   const magnitude = 10 ** Math.floor(Math.log10(value));
-  return Math.ceil(value / magnitude) * magnitude;
-};
+  const normalized = value / magnitude;
+  const multipliers = [1, 1.5, 2, 2.5, 5, 10];
+  const multiplier = multipliers.find((m) => normalized <= m) ?? 10;
 
-const roundUpAxisMax = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-
-  if (value <= 100) return 100;
-  if (value <= 1000) return Math.ceil(value / 100) * 100;
-  return Math.ceil(value / 1000) * 1000;
+  return multiplier * magnitude;
 };
 
 const VISIBLE_MONTHS = 12;
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
-  const { data, loading, error, refresh } = useFinancialData();
+  const { data, loading, error, refresh, selectedYear, setSelectedYear, minYear, maxYear } = useFinancialData();
   const chartData = useMemo(() => data?.monthlyData ?? [], [data]);
-  const currentYear = useMemo(() => new Date().getFullYear(), []);
-  const [selectedYear, setSelectedYear] = useState<number>(currentYear);
-  const [renderYear, setRenderYear] = useState<number>(currentYear);
+  const [renderYear, setRenderYear] = useState<number>(selectedYear);
   const [slideState, setSlideState] = useState<'idle' | 'out' | 'in'>('idle');
   const [slideDir, setSlideDir] = useState<'left' | 'right'>('left');
 
-  const yearBounds = useMemo(() => {
-    if (!chartData.length) {
-      return { minYear: currentYear, maxYear: currentYear };
-    }
-
-    let minYear = chartData[0].year;
-    let maxYear = chartData[0].year;
-    chartData.forEach((row) => {
-      minYear = Math.min(minYear, row.year);
-      maxYear = Math.max(maxYear, row.year);
-    });
-
-    return { minYear, maxYear: currentYear };
-  }, [chartData, currentYear]);
-
-  const defaultYear = useMemo(() => {
-    if (!chartData.length) return currentYear;
-
-    let lastYearWithData: number | null = null;
-    chartData.forEach((row) => {
-      if ((row.ingresos ?? 0) !== 0 || (row.gastos ?? 0) !== 0) {
-        if (lastYearWithData == null || row.year > lastYearWithData) {
-          lastYearWithData = row.year;
-        }
-      }
-    });
-
-    const candidate = lastYearWithData ?? currentYear;
-    return Math.min(candidate, currentYear);
-  }, [chartData, currentYear]);
-
-  useEffect(() => {
-    setSelectedYear(defaultYear);
-  }, [defaultYear]);
+  const yearBounds = useMemo(() => ({ minYear, maxYear }), [maxYear, minYear]);
 
   useEffect(() => {
     setRenderYear((prev) => {
@@ -115,20 +77,26 @@ const BalanceChart = () => {
     return { maxIncomeExpense, minTotal, maxTotal };
   }, [chartData, visibleData]);
 
-  const yAxisDomain = useMemo<[number, number] | undefined>(() => {
+  const yAxisConfig = useMemo<{ domain?: [number, number]; ticks?: number[] }>(() => {
     const sliceLength = visibleData.length;
-    if (!sliceLength) return undefined;
+    if (!sliceLength) return {};
+
+    const targetIntervals = 3;
 
     if (activeTab === 'Neto') {
       const maxAbs = Math.max(Math.abs(chartExtents.minTotal), Math.abs(chartExtents.maxTotal));
-      const nice = getNiceCeil(maxAbs);
-      const resolved = nice || 0;
-      const minAbs = Math.max(100, resolved);
-      return [-minAbs, minAbs];
+      const step = getNiceStep((maxAbs || 1) / targetIntervals);
+      const maxAxis = Math.max(step, Math.ceil((maxAbs || step) / step) * step);
+      const ticks = Array.from({ length: targetIntervals * 2 + 1 }, (_, idx) => -maxAxis + idx * step);
+      return { domain: [-maxAxis, maxAxis], ticks };
     }
 
-    const rounded = roundUpAxisMax(chartExtents.maxIncomeExpense);
-    return rounded ? [0, rounded] : undefined;
+    const maxValue = chartExtents.maxIncomeExpense;
+    const step = getNiceStep((maxValue || 1) / targetIntervals);
+    const maxAxis = Math.max(step, Math.ceil((maxValue || step) / step) * step);
+    const ticks = Array.from({ length: Math.round(maxAxis / step) + 1 }, (_, idx) => idx * step);
+
+    return { domain: [0, maxAxis], ticks };
   }, [activeTab, chartExtents.maxIncomeExpense, chartExtents.maxTotal, chartExtents.minTotal, visibleData.length]);
 
   const activeDataKey = useMemo<'ingresos' | 'gastos' | 'total'>(() => {
@@ -208,7 +176,7 @@ const BalanceChart = () => {
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
-            onClick={() => setSelectedYear((year) => Math.max(yearBounds.minYear, year - 1))}
+            onClick={() => setSelectedYear(Math.max(yearBounds.minYear, selectedYear - 1))}
             disabled={selectedYear <= yearBounds.minYear}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Año anterior"
@@ -220,7 +188,7 @@ const BalanceChart = () => {
           </div>
           <button
             type="button"
-            onClick={() => setSelectedYear((year) => Math.min(yearBounds.maxYear, year + 1))}
+            onClick={() => setSelectedYear(Math.min(yearBounds.maxYear, selectedYear + 1))}
             disabled={selectedYear >= yearBounds.maxYear}
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Año siguiente"
@@ -262,7 +230,8 @@ const BalanceChart = () => {
                   width={60}
                   axisLine={false} 
                   tickLine={false} 
-                  domain={yAxisDomain}
+                  domain={yAxisConfig.domain}
+                  ticks={yAxisConfig.ticks}
                   tickFormatter={(value) =>
                     new Intl.NumberFormat('es-ES', {
                       style: 'currency',
