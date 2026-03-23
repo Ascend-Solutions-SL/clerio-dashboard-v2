@@ -36,7 +36,7 @@ import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filt
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
-const expensesDataCache = new Map<string, Expense[]>();
+const PAGE_SIZE = 20;
 
 type PendingTooltipState = {
   open: boolean;
@@ -472,6 +472,9 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Expense[]>([]);
   const [isDataHydrated, setIsDataHydrated] = React.useState(false);
+  const [isInitialLoading, setIsInitialLoading] = React.useState(false);
+  const [isFetchingMore, setIsFetchingMore] = React.useState(false);
+  const [hasMoreRows, setHasMoreRows] = React.useState(true);
   const [drawerRow, setDrawerRow] = React.useState<InvoiceDetailDrawerRow | null>(null);
   const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [rowSelection, setRowSelection] = React.useState({});
@@ -484,72 +487,83 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
     maxAmount: null,
   });
 
-  const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
-  const queryCacheKey = `${empresaId ?? 'none'}|${businessName}|${filters.startDate}|${filters.endDate}`;
+  const nextOffsetRef = React.useRef(0);
+  const hasMoreRowsRef = React.useRef(true);
+  const isFetchingMoreRef = React.useRef(false);
 
   React.useEffect(() => {
-    const cached = expensesDataCache.get(queryCacheKey);
-    if (cached) {
-      setSourceData(cached);
-      setIsDataHydrated(true);
-    }
-  }, [queryCacheKey]);
+    hasMoreRowsRef.current = hasMoreRows;
+  }, [hasMoreRows]);
 
-  // Load table data (date filter at source)
   React.useEffect(() => {
-    if (isLoading) {
-      return;
-    }
+    isFetchingMoreRef.current = isFetchingMore;
+  }, [isFetchingMore]);
 
-    if (!businessName && empresaId == null) {
-      setSourceData([]);
-      setIsDataHydrated(true);
-      return;
-    }
+  const fetchRowsPage = React.useCallback(
+    async (reset: boolean) => {
+      if (isLoading || empresaId == null) {
+        if (!isLoading && empresaId == null) {
+          setSourceData([]);
+          setHasMoreRows(false);
+          setIsDataHydrated(true);
+        }
+        return;
+      }
 
-    let isMounted = true;
+      if (reset) {
+        setIsInitialLoading(true);
+        setIsFetchingMore(false);
+        isFetchingMoreRef.current = false;
+      } else {
+        if (isFetchingMoreRef.current || !hasMoreRowsRef.current) {
+          return;
+        }
+        setIsFetchingMore(true);
+        isFetchingMoreRef.current = true;
+      }
 
-    const loadData = async () => {
+      const from = reset ? 0 : nextOffsetRef.current;
+      const to = from + PAGE_SIZE - 1;
+
       let query = supabase
         .from('facturas')
         .select(
           'id, numero, fecha, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, importe_total, drive_file_id, drive_type, factura_validada'
         )
+        .eq('empresa_id', empresaId)
         .eq('tipo', 'Gastos')
-        .eq('source', 'ocr')
-        .order('fecha', { ascending: false });
+        .order('fecha', { ascending: false })
+        .range(from, to);
 
-      if (empresaId != null && businessName) {
-        query = query.or(`empresa_id.eq.${empresaId},user_businessname.eq.${businessName}`);
-      } else {
-        query = empresaId != null ? query.eq('empresa_id', empresaId) : query.eq('user_businessname', businessName);
+      if (filters.startDate && filters.endDate) {
+        query = query.gte('fecha', filters.startDate).lte('fecha', filters.endDate);
       }
 
-      // Aplicar filtro de rango de fechas si existe
-      if (filters.startDate && filters.endDate) {
-        query = query
-          .gte('fecha', filters.startDate)
-          .lte('fecha', filters.endDate);
+      if (filters.minAmount != null && filters.maxAmount != null) {
+        query = query.gte('importe_total', filters.minAmount).lte('importe_total', filters.maxAmount);
+      }
+
+      if (filters.clients.length > 0) {
+        query = query.in('seller_name', filters.clients);
       }
 
       const { data: rows, error } = await query;
 
-      if (!isMounted) {
-        return;
-      }
-
       if (error || !rows) {
-        if (!expensesDataCache.has(queryCacheKey)) {
+        if (reset) {
           setSourceData([]);
+          setHasMoreRows(false);
+          hasMoreRowsRef.current = false;
         }
         setIsDataHydrated(true);
+        setIsInitialLoading(false);
+        setIsFetchingMore(false);
+        isFetchingMoreRef.current = false;
         return;
       }
 
-      const typedRows = rows as FacturaRow[];
-
-      const mapped = typedRows.map((row: FacturaRow) => {
+      const mapped = (rows as FacturaRow[]).map((row: FacturaRow) => {
         const subtotalValue = Math.abs(Number(row.importe_sin_iva) || 0);
         const totalValue = Math.abs(Number(row.importe_total) || 0);
         const ivaValue =
@@ -582,23 +596,49 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
         };
       });
 
-      const cached = expensesDataCache.get(queryCacheKey) ?? null;
-      const didChange = JSON.stringify(cached) !== JSON.stringify(mapped);
-      if (didChange) {
-        expensesDataCache.set(queryCacheKey, mapped);
-        setSourceData(mapped);
-      } else if (cached) {
-        setSourceData(cached);
-      }
+      nextOffsetRef.current = from + mapped.length;
+      setHasMoreRows(mapped.length === PAGE_SIZE);
+      hasMoreRowsRef.current = mapped.length === PAGE_SIZE;
+      setSourceData((prev) => (reset ? mapped : [...prev, ...mapped]));
       setIsDataHydrated(true);
+      setIsInitialLoading(false);
+      setIsFetchingMore(false);
+      isFetchingMoreRef.current = false;
+    },
+    [empresaId, filters.clients, filters.endDate, filters.maxAmount, filters.minAmount, filters.startDate, isLoading]
+  );
+
+  React.useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+    nextOffsetRef.current = 0;
+    setHasMoreRows(true);
+    hasMoreRowsRef.current = true;
+    setSourceData([]);
+    setIsDataHydrated(false);
+    void fetchRowsPage(true);
+  }, [isLoading, empresaId, filters.startDate, filters.endDate, filters.minAmount, filters.maxAmount, filters.clients, refreshKey, fetchRowsPage]);
+
+  React.useEffect(() => {
+    const container = tableScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    const handleScroll = () => {
+      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 120;
+      if (!isNearBottom || isInitialLoading || isFetchingMoreRef.current || !hasMoreRowsRef.current) {
+        return;
+      }
+      void fetchRowsPage(false);
     };
 
-    void loadData();
-
+    container.addEventListener('scroll', handleScroll);
     return () => {
-      isMounted = false;
+      container.removeEventListener('scroll', handleScroll);
     };
-  }, [isLoading, businessName, empresaId, filters.startDate, filters.endDate, queryCacheKey, refreshKey]);
+  }, [fetchRowsPage, isInitialLoading]);
 
   const filteredData = React.useMemo(() => {
     let next = sourceData;
@@ -878,8 +918,18 @@ export function ExpensesTable({ onTotalExpensesChange, onInvoiceCountChange, ref
                   ))}
                 </TableRow>
               ))}
+              {table.getRowModel().rows.length === 0 && isDataHydrated ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-20 text-center text-sm text-slate-500">
+                    No hay facturas que coincidan con los filtros.
+                  </TableCell>
+                </TableRow>
+              ) : null}
             </TableBody>
           </Table>
+          {(isInitialLoading || isFetchingMore) && (
+            <div className="py-3 text-center text-xs font-medium text-slate-500">Cargando facturas…</div>
+          )}
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from 'react';
-import { Clock, Download } from 'lucide-react';
+import { CheckCircle2, Clock, Download } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import RevisionsTable from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
@@ -107,7 +107,7 @@ const RevisionesPageContent = () => {
   return (
     <div className="-m-8">
       <div className="bg-white pt-6 pb-8">
-        <div className="max-w-7xl mx-auto px-5">
+        <div className="mx-auto w-full max-w-[96rem] px-5">
           <div className="flex flex-col gap-4">
             <div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -123,8 +123,11 @@ const RevisionesPageContent = () => {
                       onClick={() => handleScopeChange('pending')}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <div className={`text-xs font-semibold ${scope === 'pending' ? 'text-blue-900' : 'text-slate-700'}`}>
-                          Por validar
+                        <div className="flex items-center gap-2">
+                          <Clock className={`h-4 w-4 ${scope === 'pending' ? 'text-blue-800' : 'text-slate-700'}`} />
+                          <div className={`text-xs font-semibold ${scope === 'pending' ? 'text-blue-900' : 'text-slate-700'}`}>
+                            Por validar
+                          </div>
                         </div>
                         <div className={`text-sm font-semibold tabular-nums ${scope === 'pending' ? 'text-blue-950' : 'text-slate-900'}`}>
                           {porRevisarCount}
@@ -143,8 +146,8 @@ const RevisionesPageContent = () => {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <Clock className={`h-4 w-4 ${scope === 'history' ? 'text-white' : 'text-slate-700'}`} />
-                          <div className={`text-xs font-semibold ${scope === 'history' ? 'text-white' : 'text-slate-700'}`}>Histórico</div>
+                          <CheckCircle2 className={`h-4 w-4 ${scope === 'history' ? 'text-white' : 'text-slate-700'}`} />
+                          <div className={`text-xs font-semibold ${scope === 'history' ? 'text-white' : 'text-slate-700'}`}>Validadas</div>
                         </div>
                         <div className={`text-sm font-semibold tabular-nums ${scope === 'history' ? 'text-white' : 'text-slate-900'}`}>{historicoCount}</div>
                       </div>

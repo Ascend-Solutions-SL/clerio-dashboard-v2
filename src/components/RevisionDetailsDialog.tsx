@@ -35,7 +35,7 @@ type Props = {
   onSaved?: () => void;
 };
 
-const TIPOS = ['Ingresos', 'Gastos', 'No Factura', 'Por Revisar'] as const;
+const TIPOS = ['Ingresos', 'Gastos', 'No Factura', 'Desconocido'] as const;
 
 export function RevisionDetailsDialog({ open, onOpenChange, factura, onSaved }: Props) {
   const { toast } = useToast();
@@ -48,7 +48,7 @@ export function RevisionDetailsDialog({ open, onOpenChange, factura, onSaved }: 
   const [form, setForm] = React.useState({
     numero: '',
     fecha: '',
-    tipo: 'Por Revisar',
+    tipo: 'Desconocido',
     clienteProveedor: '',
     concepto: '',
     importeSinIva: '',
@@ -75,7 +75,7 @@ export function RevisionDetailsDialog({ open, onOpenChange, factura, onSaved }: 
     setForm({
       numero: factura.numero ?? '',
       fecha: factura.fecha ?? '',
-      tipo: (TIPOS.includes(factura.tipo as (typeof TIPOS)[number]) ? factura.tipo : 'Por Revisar') as string,
+      tipo: (TIPOS.includes(factura.tipo as (typeof TIPOS)[number]) ? factura.tipo : 'Desconocido') as string,
       clienteProveedor: factura.buyer_tax_id ?? factura.seller_tax_id ?? '',
       concepto: factura.invoice_concept ?? '',
       importeSinIva: factura.importe_sin_iva == null ? '' : String(factura.importe_sin_iva),

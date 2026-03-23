@@ -26,7 +26,6 @@ export const COMPARABLE_FACTURA_FIELDS = [
   'fecha',
   'tipo',
   'empresa_id',
-  'source',
   'buyer_name',
   'buyer_tax_id',
   'seller_name',

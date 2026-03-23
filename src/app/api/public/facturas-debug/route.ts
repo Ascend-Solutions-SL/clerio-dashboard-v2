@@ -25,13 +25,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const empresaIdRaw = (url.searchParams.get('empresa_id') ?? '49').trim();
   const tipo = (url.searchParams.get('tipo') ?? 'Gastos').trim();
-  const source = (url.searchParams.get('source') ?? 'ocr').trim();
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 200);
 
   const empresaId = Number(empresaIdRaw);
 
-  const select =
-    'id, empresa_id, numero, fecha, tipo, source, seller_tax_id, buyer_tax_id, invoice_concept, importe_total, user_businessname, created_at';
+  const select = 'id, numero, fecha, tipo, empresa_id, user_businessname, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, invoice_reason, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, drive_file_id';
 
   const { data: serverRows, error: serverError } = await supabase
     .schema('public')
@@ -39,7 +37,6 @@ export async function GET(request: Request) {
     .select(select)
     .eq('empresa_id', empresaId)
     .eq('tipo', tipo)
-    .eq('source', source)
     .order('fecha', { ascending: false })
     .limit(limit);
 
@@ -50,14 +47,13 @@ export async function GET(request: Request) {
     .select(select)
     .eq('empresa_id', empresaId)
     .eq('tipo', tipo)
-    .eq('source', source)
     .order('fecha', { ascending: false })
     .limit(limit);
 
   return NextResponse.json({
     ok: true,
     user: { id: user.id, email: user.email ?? null },
-    filters: { empresa_id: empresaId, tipo, source, limit },
+    filters: { empresa_id: empresaId, tipo, limit },
     server: {
       count: serverRows?.length ?? 0,
       error: serverError ? { message: serverError.message, code: (serverError as PostgrestError).code } : null,
