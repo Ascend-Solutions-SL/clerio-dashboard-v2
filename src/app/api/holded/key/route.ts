@@ -8,19 +8,7 @@ type HoldedApiKeyRow = {
 };
 
 type AuthUserEmpresaRow = {
-  email_type: string | null;
-  user_business_cif: string | null;
-  user_businessname: string | null;
   empresa_id: number | null;
-};
-
-const HOLDED_SCAN_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/escanear-holded';
-
-const resolveSource = (emailType: string | null) => {
-  const normalized = (emailType ?? '').trim().toLowerCase();
-  if (normalized === 'gmail') return 'googledrive';
-  if (normalized === 'outlook') return 'onedrive';
-  return '-';
 };
 
 const maskApiKey = (value: string) => {
@@ -50,7 +38,7 @@ export async function GET() {
 
   const { data: authUser, error: authUserError } = await supabaseAdmin
     .from('auth_users')
-    .select('email_type, user_business_cif, user_businessname, empresa_id')
+    .select('empresa_id')
     .eq('user_uid', user.id)
     .maybeSingle();
 
@@ -104,7 +92,7 @@ export async function POST(request: NextRequest) {
 
   const { data: authUser, error: authUserError } = await supabaseAdmin
     .from('auth_users')
-    .select('email_type, user_business_cif, user_businessname, empresa_id')
+    .select('empresa_id')
     .eq('user_uid', user.id)
     .maybeSingle();
 
@@ -113,11 +101,6 @@ export async function POST(request: NextRequest) {
   }
 
   const empresaId = ((authUser as AuthUserEmpresaRow | null)?.empresa_id ?? null) as number | null;
-  const profile = (authUser as AuthUserEmpresaRow | null) ?? null;
-  const empresa = (profile?.user_businessname ?? '').trim();
-  const cif = (profile?.user_business_cif ?? '').trim();
-  const source = resolveSource(profile?.email_type ?? null);
-
   if (!empresaId) {
     return NextResponse.json({ error: 'empresa_id no disponible para este usuario' }, { status: 400 });
   }
@@ -130,43 +113,49 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  let scanTriggered = false;
-  let scanError: string | null = null;
-
-  if (empresa && cif) {
-    try {
-      const webhookResponse = await fetch(HOLDED_SCAN_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          user_uid: user.id,
-          empresa_id: empresaId,
-          empresa,
-          cif,
-          source,
-          holded_apikey: apiKey,
-        }),
-      });
-
-      if (!webhookResponse.ok) {
-        scanError = `Webhook respondió con ${webhookResponse.status}`;
-      } else {
-        scanTriggered = true;
-      }
-    } catch (err) {
-      scanError = err instanceof Error ? err.message : 'No se pudo accionar el webhook de Holded';
-    }
-  } else {
-    scanError = 'No se pudo accionar el webhook: faltan datos de empresa o CIF';
-  }
-
   return NextResponse.json({
     ok: true,
     connected: true,
     masked_api_key: maskApiKey(apiKey),
-    scan_triggered: scanTriggered,
-    scan_error: scanError,
   });
+}
+
+export async function DELETE() {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { data: authUser, error: authUserError } = await supabaseAdmin
+    .from('auth_users')
+    .select('empresa_id')
+    .eq('user_uid', user.id)
+    .maybeSingle();
+
+  if (authUserError) {
+    return NextResponse.json({ error: authUserError.message }, { status: 500 });
+  }
+
+  const empresaId = ((authUser as AuthUserEmpresaRow | null)?.empresa_id ?? null) as number | null;
+
+  if (!empresaId) {
+    return NextResponse.json({ ok: true, connected: false });
+  }
+
+  const { error } = await supabaseAdmin
+    .from('holded_api_keys')
+    .delete()
+    .eq('user_uid', user.id)
+    .eq('empresa_id', empresaId);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, connected: false });
 }

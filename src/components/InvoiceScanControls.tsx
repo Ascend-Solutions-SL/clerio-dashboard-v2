@@ -43,6 +43,11 @@ const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
 const RECONNECT_FLOW_PARAM = 'scanReconnect';
 const RECONNECT_STAGE_PARAM = 'scanFlowStage';
 const RECONNECT_FLOW_STORAGE_KEY = 'scanReconnectStage';
+const SCAN_TOAST_DURATION_MS = 3000;
+const SCAN_TOAST_BASE_CLASS =
+  'w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100';
+const SCAN_TOAST_SUCCESS_CLASS = `${SCAN_TOAST_BASE_CLASS} border-emerald-200 bg-emerald-50 text-emerald-950`;
+const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254] bg-white text-[#7f1d24]`;
 
 type RevokedModalStage = 'warning' | 'gmail' | 'drive' | 'success';
 const REVOKED_MODAL_STAGE_ORDER: ReadonlyArray<RevokedModalStage> = ['warning', 'gmail', 'drive', 'success'];
@@ -396,20 +401,34 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }
 
     setLoading(true);
+    toast({
+      title: 'Escaneo iniciado',
+      description: 'Se ha iniciado el escaneo de facturas.',
+      duration: SCAN_TOAST_DURATION_MS,
+      className: SCAN_TOAST_BASE_CLASS,
+    });
+
     try {
       const response = await triggerN8nAction(emailType);
       const payload = (await response.json().catch(() => null)) as unknown;
 
-      toast({
-        title: 'Escaneo iniciado',
-        description: `Se ha lanzado el escaneo con la acción ${emailType}.`,
-      });
+      const hasRevokedCredentials = hasRevokedCredentialsStatus(payload);
+
+      if (!hasRevokedCredentials) {
+        toast({
+          title: 'Escaneo finalizado',
+          description: 'Se ha finalizado el escaneo de facturas.',
+          duration: SCAN_TOAST_DURATION_MS,
+          className: SCAN_TOAST_SUCCESS_CLASS,
+        });
+      }
+
       onScanned?.();
       window.setTimeout(() => {
         void loadScanMeta();
       }, 1200);
 
-      if (hasRevokedCredentialsStatus(payload)) {
+      if (hasRevokedCredentials) {
         const errorCode = SCAN_ERROR_CODES.GOOGLE_CREDENTIALS_REVOKED;
         console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
         setIsRedirectingToOAuth(false);
@@ -422,6 +441,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         title: 'No se pudo lanzar el escaneo',
         description: error instanceof Error ? error.message : 'Intenta nuevamente.',
         variant: 'destructive',
+        className: SCAN_TOAST_BASE_CLASS,
       });
     } finally {
       setLoading(false);
@@ -434,6 +454,23 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }
 
     setHoldedLoading(true);
+    toast({
+      title: 'Escaneo Holded iniciado',
+      description: (
+        <span className="flex w-full items-center justify-between gap-2">
+          <span>Se ha iniciado el escaneo de facturas de Holded.</span>
+          <Image
+            src="/brand/tab_ingresos/holded_logo.png"
+            alt="Holded"
+            width={20}
+            height={20}
+            className="h-5 w-5 shrink-0"
+          />
+        </span>
+      ),
+      duration: SCAN_TOAST_DURATION_MS,
+      className: SCAN_TOAST_HOLDED_START_CLASS,
+    });
 
     try {
       const response = await fetch('/api/holded/scan', {
@@ -448,8 +485,10 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       }
 
       toast({
-        title: 'Escaneo Holded iniciado',
-        description: 'Se ha lanzado correctamente el webhook de Holded.',
+        title: 'Escaneo finalizado',
+        description: 'Se ha finalizado el escaneo de facturas de Holded.',
+        duration: SCAN_TOAST_DURATION_MS,
+        className: SCAN_TOAST_SUCCESS_CLASS,
       });
       onScanned?.();
     } catch (error) {
@@ -457,6 +496,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         title: 'No se pudo lanzar Escanear Holded',
         description: error instanceof Error ? error.message : 'Intenta nuevamente.',
         variant: 'destructive',
+        className: SCAN_TOAST_BASE_CLASS,
       });
     } finally {
       setHoldedLoading(false);

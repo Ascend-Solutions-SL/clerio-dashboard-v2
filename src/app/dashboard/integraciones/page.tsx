@@ -2,15 +2,21 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Plus, PlugZap, Search } from 'lucide-react';
+import Image from 'next/image';
 
 import { GmailConnectButton } from '@/features/integrations/gmail/components/GmailConnectButton';
 import { DriveConnectButton } from '@/features/integrations/drive/components/DriveConnectButton';
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
-import Link from 'next/link';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { useToast } from '@/components/ui/use-toast';
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
+const SCAN_TOAST_DURATION_MS = 3000;
+const SCAN_TOAST_BASE_CLASS =
+  'w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100';
+const SCAN_TOAST_SUCCESS_CLASS = `${SCAN_TOAST_BASE_CLASS} border-emerald-200 bg-emerald-50 text-emerald-950`;
+const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254] bg-white text-[#7f1d24]`;
 
 type IntegrationsStatusCacheEntry = {
   integrations: Integration[];
@@ -191,6 +197,7 @@ const baseIntegrations: Integration[] = [
 
 const IntegracionesPage = () => {
   const { user, isLoading } = useDashboardSession();
+  const { toast } = useToast();
   const cacheKey = user?.id ?? '';
   const resolvedCacheKey = cacheKey || lastIntegrationsStatusCacheKey || '';
   const cachedStatus = resolvedCacheKey ? integrationsStatusCache.get(resolvedCacheKey) : null;
@@ -214,6 +221,7 @@ const IntegracionesPage = () => {
   const [holdedApiKeyMasked, setHoldedApiKeyMasked] = useState<string | null>(() => cachedStatus?.holdedApiKeyMasked ?? null);
   const [holdedApiKeyError, setHoldedApiKeyError] = useState<string | null>(null);
   const [isSavingHoldedApiKey, setIsSavingHoldedApiKey] = useState(false);
+  const [isRemovingHoldedApiKey, setIsRemovingHoldedApiKey] = useState(false);
   const [isEditingHoldedApiKey, setIsEditingHoldedApiKey] = useState(false);
   const [isStatusesLoading, setIsStatusesLoading] = useState(() => !Boolean(cachedStatus));
 
@@ -288,17 +296,14 @@ const IntegracionesPage = () => {
       };
     }
 
-    if (integrationsStatusCache.has(cacheKey)) {
-      if (isMounted) {
-        setIsStatusesLoading(false);
-      }
-      return () => {
-        isMounted = false;
-      };
+    const hasCachedStatus = integrationsStatusCache.has(cacheKey);
+
+    if (isMounted && hasCachedStatus) {
+      setIsStatusesLoading(false);
     }
 
     const fetchStatuses = async () => {
-      if (isMounted) {
+      if (isMounted && !hasCachedStatus) {
         setIsStatusesLoading(true);
       }
 
@@ -633,10 +638,101 @@ const IntegracionesPage = () => {
       showToast('Holded conectado correctamente');
 
       window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: true } }));
+
+      void (async () => {
+        toast({
+          title: 'Escaneo Holded iniciado',
+          description: (
+            <span className="flex w-full items-center justify-between gap-2">
+              <span>Se ha iniciado el escaneo de facturas de Holded.</span>
+              <Image
+                src="/brand/tab_ingresos/holded_logo.png"
+                alt="Holded"
+                width={20}
+                height={20}
+                className="h-5 w-5 shrink-0"
+              />
+            </span>
+          ),
+          duration: SCAN_TOAST_DURATION_MS,
+          className: SCAN_TOAST_HOLDED_START_CLASS,
+        });
+
+        try {
+          const scanResponse = await fetch('/api/holded/scan', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!scanResponse.ok) {
+            throw new Error(`Webhook respondió con ${scanResponse.status}`);
+          }
+
+          toast({
+            title: 'Escaneo finalizado',
+            description: 'Se ha finalizado el escaneo de facturas de Holded.',
+            duration: SCAN_TOAST_DURATION_MS,
+            className: SCAN_TOAST_SUCCESS_CLASS,
+          });
+        } catch (scanError) {
+          toast({
+            title: 'No se pudo lanzar Escanear Holded',
+            description: scanError instanceof Error ? scanError.message : 'Intenta nuevamente.',
+            variant: 'destructive',
+            className: SCAN_TOAST_BASE_CLASS,
+          });
+        }
+      })();
     } finally {
       setIsSavingHoldedApiKey(false);
     }
-  }, [holdedApiKeyInput, isEditingHoldedApiKey, isSavingHoldedApiKey, showToast]);
+  }, [holdedApiKeyInput, isEditingHoldedApiKey, isSavingHoldedApiKey, showToast, toast]);
+
+  const removeHoldedApiKey = useCallback(async () => {
+    if (isRemovingHoldedApiKey) {
+      return;
+    }
+
+    setIsRemovingHoldedApiKey(true);
+    setHoldedApiKeyError(null);
+
+    try {
+      const response = await fetch('/api/holded/key', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+
+      if (!response.ok) {
+        setHoldedApiKeyError(payload?.error ?? 'No se pudo desconectar Holded');
+        return;
+      }
+
+      setIntegrations((prev) =>
+        prev.map((integration) =>
+          integration.id === 'holded'
+            ? {
+                ...integration,
+                status: 'disconnected',
+              }
+            : integration
+        )
+      );
+
+      setHoldedApiKeyMasked(null);
+      setHoldedApiKeyInput('');
+      setIsEditingHoldedApiKey(false);
+      setIsHoldedModalOpen(false);
+      showToast('Holded desconectado correctamente');
+
+      window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: false } }));
+    } finally {
+      setIsRemovingHoldedApiKey(false);
+    }
+  }, [isRemovingHoldedApiKey, showToast]);
 
   return (
     <div className="-m-8">
@@ -804,29 +900,29 @@ const IntegracionesPage = () => {
                         integration.id === 'drive' ||
                         integration.id === 'outlook' ||
                         integration.id === 'onedrive' ? (
-                          <div className="mt-3 rounded-xl border border-red-200 bg-red-50/40 px-3 py-2">
+                          <div className="mt-3 rounded-xl border border-red-200 bg-red-50/40 px-3 py-1.5">
                             <div className="flex items-start justify-center gap-2 text-center text-[11px] font-semibold text-red-700">
                               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                               <div>
                                 {integration.id === 'gmail' ? (
                                   <div>
-                                    <div>ATENCIÓN: También se desconectará</div>
-                                    <div className="mt-0.5">Google Drive</div>
+                                    <div>ATENCIÓN: También se</div>
+                                    <div>desconectará Google Drive</div>
                                   </div>
                                 ) : integration.id === 'drive' ? (
                                   <div>
-                                    <div>ATENCIÓN: También se desconectará</div>
-                                    <div className="mt-0.5">Gmail</div>
+                                    <div>ATENCIÓN: También se</div>
+                                    <div>desconectará Gmail</div>
                                   </div>
                                 ) : integration.id === 'outlook' ? (
                                   <div>
-                                    <div>ATENCIÓN: También se desconectará</div>
-                                    <div className="mt-0.5">One Drive</div>
+                                    <div>ATENCIÓN: También se</div>
+                                    <div>desconectará One Drive</div>
                                   </div>
                                 ) : (
                                   <div>
-                                    <div>ATENCIÓN: También se desconectará</div>
-                                    <div className="mt-0.5">Outlook</div>
+                                    <div>ATENCIÓN: También se</div>
+                                    <div>desconectará Outlook</div>
                                   </div>
                                 )}
                               </div>
@@ -1029,22 +1125,40 @@ const IntegracionesPage = () => {
                 </div>
               ) : null}
 
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={closeHoldedModal}
-                  className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={saveHoldedApiKey}
-                  disabled={isSavingHoldedApiKey || (Boolean(holdedApiKeyMasked) && !isEditingHoldedApiKey)}
-                  className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md disabled:opacity-60"
-                >
-                  {isSavingHoldedApiKey ? 'Guardando…' : 'Guardar'}
-                </button>
+              <div className="flex items-center justify-between gap-2 pt-2">
+                <div>
+                  {holdedApiKeyMasked ? (
+                    <button
+                      type="button"
+                      onClick={removeHoldedApiKey}
+                      disabled={isRemovingHoldedApiKey || isSavingHoldedApiKey}
+                      className="rounded-full border border-red-200 bg-red-500 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-red-600 hover:shadow-md disabled:opacity-60"
+                    >
+                      {isRemovingHoldedApiKey ? 'Desconectando…' : 'Desconectar'}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closeHoldedModal}
+                    className="rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-gray-50 hover:shadow-md"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveHoldedApiKey}
+                    disabled={
+                      isSavingHoldedApiKey ||
+                      isRemovingHoldedApiKey ||
+                      (Boolean(holdedApiKeyMasked) && !isEditingHoldedApiKey)
+                    }
+                    className="rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition-transform duration-200 hover:-translate-y-0.5 hover:bg-blue-700 hover:shadow-md disabled:opacity-60"
+                  >
+                    {isSavingHoldedApiKey ? 'Guardando…' : 'Guardar'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

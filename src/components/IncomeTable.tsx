@@ -215,6 +215,8 @@ interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
   refreshKey?: number;
+  processedInvoiceCount?: number;
+  processedInvoiceCountReady?: boolean;
 }
 
 const formatDate = (value: string) => {
@@ -268,6 +270,35 @@ export type Income = {
   importeSinIvaRaw?: number | string | null;
   importeTotalRaw?: number | string | null;
   ivaRaw?: number | null;
+};
+
+type IncomeRowsCacheEntry = {
+  rows: Income[];
+  hasMoreRows: boolean;
+  nextOffset: number;
+};
+
+const incomeRowsCache = new Map<string, IncomeRowsCacheEntry>();
+
+const areIncomeRowsEqual = (a: Income[], b: Income[]) => {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+    if (
+      left.id !== right.id ||
+      left.rawDate !== right.rawDate ||
+      left.totalValue !== right.totalValue ||
+      left.subtotalValue !== right.subtotalValue ||
+      left.facturaValidada !== right.facturaValidada
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 export const columns: ColumnDef<Income>[] = [
@@ -445,7 +476,13 @@ export const columns: ColumnDef<Income>[] = [
   },
 ];
 
-export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refreshKey = 0 }: IncomeTableProps) {
+export function IncomeTable({
+  onTotalIncomeChange,
+  onInvoiceCountChange,
+  refreshKey = 0,
+  processedInvoiceCount = 0,
+  processedInvoiceCountReady = true,
+}: IncomeTableProps) {
   const { user, isLoading } = useDashboardSession();
   const [sourceData, setSourceData] = React.useState<Income[]>([]);
   const [isDataHydrated, setIsDataHydrated] = React.useState(false);
@@ -465,6 +502,24 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
   });
 
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
+  const queryCacheKey = React.useMemo(() => {
+    if (empresaId == null) {
+      return null;
+    }
+
+    const normalizedClients = [...filters.clients]
+      .map((client) => normalizeClientLabel(client))
+      .sort((a, b) => a.localeCompare(b, 'es'));
+
+    return JSON.stringify({
+      empresaId,
+      startDate: filters.startDate || '',
+      endDate: filters.endDate || '',
+      minAmount: filters.minAmount,
+      maxAmount: filters.maxAmount,
+      clients: normalizedClients,
+    });
+  }, [empresaId, filters.clients, filters.endDate, filters.maxAmount, filters.minAmount, filters.startDate]);
   const nextOffsetRef = React.useRef(0);
   const hasMoreRowsRef = React.useRef(true);
   const isFetchingMoreRef = React.useRef(false);
@@ -573,29 +628,64 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
         };
       });
 
-      nextOffsetRef.current = from + mapped.length;
-      setHasMoreRows(mapped.length === PAGE_SIZE);
-      hasMoreRowsRef.current = mapped.length === PAGE_SIZE;
-      setSourceData((prev) => (reset ? mapped : [...prev, ...mapped]));
+      const nextOffset = from + mapped.length;
+      const nextHasMoreRows = mapped.length === PAGE_SIZE;
+
+      nextOffsetRef.current = nextOffset;
+      setHasMoreRows(nextHasMoreRows);
+      hasMoreRowsRef.current = nextHasMoreRows;
+      setSourceData((prev) => {
+        const nextRows = reset ? mapped : [...prev, ...mapped];
+        const resolvedRows = areIncomeRowsEqual(prev, nextRows) ? prev : nextRows;
+
+        if (queryCacheKey) {
+          incomeRowsCache.set(queryCacheKey, {
+            rows: resolvedRows,
+            hasMoreRows: nextHasMoreRows,
+            nextOffset,
+          });
+        }
+
+        return resolvedRows;
+      });
       setIsDataHydrated(true);
       setIsInitialLoading(false);
       setIsFetchingMore(false);
       isFetchingMoreRef.current = false;
     },
-    [empresaId, filters.clients, filters.endDate, filters.maxAmount, filters.minAmount, filters.startDate, isLoading]
+    [empresaId, filters.clients, filters.endDate, filters.maxAmount, filters.minAmount, filters.startDate, isLoading, queryCacheKey]
   );
 
   React.useEffect(() => {
     if (isLoading) {
       return;
     }
-    nextOffsetRef.current = 0;
-    setHasMoreRows(true);
-    hasMoreRowsRef.current = true;
-    setSourceData([]);
-    setIsDataHydrated(false);
+
+    if (queryCacheKey) {
+      const cached = incomeRowsCache.get(queryCacheKey);
+      if (cached) {
+        setSourceData((prev) => (areIncomeRowsEqual(prev, cached.rows) ? prev : cached.rows));
+        setHasMoreRows(cached.hasMoreRows);
+        hasMoreRowsRef.current = cached.hasMoreRows;
+        nextOffsetRef.current = cached.nextOffset;
+        setIsDataHydrated(true);
+      } else {
+        setSourceData([]);
+        setIsDataHydrated(false);
+        nextOffsetRef.current = 0;
+        setHasMoreRows(true);
+        hasMoreRowsRef.current = true;
+      }
+    } else {
+      setSourceData([]);
+      setIsDataHydrated(false);
+      nextOffsetRef.current = 0;
+      setHasMoreRows(true);
+      hasMoreRowsRef.current = true;
+    }
+
     void fetchRowsPage(true);
-  }, [isLoading, empresaId, filters.startDate, filters.endDate, filters.minAmount, filters.maxAmount, filters.clients, refreshKey, fetchRowsPage]);
+  }, [isLoading, queryCacheKey, refreshKey, fetchRowsPage]);
 
   React.useEffect(() => {
     const container = tableScrollRef.current;
@@ -707,6 +797,13 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
   const hasActiveFilters = Boolean(
     filters.startDate || filters.endDate || filters.clients.length > 0 || hasAmountFilter
   );
+  const hasGlobalFilter = globalFilter.trim().length > 0;
+  const hasAnyUserFilter = hasActiveFilters || hasGlobalFilter;
+  const emptyStateMessage = !hasAnyUserFilter && !processedInvoiceCountReady
+    ? 'Cargando estado de facturas procesadas...'
+    : !hasAnyUserFilter && processedInvoiceCount === 0
+      ? 'No hay facturas de ingresos procesadas.'
+      : 'No hay facturas de ingresos procesadas que cumplan los filtros aplicados.';
 
   React.useEffect(() => {
     if (!drawerRow?.id || !tableScrollRef.current) {
@@ -897,14 +994,16 @@ export function IncomeTable({ onTotalIncomeChange, onInvoiceCountChange, refresh
               ))}
               {table.getRowModel().rows.length === 0 && isDataHydrated ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-20 text-center text-sm text-slate-500">
-                    No hay facturas que coincidan con los filtros.
+                  <TableCell colSpan={8} className="h-[220px] p-0 align-middle">
+                    <div className="flex h-full min-h-[220px] items-center justify-center px-6 text-center text-sm text-slate-500">
+                      {emptyStateMessage}
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : null}
             </TableBody>
           </Table>
-          {(isInitialLoading || isFetchingMore) && (
+          {isFetchingMore && (
             <div className="py-3 text-center text-xs font-medium text-slate-500">Cargando facturas…</div>
           )}
         </div>

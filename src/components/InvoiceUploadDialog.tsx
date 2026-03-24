@@ -20,7 +20,11 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/use-toast";
 
 const paymentStatuses = ["Pagada", "Pendiente", "Cancelada"] as const;
-const uploadWebhookUrl = "https://v-ascendsolutions.app.n8n.cloud/webhook/upload-document";
+const uploadWebhookUrl = "/api/upload-document";
+const UPLOAD_TOAST_DURATION_MS = 3000;
+const UPLOAD_TOAST_BASE_CLASS =
+  "w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100";
+const UPLOAD_TOAST_SUCCESS_CLASS = `${UPLOAD_TOAST_BASE_CLASS} border-emerald-200 bg-emerald-50 text-emerald-950`;
 
 type InvoiceType = "Ingresos" | "Gastos";
 
@@ -180,6 +184,13 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
     }
 
     setUploading(true);
+    toast({
+      title: "Subida iniciada",
+      description: `Se ha iniciado la subida de la factura de ${tipoLabel}.`,
+      duration: UPLOAD_TOAST_DURATION_MS,
+      className: UPLOAD_TOAST_BASE_CLASS,
+    });
+
     try {
       const formData = new FormData();
       formData.append("data", selectedFile);
@@ -192,12 +203,15 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
       });
 
       if (!response.ok) {
-        throw new Error(`Error al subir el archivo (${response.status})`);
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Error al subir el archivo (${response.status})`);
       }
 
       toast({
-        title: "Archivo subido",
-        description: "Archivo subido correctamente. Procesando documento...",
+        title: "Subida finalizada",
+        description: `Se ha finalizado la subida de la factura de ${tipoLabel}.`,
+        duration: UPLOAD_TOAST_DURATION_MS,
+        className: UPLOAD_TOAST_SUCCESS_CLASS,
       });
 
       onCreated?.();
@@ -207,6 +221,7 @@ export const InvoiceUploadDialog: React.FC<InvoiceUploadDialogProps> = ({ type, 
         title: "No se pudo subir el archivo",
         description: error instanceof Error ? error.message : "Intenta nuevamente.",
         variant: "destructive",
+        className: UPLOAD_TOAST_BASE_CLASS,
       });
     } finally {
       setUploading(false);

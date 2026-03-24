@@ -301,6 +301,8 @@ const IngresosPage = () => {
               </div>
               <IncomeTable
                 refreshKey={tableRefreshKey}
+                processedInvoiceCount={invoiceCount}
+                processedInvoiceCountReady={!cardsLoading}
               />
             </div>
           </div>
