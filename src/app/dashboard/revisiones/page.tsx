@@ -1,16 +1,21 @@
 "use client";
 
 import React, { Suspense, useEffect, useState } from 'react';
-import { CheckCircle2, Clock, Download } from 'lucide-react';
+import { CheckCircle2, Clock, Download, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import RevisionsTable from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
 
 const RevisionesPageContent = () => {
+  const VALIDATION_TABLE_HEIGHT = '89vh';
+  const VALIDATION_TOP_OFFSET = '4.25rem';
+  const PREVIEW_PANEL_HEIGHT = `calc(${VALIDATION_TABLE_HEIGHT} + ${VALIDATION_TOP_OFFSET})`;
+
   const searchParams = useSearchParams();
   const [porRevisarCount, setPorRevisarCount] = useState<number>(0);
   const [historicoCount, setHistoricoCount] = useState<number>(0);
-  const [scope, setScope] = useState<'pending' | 'history'>('pending');
+  const [papeleraCount, setPapeleraCount] = useState<number>(0);
+  const [scope, setScope] = useState<'pending' | 'history' | 'trash'>('pending');
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedRow, setSelectedRow] = useState<{
@@ -23,7 +28,7 @@ const RevisionesPageContent = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
 
-  const handleScopeChange = (nextScope: 'pending' | 'history') => {
+  const handleScopeChange = (nextScope: 'pending' | 'history' | 'trash') => {
     setScope(nextScope);
     setSelectedId(null);
     setSelectedRow(null);
@@ -35,7 +40,7 @@ const RevisionesPageContent = () => {
     const invoiceIdParam = searchParams.get('invoiceId');
     const scopeParam = searchParams.get('scope');
 
-    if (scopeParam === 'pending' || scopeParam === 'history') {
+    if (scopeParam === 'pending' || scopeParam === 'history' || scopeParam === 'trash') {
       handleScopeChange(scopeParam);
     }
 
@@ -152,11 +157,32 @@ const RevisionesPageContent = () => {
                         <div className={`text-sm font-semibold tabular-nums ${scope === 'history' ? 'text-white' : 'text-slate-900'}`}>{historicoCount}</div>
                       </div>
                     </button>
+
+                    <button
+                      type="button"
+                      className={`w-full md:w-[175px] rounded-xl border px-3 py-2 text-left transition-colors ${
+                        scope === 'trash'
+                          ? 'border-red-200 bg-red-50 text-red-900'
+                          : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
+                      }`}
+                      onClick={() => handleScopeChange('trash')}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Trash2 className={`h-4 w-4 ${scope === 'trash' ? 'text-red-700' : 'text-slate-700'}`} />
+                          <div className={`text-xs font-semibold ${scope === 'trash' ? 'text-red-900' : 'text-slate-700'}`}>Papelera</div>
+                        </div>
+                        <div className={`text-sm font-semibold tabular-nums ${scope === 'trash' ? 'text-red-900' : 'text-slate-900'}`}>
+                          {papeleraCount}
+                        </div>
+                      </div>
+                    </button>
                   </div>
-                  <div className="h-[72vh]">
+                  <div style={{ height: VALIDATION_TABLE_HEIGHT }}>
                     <RevisionsTable
                       onPorRevisarCountChange={setPorRevisarCount}
                       onHistoricoCountChange={setHistoricoCount}
+                      onPapeleraCountChange={setPapeleraCount}
                       scope={scope}
                       selectedId={selectedId}
                       onSelect={(id, row) => {
@@ -213,7 +239,7 @@ const RevisionesPageContent = () => {
                 </div>
 
                 <div className="lg:col-span-1">
-                  <div className="h-[89vh] rounded-lg border border-gray-200 bg-white p-4 flex flex-col">
+                  <div className="rounded-lg border border-gray-200 bg-white p-4 flex flex-col" style={{ height: PREVIEW_PANEL_HEIGHT }}>
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-semibold text-gray-700">Vista previa</div>
                       <Button

@@ -1,8 +1,12 @@
 'use client';
 
 import * as React from 'react';
-import { Download, Eye, X } from 'lucide-react';
+import { Download, Eye, Trash2, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/components/ui/use-toast';
+
+const TOGGLE_TRASH_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/toggle-trash';
 
 export type InvoiceDetailDrawerRow = {
   id?: string | number;
@@ -28,6 +32,7 @@ export type InvoiceDetailDrawerRow = {
 type InvoiceDetailDrawerProps = {
   row: InvoiceDetailDrawerRow;
   onClose: () => void;
+  onInvoiceTrashed?: (invoiceId: number) => void;
   closeAnimationMs?: number;
 };
 
@@ -51,12 +56,15 @@ type FacturaDetailRow = {
   importe_total: number | string | null;
 };
 
-export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: InvoiceDetailDrawerProps) {
+export function InvoiceDetailDrawer({ row, onClose, onInvoiceTrashed, closeAnimationMs = 260 }: InvoiceDetailDrawerProps) {
   const [isClosing, setIsClosing] = React.useState(false);
   const [dbRow, setDbRow] = React.useState<FacturaDetailRow | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [isDeletingInvoice, setIsDeletingInvoice] = React.useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = React.useState(false);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { toast } = useToast();
 
   React.useEffect(() => {
     setIsClosing(false);
@@ -195,6 +203,106 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return String(iso);
     return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+  };
+
+  const invoiceIdForDelete = dbRow?.id ?? row.id;
+  const canDeleteInvoice = invoiceIdForDelete != null && String(invoiceIdForDelete).trim().length > 0;
+
+  const executeDeleteInvoice = async (invoiceId: number) => {
+    toast({
+      title: 'Eliminando factura',
+      description: 'Estamos procesando la solicitud.',
+    });
+
+    onInvoiceTrashed?.(invoiceId);
+    closeDrawer();
+
+    setIsDeletingInvoice(true);
+
+    try {
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error('Autenticación JWT incorrecta o inexistente.');
+      }
+
+      const response = await fetch(TOGGLE_TRASH_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          factura_id: invoiceId,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            success?: boolean;
+            error?: string;
+            message?: string;
+            action?: 'restored' | 'moved_to_trash' | string;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'No se pudo completar la acción.');
+      }
+
+      if (payload?.success === false) {
+        throw new Error(payload.message || 'No se pudo completar la acción.');
+      }
+
+      const wasRestored = payload?.action === 'restored';
+
+      toast({
+        title: wasRestored ? 'Factura restaurada' : 'Factura eliminada',
+        description: wasRestored
+          ? 'La factura se ha restaurado correctamente.'
+          : 'La factura se ha enviado correctamente a la papelera.',
+        className: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+      });
+    } catch (error) {
+      toast({
+        title: 'No se pudo eliminar la factura',
+        description: error instanceof Error ? error.message : 'No se pudo completar la acción.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingInvoice(false);
+    }
+  };
+
+  const handleDeleteInvoice = () => {
+    if (!canDeleteInvoice || isDeletingInvoice) {
+      return;
+    }
+
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!canDeleteInvoice || isDeletingInvoice) {
+      return;
+    }
+
+    const parsedInvoiceId = Number(invoiceIdForDelete);
+    if (!Number.isFinite(parsedInvoiceId)) {
+      setIsDeleteConfirmOpen(false);
+      toast({
+        title: 'No se pudo eliminar la factura',
+        description: 'No se pudo identificar la factura seleccionada.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDeleteConfirmOpen(false);
+    void executeDeleteInvoice(parsedInvoiceId);
   };
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
@@ -398,12 +506,51 @@ export function InvoiceDetailDrawer({ row, onClose, closeAnimationMs = 260 }: In
                 <Section title="Concepto">
                   <Field label="Descripción" value={renderValue(dbRow?.invoice_concept)} />
                 </Section>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleDeleteInvoice}
+                    disabled={!canDeleteInvoice || isDeletingInvoice}
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-red-600 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {isDeletingInvoice ? 'Eliminando factura...' : 'Eliminar factura'}
+                  </button>
+                </div>
               </div>
               )}
             </div>
           </div>
         </div>
       </div>
+
+      <Dialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <DialogContent className="max-w-md rounded-2xl border border-slate-200 bg-white p-5">
+          <DialogHeader className="space-y-2 text-left">
+            <DialogTitle className="text-base font-semibold text-slate-900">Eliminar factura</DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">
+              ¿Seguro que quieres eliminar esta factura?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 flex-row justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={() => setIsDeleteConfirmOpen(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
+              onClick={handleConfirmDelete}
+            >
+              Eliminar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

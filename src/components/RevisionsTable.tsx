@@ -8,9 +8,10 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 
-import { ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw, Search, Trash2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -31,6 +32,8 @@ import { useToast } from '@/components/ui/use-toast';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { usePathname } from 'next/navigation';
+
+const TOGGLE_TRASH_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/toggle-trash';
 
 type DriveType = 'googledrive' | 'onedrive';
 
@@ -53,6 +56,8 @@ type FacturaRow = {
   invoice_reason: string | null;
   factura_validada?: boolean | null;
   reviewed_at?: string | null;
+  deleted_at?: string | null;
+  is_trashed?: boolean | null;
   drive_file_id?: string | null;
   drive_type?: DriveType | string | null;
 };
@@ -106,6 +111,8 @@ type RevisionRow = {
   importeTotal: number | string | null;
   reviewed: boolean;
   reviewedAt: string | null;
+  deletedAt: string | null;
+  isTrashed: boolean;
   driveFileId: string | null;
   driveType: DriveType | null;
 };
@@ -169,17 +176,19 @@ interface RevisionsTableProps {
   onPorRevisarCountChange?: (count: number) => void;
   onNoFacturasCountChange?: (count: number) => void;
   onHistoricoCountChange?: (count: number) => void;
+  onPapeleraCountChange?: (count: number) => void;
   selectedId?: number | null;
   onSelect?: (id: number, row: RevisionRow) => void;
   onDataLoaded?: (rows: RevisionRow[]) => void;
   refreshKey?: number;
-  scope?: 'pending' | 'history';
+  scope?: 'pending' | 'history' | 'trash';
 }
 
 export default function RevisionsTable({
   onPorRevisarCountChange,
   onNoFacturasCountChange,
   onHistoricoCountChange,
+  onPapeleraCountChange,
   selectedId = null,
   onSelect,
   onDataLoaded,
@@ -193,7 +202,7 @@ export default function RevisionsTable({
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [tipoFilter, setTipoFilter] = React.useState<'all' | 'Ingresos' | 'Gastos' | 'Desconocido' | 'No Factura'>('all');
   const [mode, setMode] = React.useState<'list' | 'review'>('list');
-  const [scopeState, setScopeState] = React.useState<'pending' | 'history'>('pending');
+  const [scopeState, setScopeState] = React.useState<'pending' | 'history' | 'trash'>('pending');
 
   const [period, setPeriod] = React.useState<'total' | 'month' | 'quarter' | 'year' | 'custom'>('total');
   const [customRange, setCustomRange] = React.useState<{ startDate: string; endDate: string }>({ startDate: '', endDate: '' });
@@ -271,12 +280,17 @@ export default function RevisionsTable({
   const autoScrollRafRef = React.useRef<number | null>(null);
   const closeAnimationTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [closingInvoiceId, setClosingInvoiceId] = React.useState<number | null>(null);
+  const [isTrashConfirmOpen, setIsTrashConfirmOpen] = React.useState(false);
+  const [trashConfirmAction, setTrashConfirmAction] = React.useState<null | { invoiceId: number; action: 'restore' | 'delete' }>(
+    null
+  );
   const hydratedReviewInvoiceIdRef = React.useRef<number | null>(null);
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
   const scope = scopeProp ?? scopeState;
+  const isTrashScope = scope === 'trash';
 
   const scrollInvoiceRowToTop = React.useCallback((invoiceId: number, durationMs = 420) => {
     const container = tableScrollRef.current;
@@ -476,9 +490,18 @@ export default function RevisionsTable({
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_validada, reviewed_at, drive_file_id, drive_type'
-        )
-        .eq('factura_validada', scope === 'pending' ? false : true);
+          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_validada, reviewed_at, deleted_at, is_trashed, drive_file_id, drive_type'
+        );
+
+      if (scope === 'trash') {
+        query = query.eq('is_trashed', true);
+      } else {
+        query = query.not('is_trashed', 'is', true);
+      }
+
+      if (scope !== 'trash') {
+        query = query.eq('factura_validada', scope === 'pending' ? false : true);
+      }
 
       query = query.order('fecha', { ascending: false });
 
@@ -500,7 +523,8 @@ export default function RevisionsTable({
         let countQuery = supabase
           .from('facturas')
           .select('id', { count: 'exact', head: true })
-          .eq('factura_validada', reviewed);
+          .eq('factura_validada', reviewed)
+          .not('is_trashed', 'is', true);
 
         if (empresaId != null) {
           countQuery = countQuery.eq('empresa_id', empresaId);
@@ -520,10 +544,27 @@ export default function RevisionsTable({
         return countQuery;
       };
 
-      const [{ data: rows, error }, pendingCountRes, historyCountRes] = await Promise.all([
+      let trashCountQuery = supabase.from('facturas').select('id', { count: 'exact', head: true }).eq('is_trashed', true);
+
+      if (empresaId != null) {
+        trashCountQuery = trashCountQuery.eq('empresa_id', empresaId);
+      } else if (businessName) {
+        trashCountQuery = trashCountQuery.eq('user_businessname', businessName);
+      }
+
+      if (tipoFilter !== 'all') {
+        trashCountQuery = trashCountQuery.eq('tipo', tipoFilter);
+      }
+
+      if (periodRange) {
+        trashCountQuery = trashCountQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
+      }
+
+      const [{ data: rows, error }, pendingCountRes, historyCountRes, trashCountRes] = await Promise.all([
         query,
         makeCountQuery(false),
         makeCountQuery(true),
+        trashCountQuery,
       ]);
 
       if (!isMounted) {
@@ -535,6 +576,7 @@ export default function RevisionsTable({
         onPorRevisarCountChange?.(pendingCountRes.count ?? 0);
         onNoFacturasCountChange?.(0);
         onHistoricoCountChange?.(historyCountRes.count ?? 0);
+        onPapeleraCountChange?.(trashCountRes.count ?? 0);
         setHasLoadedRowsOnce(true);
         setIsRowsLoading(false);
         return;
@@ -547,6 +589,7 @@ export default function RevisionsTable({
       onPorRevisarCountChange?.(pendingCountRes.count ?? 0);
       onNoFacturasCountChange?.(noFacturasCount);
       onHistoricoCountChange?.(historyCountRes.count ?? 0);
+      onPapeleraCountChange?.(trashCountRes.count ?? 0);
 
       // Emit real-time count update for sidebar badge
       window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCountRes.count ?? 0 } }));
@@ -573,6 +616,8 @@ export default function RevisionsTable({
           importeTotal: row.importe_total ?? null,
           reviewed: Boolean(row.factura_validada),
           reviewedAt: row.reviewed_at ?? null,
+          deletedAt: row.deleted_at ?? null,
+          isTrashed: Boolean(row.is_trashed),
           driveFileId: row.drive_file_id ?? null,
           driveType: resolvedDriveType,
         };
@@ -622,7 +667,146 @@ export default function RevisionsTable({
     onPorRevisarCountChange,
     onNoFacturasCountChange,
     onHistoricoCountChange,
+    onPapeleraCountChange,
   ]);
+
+  const refreshPendingCount = React.useCallback(async () => {
+    let pendingCountQuery = supabase
+      .from('facturas')
+      .select('id', { count: 'exact', head: true })
+      .eq('factura_validada', false)
+      .not('is_trashed', 'is', true);
+
+    if (empresaId != null) {
+      pendingCountQuery = pendingCountQuery.eq('empresa_id', empresaId);
+    } else if (businessName) {
+      pendingCountQuery = pendingCountQuery.eq('user_businessname', businessName);
+    }
+
+    if (tipoFilter !== 'all') {
+      pendingCountQuery = pendingCountQuery.eq('tipo', tipoFilter);
+    }
+
+    if (periodRange) {
+      pendingCountQuery = pendingCountQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
+    }
+
+    const pendingCountRes = await pendingCountQuery;
+    const pendingCount = pendingCountRes.count ?? 0;
+    onPorRevisarCountChange?.(pendingCount);
+    window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCount } }));
+  }, [businessName, empresaId, onPorRevisarCountChange, periodRange, tipoFilter]);
+
+  const toggleTrashState = React.useCallback(
+    async (invoiceId: number, action: 'restore' | 'delete') => {
+      toast({
+        title: action === 'restore' ? 'Restaurando factura' : 'Eliminando factura',
+        description: 'Estamos procesando la solicitud.',
+      });
+
+      let removedRow: RevisionRow | null = null;
+      setData((prev) => {
+        removedRow = prev.find((row) => row.id === invoiceId) ?? null;
+        return prev.filter((row) => row.id !== invoiceId);
+      });
+
+      if (selectedId === invoiceId) {
+        setMode('list');
+      }
+
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (sessionError || !session?.access_token) {
+          throw new Error('Autenticación JWT incorrecta o inexistente.');
+        }
+
+        const response = await fetch(TOGGLE_TRASH_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ factura_id: invoiceId }),
+        });
+
+        const payload = (await response.json().catch(() => null)) as
+          | {
+              success?: boolean;
+              error?: string;
+              message?: string;
+              action?: 'restored' | 'moved_to_trash' | string;
+            }
+          | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.message || 'No se pudo completar la acción.');
+        }
+
+        if (payload?.success === false) {
+          throw new Error(payload.message || 'No se pudo completar la acción.');
+        }
+
+        const wasRestored = payload?.action === 'restored' || action === 'restore';
+        toast({
+          title: wasRestored ? 'Factura restaurada' : 'Factura eliminada',
+          description: wasRestored
+            ? 'La factura se ha restaurado correctamente.'
+            : 'La factura se ha enviado correctamente a la papelera.',
+          className: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+        });
+
+        void refreshPendingCount();
+      } catch (error) {
+        if (removedRow) {
+          setData((prev) => (prev.some((row) => row.id === removedRow!.id) ? prev : [removedRow!, ...prev]));
+        }
+
+        throw error;
+      }
+    },
+    [refreshPendingCount, selectedId, toast]
+  );
+
+  const handleRestoreInvoice = React.useCallback(
+    (invoiceId: number) => {
+      setTrashConfirmAction({ invoiceId, action: 'restore' });
+      setIsTrashConfirmOpen(true);
+    },
+    []
+  );
+
+  const handleDeleteInvoice = React.useCallback(
+    (invoiceId: number) => {
+      setTrashConfirmAction({ invoiceId, action: 'delete' });
+      setIsTrashConfirmOpen(true);
+    },
+    []
+  );
+
+  const handleConfirmTrashAction = React.useCallback(async () => {
+    if (!trashConfirmAction) {
+      return;
+    }
+
+    const { invoiceId, action } = trashConfirmAction;
+    setIsTrashConfirmOpen(false);
+
+    try {
+      await toggleTrashState(invoiceId, action);
+    } catch (error) {
+      toast({
+        title: action === 'restore' ? 'No se pudo restaurar la factura' : 'No se pudo eliminar la factura',
+        description: error instanceof Error ? error.message : 'No se pudo completar la acción.',
+        variant: 'destructive',
+      });
+    } finally {
+      setTrashConfirmAction(null);
+    }
+  }, [toggleTrashState, toast, trashConfirmAction]);
 
   const parseOptionalNumber = (raw: string) => {
     const trimmed = raw.trim();
@@ -928,25 +1112,6 @@ export default function RevisionsTable({
   const columns = React.useMemo<ColumnDef<RevisionRow>[]>(() => {
     const base: ColumnDef<RevisionRow>[] = [
       {
-        id: 'estado',
-        header: () => <div className="text-center font-semibold">Estado</div>,
-        cell: ({ row }) => {
-          const isReviewed = Boolean(row.original.reviewed);
-          return (
-            <div className="flex justify-center">
-              <span
-                className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
-                  isReviewed ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900'
-                }`}
-              >
-                {isReviewed ? 'Validada' : 'Pendiente'}
-              </span>
-            </div>
-          );
-        },
-        size: 92,
-      },
-      {
         id: 'tipo',
         header: () => <div className="text-center font-semibold">Tipo</div>,
         cell: ({ row }) => {
@@ -1016,9 +1181,31 @@ export default function RevisionsTable({
             </div>
           );
         },
-        size: 120,
+        size: isTrashScope ? 94 : 120,
       },
     ];
+
+    if (!isTrashScope) {
+      base.unshift({
+        id: 'estado',
+        header: () => <div className="text-center font-semibold">Estado</div>,
+        cell: ({ row }) => {
+          const isReviewed = Boolean(row.original.reviewed);
+          return (
+            <div className="flex justify-center">
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
+                  isReviewed ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-amber-300 bg-amber-50 text-amber-900'
+                }`}
+              >
+                {isReviewed ? 'Validada' : 'Pendiente'}
+              </span>
+            </div>
+          );
+        },
+        size: 92,
+      });
+    }
 
     if (scope === 'history') {
       base.push({
@@ -1031,8 +1218,43 @@ export default function RevisionsTable({
       });
     }
 
+    if (isTrashScope) {
+      base.push(
+        {
+          id: 'deletedAt',
+          header: () => <div className="text-center font-semibold">Eliminada</div>,
+          cell: ({ row }) => (
+            <div className="text-center tabular-nums">{row.original.deletedAt ? formatRelativeTime(row.original.deletedAt) : '—'}</div>
+          ),
+          size: 96,
+        },
+        {
+          id: 'restore',
+          header: () => <div className="text-center font-semibold">Restaurar</div>,
+          cell: ({ row }) => (
+            <div className="flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-7 w-7 border-slate-200 p-0 text-xs"
+                aria-label="Restaurar factura"
+                title="Restaurar factura"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleRestoreInvoice(row.original.id);
+                }}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ),
+          size: 112,
+        },
+      );
+    }
+
     return base;
-  }, [scope, dateSort]);
+  }, [scope, dateSort, handleRestoreInvoice, isTrashScope]);
 
   const sortedData = React.useMemo(() => {
     const tipoRank: Record<string, number> = {
@@ -1164,6 +1386,7 @@ export default function RevisionsTable({
   const showLoadingRowsState = mode === 'list' && isRowsLoading && rowsCount === 0;
   const showPendingCelebration = mode === 'list' && scope === 'pending' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
   const showHistoryEmptyState = mode === 'list' && scope === 'history' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
+  const showTrashEmptyState = mode === 'list' && scope === 'trash' && rowsCount === 0 && !hasActiveFilters && !globalFilter.trim();
 
   React.useEffect(() => {
     const canCelebrate = scope === 'pending' && !hasActiveFilters && !globalFilter.trim();
@@ -1204,7 +1427,7 @@ export default function RevisionsTable({
   return (
     <div
       className={`relative h-full flex flex-col overflow-hidden p-4 rounded-lg border text-sm ${
-        scope === 'history' ? 'bg-slate-50 border-slate-300' : 'bg-white border-gray-200'
+        scope === 'history' ? 'bg-slate-50 border-slate-300' : scope === 'trash' ? 'bg-red-50/30 border-red-200' : 'bg-white border-gray-200'
       }`}
     >
       {showAmountsMismatchConfirm ? (
@@ -1369,18 +1592,20 @@ export default function RevisionsTable({
           </div>
 
           <div className="flex justify-end">
-            <Button
-              type="button"
-              className={
-                validateConfirmStep === 0
-                  ? 'h-8 bg-emerald-600 hover:bg-emerald-700 text-xs'
-                  : 'h-8 bg-amber-600 hover:bg-amber-700 text-xs ring-2 ring-amber-300'
-              }
-              disabled={!selected || isSaving || (selected?.tipo === 'No Factura' && !nfUnlock)}
-              onClick={() => void handleValidateAndNext()}
-            >
-              {validateConfirmStep === 0 ? 'Validar y siguiente' : 'Confirmar'}
-            </Button>
+            {scope !== 'trash' ? (
+              <Button
+                type="button"
+                className={
+                  validateConfirmStep === 0
+                    ? 'h-8 bg-emerald-600 hover:bg-emerald-700 text-xs'
+                    : 'h-8 bg-amber-600 hover:bg-amber-700 text-xs ring-2 ring-amber-300'
+                }
+                disabled={!selected || isSaving || (selected?.tipo === 'No Factura' && !nfUnlock)}
+                onClick={() => void handleValidateAndNext()}
+              >
+                {validateConfirmStep === 0 ? 'Validar y siguiente' : 'Confirmar'}
+              </Button>
+            ) : null}
           </div>
         </div>
       )}
@@ -1404,7 +1629,7 @@ export default function RevisionsTable({
           position: sticky;
           top: 0;
           z-index: 20;
-          background: ${scope === 'history' ? '#f8fafc' : '#ffffff'};
+          background: ${scope === 'history' ? '#f8fafc' : scope === 'trash' ? '#fef2f2' : '#ffffff'};
           box-shadow: inset 0 -1px 0 rgba(226, 232, 240, 1);
         }
 
@@ -1426,26 +1651,26 @@ export default function RevisionsTable({
 
         .revisions-table th:nth-child(3),
         .revisions-table td:nth-child(3) {
-          width: 94px;
-          min-width: 94px;
+          width: ${scope === 'trash' ? '58%' : '94px'};
+          min-width: ${scope === 'trash' ? '300px' : '94px'};
         }
 
         .revisions-table th:nth-child(4),
         .revisions-table td:nth-child(4) {
-          width: ${scope === 'history' ? '61%' : '68%'};
-          min-width: ${scope === 'history' ? '320px' : '300px'};
+          width: ${scope === 'trash' ? '96px' : scope === 'history' ? '61%' : '68%'};
+          min-width: ${scope === 'trash' ? '96px' : scope === 'history' ? '320px' : '300px'};
         }
 
         .revisions-table th:nth-child(5),
         .revisions-table td:nth-child(5) {
-          width: 120px;
-          min-width: 120px;
+          width: ${scope === 'trash' ? '92px' : '120px'};
+          min-width: ${scope === 'trash' ? '92px' : '120px'};
         }
 
         .revisions-table th:nth-child(6),
         .revisions-table td:nth-child(6) {
-          width: 110px;
-          min-width: 110px;
+          width: ${scope === 'trash' ? '76px' : '110px'};
+          min-width: ${scope === 'trash' ? '76px' : '110px'};
         }
 
         .revisions-confetti-piece {
@@ -1595,7 +1820,7 @@ export default function RevisionsTable({
                           <div className={`revisions-expanded-panel relative m-2 overflow-hidden rounded-lg border border-slate-300 bg-white p-3 shadow-[0_18px_42px_rgba(15,23,42,0.16)] text-left ${isClosing ? 'closing' : ''}`}>
                             <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-slate-300/80 to-transparent" />
                             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-slate-300/70 to-transparent" />
-                            {selected?.tipo === 'No Factura' && !nfUnlock ? (
+                            {scope !== 'trash' && selected?.tipo === 'No Factura' && !nfUnlock ? (
                               <div className="absolute inset-0 z-10 bg-slate-950/24 backdrop-blur-sm">
                                 <div className="flex h-full items-start justify-center px-3">
                                   <div className="mt-8 w-full max-w-md rounded-lg bg-white px-3 py-2 text-center shadow-lg">
@@ -1629,7 +1854,7 @@ export default function RevisionsTable({
                               </div>
                             ) : null}
 
-                            <div className={selected?.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-[1px] select-none' : ''}>
+                            <div className={scope !== 'trash' && selected?.tipo === 'No Factura' && !nfUnlock ? 'pointer-events-none blur-[1px] select-none' : scope === 'trash' ? 'pointer-events-none select-none' : ''}>
                               <div className="grid grid-cols-1 gap-3">
                                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                                   <div>
@@ -1637,6 +1862,7 @@ export default function RevisionsTable({
                                     <Input
                                       className="h-9 text-xs"
                                       value={reviewForm.numero}
+                                      readOnly={isTrashScope}
                                       onChange={(e) => setReviewForm((p) => ({ ...p, numero: e.target.value }))}
                                     />
                                   </div>
@@ -1646,6 +1872,7 @@ export default function RevisionsTable({
                                       type="date"
                                       className="h-9 text-xs"
                                       value={reviewForm.fecha}
+                                      readOnly={isTrashScope}
                                       onChange={(e) => setReviewForm((p) => ({ ...p, fecha: e.target.value }))}
                                     />
                                   </div>
@@ -1654,6 +1881,7 @@ export default function RevisionsTable({
                                     <select
                                       className="h-9 w-full rounded-md border border-input bg-background px-2 text-xs"
                                       value={reviewForm.tipo}
+                                      disabled={isTrashScope}
                                       onChange={(e) => {
                                         setReviewForm((p) => ({ ...p, tipo: e.target.value }));
                                       }}
@@ -1720,6 +1948,7 @@ export default function RevisionsTable({
                                         type="button"
                                         variant="outline"
                                         className="h-9 w-9 p-0"
+                                        disabled={isTrashScope}
                                         onClick={handleSwapCounterpartyData}
                                         aria-label="Intercambiar datos comprador y vendedor"
                                       >
@@ -1819,6 +2048,33 @@ export default function RevisionsTable({
                                 </div>
                               </div>
                             </div>
+
+                            {scope === 'trash' && selected ? (
+                              <div className="mt-4 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 border-slate-300 text-xs"
+                                  onClick={() => void handleRestoreInvoice(selected.id)}
+                                >
+                                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                                  Restaurar
+                                </Button>
+                              </div>
+                            ) : null}
+
+                            {scope !== 'trash' && selected ? (
+                              <div className="mt-4 flex justify-end gap-2 border-t border-slate-200 pt-3">
+                                <Button
+                                  type="button"
+                                  className="h-8 bg-red-500 text-xs hover:bg-red-600"
+                                  onClick={() => void handleDeleteInvoice(selected.id)}
+                                >
+                                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                  Eliminar factura
+                                </Button>
+                              </div>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1870,6 +2126,14 @@ export default function RevisionsTable({
             </div>
           </div>
         ) : null}
+
+        {showTrashEmptyState && !showLoadingRowsState ? (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+            <div className="text-center text-[19px] font-medium tracking-[-0.01em] text-slate-500/70">
+              No tienes facturas en la papelera
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {hasActiveFilters && (
@@ -1882,6 +2146,58 @@ export default function RevisionsTable({
           </div>
         </div>
       )}
+
+      <Dialog
+        open={isTrashConfirmOpen}
+        onOpenChange={(open) => {
+          setIsTrashConfirmOpen(open);
+          if (!open) {
+            setTrashConfirmAction(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded-2xl border border-slate-200 bg-white p-5">
+          <DialogHeader className="space-y-2 text-left">
+            <DialogTitle className="text-base font-semibold text-slate-900">
+              {trashConfirmAction?.action === 'restore'
+                ? 'Restaurar factura'
+                : trashConfirmAction?.action === 'delete'
+                  ? 'Eliminar factura'
+                  : ''}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">
+              {trashConfirmAction?.action === 'restore'
+                ? '¿Seguro que quieres restaurar esta factura?'
+                : trashConfirmAction?.action === 'delete'
+                  ? '¿Seguro que quieres eliminar esta factura?'
+                  : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 flex-row justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              onClick={() => {
+                setIsTrashConfirmOpen(false);
+                setTrashConfirmAction(null);
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className={
+                trashConfirmAction?.action === 'restore'
+                  ? 'rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900'
+                  : 'rounded-md bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600'
+              }
+              onClick={() => void handleConfirmTrashAction()}
+            >
+              {trashConfirmAction?.action === 'restore' ? 'Restaurar' : 'Eliminar'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

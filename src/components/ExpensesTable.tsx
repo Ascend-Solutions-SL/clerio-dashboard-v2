@@ -588,6 +588,7 @@ export function ExpensesTable({
         )
         .eq('empresa_id', empresaId)
         .eq('tipo', 'Gastos')
+        .eq('is_trashed', false)
         .order('fecha', { ascending: false })
         .range(from, to);
 
@@ -1032,7 +1033,15 @@ export function ExpensesTable({
         </div>
       </div>
 
-      {drawerRow ? <InvoiceDetailDrawer row={drawerRow} onClose={() => setDrawerRow(null)} /> : null}
+      {drawerRow ? (
+        <InvoiceDetailDrawer
+          row={drawerRow}
+          onClose={() => setDrawerRow(null)}
+          onInvoiceTrashed={(invoiceId) => {
+            setSourceData((prev) => prev.filter((item) => item.id !== invoiceId));
+          }}
+        />
+      ) : null}
 
     </div>
   );
