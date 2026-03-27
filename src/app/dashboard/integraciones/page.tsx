@@ -12,11 +12,38 @@ import { useDashboardSession } from '@/context/dashboard-session-context';
 import { useToast } from '@/components/ui/use-toast';
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
+const HOLDED_SCAN_IN_PROGRESS_EVENT = 'holded-scan-in-progress-changed';
+const HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY = 'holded-scan-in-progress';
 const SCAN_TOAST_DURATION_MS = 3000;
 const SCAN_TOAST_BASE_CLASS =
   'w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100';
 const SCAN_TOAST_SUCCESS_CLASS = `${SCAN_TOAST_BASE_CLASS} border-emerald-200 bg-emerald-50 text-emerald-950`;
 const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254] bg-white text-[#7f1d24]`;
+const SCAN_TOAST_LOGO_SIZE = 40;
+const SCAN_TOAST_LOGO_CLASS = 'pointer-events-none absolute right-5 top-1/2 h-10 w-10 -translate-y-1/2 object-contain';
+const SCAN_TOAST_DESCRIPTION_CLASS = 'block pr-16';
+
+const getHoldedScanInProgress = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY) === '1';
+};
+
+const setHoldedScanInProgress = (inProgress: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (inProgress) {
+    window.sessionStorage.setItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY, '1');
+  } else {
+    window.sessionStorage.removeItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY);
+  }
+
+  window.dispatchEvent(new CustomEvent(HOLDED_SCAN_IN_PROGRESS_EVENT, { detail: { inProgress } }));
+};
 
 type IntegrationsStatusCacheEntry = {
   integrations: Integration[];
@@ -640,17 +667,22 @@ const IntegracionesPage = () => {
       window.dispatchEvent(new CustomEvent(HOLDED_STATUS_EVENT, { detail: { connected: true } }));
 
       void (async () => {
+        if (getHoldedScanInProgress()) {
+          return;
+        }
+
+        setHoldedScanInProgress(true);
         toast({
           title: 'Escaneo Holded iniciado',
           description: (
-            <span className="flex w-full items-center justify-between gap-2">
+            <span className={SCAN_TOAST_DESCRIPTION_CLASS}>
               <span>Se ha iniciado el escaneo de facturas de Holded.</span>
               <Image
                 src="/brand/tab_ingresos/holded_logo.png"
                 alt="Holded"
-                width={20}
-                height={20}
-                className="h-5 w-5 shrink-0"
+                width={SCAN_TOAST_LOGO_SIZE}
+                height={SCAN_TOAST_LOGO_SIZE}
+                className={SCAN_TOAST_LOGO_CLASS}
               />
             </span>
           ),
@@ -683,6 +715,8 @@ const IntegracionesPage = () => {
             variant: 'destructive',
             className: SCAN_TOAST_BASE_CLASS,
           });
+        } finally {
+          setHoldedScanInProgress(false);
         }
       })();
     } finally {

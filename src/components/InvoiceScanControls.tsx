@@ -39,6 +39,10 @@ const SCAN_ERROR_CODES = {
 } as const;
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
+const SCAN_IN_PROGRESS_EVENT = 'invoice-scan-in-progress-changed';
+const SCAN_IN_PROGRESS_STORAGE_KEY = 'invoice-scan-in-progress';
+const HOLDED_SCAN_IN_PROGRESS_EVENT = 'holded-scan-in-progress-changed';
+const HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY = 'holded-scan-in-progress';
 const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
 const RECONNECT_FLOW_PARAM = 'scanReconnect';
 const RECONNECT_STAGE_PARAM = 'scanFlowStage';
@@ -47,7 +51,11 @@ const SCAN_TOAST_DURATION_MS = 3000;
 const SCAN_TOAST_BASE_CLASS =
   'w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100';
 const SCAN_TOAST_SUCCESS_CLASS = `${SCAN_TOAST_BASE_CLASS} border-emerald-200 bg-emerald-50 text-emerald-950`;
+const SCAN_TOAST_CLERIO_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#1d6bff] bg-white text-[#0a1f44]`;
 const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254] bg-white text-[#7f1d24]`;
+const SCAN_TOAST_LOGO_SIZE = 40;
+const SCAN_TOAST_LOGO_CLASS = 'pointer-events-none absolute right-5 top-1/2 h-10 w-10 -translate-y-1/2 object-contain';
+const SCAN_TOAST_DESCRIPTION_CLASS = 'block pr-16';
 
 type RevokedModalStage = 'warning' | 'gmail' | 'drive' | 'success';
 const REVOKED_MODAL_STAGE_ORDER: ReadonlyArray<RevokedModalStage> = ['warning', 'gmail', 'drive', 'success'];
@@ -102,13 +110,59 @@ const formatElapsedSince = (iso: string | null) => {
   return hours > 0 ? `${days} d ${hours} h` : `${days} d`;
 };
 
+const getScanInProgress = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(SCAN_IN_PROGRESS_STORAGE_KEY) === '1';
+};
+
+const setScanInProgress = (inProgress: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (inProgress) {
+    window.sessionStorage.setItem(SCAN_IN_PROGRESS_STORAGE_KEY, '1');
+  } else {
+    window.sessionStorage.removeItem(SCAN_IN_PROGRESS_STORAGE_KEY);
+  }
+
+  window.dispatchEvent(new CustomEvent(SCAN_IN_PROGRESS_EVENT, { detail: { inProgress } }));
+};
+
+const getHoldedScanInProgress = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.sessionStorage.getItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY) === '1';
+};
+
+const setHoldedScanInProgress = (inProgress: boolean) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (inProgress) {
+    window.sessionStorage.setItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY, '1');
+  } else {
+    window.sessionStorage.removeItem(HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY);
+  }
+
+  window.dispatchEvent(new CustomEvent(HOLDED_SCAN_IN_PROGRESS_EVENT, { detail: { inProgress } }));
+};
+
 export function InvoiceScanControls({ onScanned, showHoldedScan = false }: InvoiceScanControlsProps) {
   const { user } = useDashboardSession();
   const { toast } = useToast();
   const cacheKey = `${user?.id ?? 'anonymous'}|${showHoldedScan ? 'holded' : 'generic'}`;
   const cachedMeta = invoiceScanMetaCache.get(cacheKey);
   const [loading, setLoading] = React.useState(false);
+  const [isScanInProgress, setIsScanInProgress] = React.useState<boolean>(() => getScanInProgress());
   const [holdedLoading, setHoldedLoading] = React.useState(false);
+  const [isHoldedScanInProgress, setIsHoldedScanInProgress] = React.useState<boolean>(() => getHoldedScanInProgress());
   const [lastScanAt, setLastScanAt] = React.useState<string | null>(() => cachedMeta?.lastScanAt ?? null);
   const [emailType, setEmailType] = React.useState<string | null>(() => cachedMeta?.emailType ?? null);
   const [isBootstrapping, setIsBootstrapping] = React.useState(() => !Boolean(cachedMeta));
@@ -256,6 +310,25 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   }, [loadScanMeta]);
 
   React.useEffect(() => {
+    const handleScanInProgressChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ inProgress?: boolean }>;
+      if (typeof customEvent.detail?.inProgress === 'boolean') {
+        setIsScanInProgress(customEvent.detail.inProgress);
+        return;
+      }
+
+      setIsScanInProgress(getScanInProgress());
+    };
+
+    setIsScanInProgress(getScanInProgress());
+    window.addEventListener(SCAN_IN_PROGRESS_EVENT, handleScanInProgressChange);
+
+    return () => {
+      window.removeEventListener(SCAN_IN_PROGRESS_EVENT, handleScanInProgressChange);
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (!showHoldedScan) {
       return undefined;
     }
@@ -274,6 +347,29 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       window.removeEventListener(HOLDED_STATUS_EVENT, handler);
     };
   }, [loadScanMeta, showHoldedScan]);
+
+  React.useEffect(() => {
+    if (!showHoldedScan) {
+      return undefined;
+    }
+
+    const handleInProgressChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ inProgress?: boolean }>;
+      if (typeof customEvent.detail?.inProgress === 'boolean') {
+        setIsHoldedScanInProgress(customEvent.detail.inProgress);
+        return;
+      }
+
+      setIsHoldedScanInProgress(getHoldedScanInProgress());
+    };
+
+    setIsHoldedScanInProgress(getHoldedScanInProgress());
+    window.addEventListener(HOLDED_SCAN_IN_PROGRESS_EVENT, handleInProgressChange);
+
+    return () => {
+      window.removeEventListener(HOLDED_SCAN_IN_PROGRESS_EVENT, handleInProgressChange);
+    };
+  }, [showHoldedScan]);
 
   const closeCredentialsRevokedModal = React.useCallback(() => {
     setShowCredentialsRevokedModal(false);
@@ -385,7 +481,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   }, [getReconnectFlowStage, setReconnectFlowStage, toast]);
 
   const handleScan = async () => {
-    if (!user?.id || loading) {
+    if (!user?.id || loading || isScanInProgress) {
       return;
     }
 
@@ -401,11 +497,23 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }
 
     setLoading(true);
+    setScanInProgress(true);
     toast({
       title: 'Escaneo iniciado',
-      description: 'Se ha iniciado el escaneo de facturas.',
+      description: (
+        <span className={SCAN_TOAST_DESCRIPTION_CLASS}>
+          <span>Se ha iniciado el escaneo de facturas.</span>
+          <Image
+            src="/brand/IMAGO_AZUL.png"
+            alt="Clerio"
+            width={SCAN_TOAST_LOGO_SIZE}
+            height={SCAN_TOAST_LOGO_SIZE}
+            className={SCAN_TOAST_LOGO_CLASS}
+          />
+        </span>
+      ),
       duration: SCAN_TOAST_DURATION_MS,
-      className: SCAN_TOAST_BASE_CLASS,
+      className: SCAN_TOAST_CLERIO_START_CLASS,
     });
 
     try {
@@ -445,26 +553,28 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       });
     } finally {
       setLoading(false);
+      setScanInProgress(false);
     }
   };
 
   const handleHoldedScan = async () => {
-    if (!user?.id || holdedLoading) {
+    if (!user?.id || holdedLoading || isHoldedScanInProgress) {
       return;
     }
 
     setHoldedLoading(true);
+    setHoldedScanInProgress(true);
     toast({
       title: 'Escaneo Holded iniciado',
       description: (
-        <span className="flex w-full items-center justify-between gap-2">
+        <span className={SCAN_TOAST_DESCRIPTION_CLASS}>
           <span>Se ha iniciado el escaneo de facturas de Holded.</span>
           <Image
             src="/brand/tab_ingresos/holded_logo.png"
             alt="Holded"
-            width={20}
-            height={20}
-            className="h-5 w-5 shrink-0"
+            width={SCAN_TOAST_LOGO_SIZE}
+            height={SCAN_TOAST_LOGO_SIZE}
+            className={SCAN_TOAST_LOGO_CLASS}
           />
         </span>
       ),
@@ -500,6 +610,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       });
     } finally {
       setHoldedLoading(false);
+      setHoldedScanInProgress(false);
     }
   };
 
@@ -518,10 +629,10 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
             <Button
               type="button"
               onClick={handleHoldedScan}
-              disabled={holdedLoading || isBootstrapping || !user?.id}
+              disabled={holdedLoading || isHoldedScanInProgress || isBootstrapping || !user?.id}
               className="bg-[#ff4254] text-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#ff3247] hover:shadow-md active:translate-y-0 focus-visible:ring-2 focus-visible:ring-[#ff9ca6]"
             >
-              {holdedLoading ? (
+              {holdedLoading || isHoldedScanInProgress ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Image
@@ -539,10 +650,10 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
           <Button
             type="button"
             onClick={handleScan}
-            disabled={loading || isBootstrapping || !user?.id}
+            disabled={loading || isScanInProgress || isBootstrapping || !user?.id}
             className="bg-slate-950 text-white shadow-sm transition-transform duration-200 hover:-translate-y-0.5 hover:bg-slate-900 hover:shadow-md active:translate-y-0 focus-visible:ring-2 focus-visible:ring-amber-300"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
+            {loading || isScanInProgress ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanSearch className="h-4 w-4" />}
             Escanear Facturas
           </Button>
         </div>

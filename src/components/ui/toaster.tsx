@@ -17,7 +17,7 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-[1000] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      "fixed top-0 z-[1000] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-4 sm:right-12 sm:top-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}
@@ -123,7 +123,7 @@ const Toaster = () => {
     <ToastProvider>
       {toasts.map(({ id, title, description, action, ...props }) => (
         <Toast key={id} {...props}>
-          <div className="grid gap-1">
+          <div className="grid flex-1 gap-1">
             {title && <ToastTitle>{title}</ToastTitle>}
             {description && (
               <ToastDescription>{description}</ToastDescription>
