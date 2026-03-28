@@ -1,7 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
 const N8N_WEBHOOK_URLS = [
-  'https://n8n.tudominio.com/webhook/dashboard-action',
   'https://v-ascendsolutions.app.n8n.cloud/webhook/dashboard-action',
 ] as const;
 

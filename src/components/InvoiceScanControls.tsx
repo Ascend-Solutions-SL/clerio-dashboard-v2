@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Loader2, Plug, RefreshCw, ScanSearch, X } from 'lucide-react';
+import { Check, Loader2, Plug, RefreshCw, ScanSearch, X } from 'lucide-react';
 import Image from 'next/image';
 
 import { useDashboardSession } from '@/context/dashboard-session-context';
@@ -19,8 +19,35 @@ type AuthUserScanSettings = {
   email_type: string | null;
 };
 
-type ScanLogRow = {
-  created_at: string;
+type ScanRunRow = {
+  finished_at: string | null;
+};
+
+type ScanStartWebhookResponse = {
+  run_id?: string | null;
+  user_uid?: string | null;
+  scan_type?: string | null;
+};
+
+type ScanStepRealtimeRow = {
+  run_id?: string | number | null;
+  user_uid?: string | null;
+  step?: string | null;
+  status?: string | null;
+  metadata?: unknown;
+  progress_total?: number | string | null;
+  progress_current?: number | string | null;
+};
+
+type ScanStatusTone = 'neutral' | 'warning' | 'success';
+
+type ScanStatusQueueItem = {
+  key: string;
+  text: string;
+  tone: ScanStatusTone;
+  showSuccessIcon?: boolean;
+  stopSpinner?: boolean;
+  onDisplayed?: () => void;
 };
 
 type HoldedKeyStatusResponse = {
@@ -41,6 +68,9 @@ const SCAN_ERROR_CODES = {
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
 const SCAN_IN_PROGRESS_EVENT = 'invoice-scan-in-progress-changed';
 const SCAN_IN_PROGRESS_STORAGE_KEY = 'invoice-scan-in-progress';
+const SCAN_ACTIVE_RUN_ID_STORAGE_KEY = 'invoice-scan-active-run-id';
+const SCAN_ACTIVE_USER_UID_STORAGE_KEY = 'invoice-scan-active-user-uid';
+const SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY = 'invoice-scan-active-scan-type';
 const HOLDED_SCAN_IN_PROGRESS_EVENT = 'holded-scan-in-progress-changed';
 const HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY = 'holded-scan-in-progress';
 const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
@@ -56,6 +86,10 @@ const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254]
 const SCAN_TOAST_LOGO_SIZE = 40;
 const SCAN_TOAST_LOGO_CLASS = 'pointer-events-none absolute right-5 top-1/2 h-10 w-10 -translate-y-1/2 object-contain';
 const SCAN_TOAST_DESCRIPTION_CLASS = 'block pr-16';
+const SCAN_STEPS_BUFFER_LIMIT = 24;
+const SCAN_STATUS_MIN_VISIBLE_MS = 1400;
+const SCAN_STATUS_TRANSITION_MS = 150;
+const SCAN_STATUS_FINAL_HOLD_MS = 1800;
 
 type RevokedModalStage = 'warning' | 'gmail' | 'drive' | 'success';
 const REVOKED_MODAL_STAGE_ORDER: ReadonlyArray<RevokedModalStage> = ['warning', 'gmail', 'drive', 'success'];
@@ -81,6 +115,34 @@ const hasRevokedCredentialsStatus = (payload: unknown) => {
   return checkItem(payload);
 };
 
+const normalizeScanType = (value: unknown): 'gmail' | 'outlook' | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'gmail' || normalized === 'outlook') {
+    return normalized;
+  }
+
+  return null;
+};
+
+const toNonNegativeInteger = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value >= 0 ? Math.floor(value) : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+
+  return null;
+};
+
 const formatElapsedSince = (iso: string | null) => {
   if (!iso) {
     return 'Sin registros';
@@ -92,6 +154,10 @@ const formatElapsedSince = (iso: string | null) => {
   }
 
   const totalMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+  if (totalMinutes < 1) {
+    return 'un momento';
+  }
 
   if (totalMinutes < 60) {
     return `${totalMinutes} min`;
@@ -132,6 +198,61 @@ const setScanInProgress = (inProgress: boolean) => {
   window.dispatchEvent(new CustomEvent(SCAN_IN_PROGRESS_EVENT, { detail: { inProgress } }));
 };
 
+const getActivePrimaryScanRunId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(SCAN_ACTIVE_RUN_ID_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+};
+
+const getActivePrimaryScanUserUid = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+};
+
+const getActivePrimaryScanType = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return normalizeScanType(window.sessionStorage.getItem(SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY));
+};
+
+const setActivePrimaryScanTracking = (runId: string, userUid: string | null, scanType: 'gmail' | 'outlook' | null) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.setItem(SCAN_ACTIVE_RUN_ID_STORAGE_KEY, runId);
+  if (userUid && userUid.trim().length > 0) {
+    window.sessionStorage.setItem(SCAN_ACTIVE_USER_UID_STORAGE_KEY, userUid);
+  } else {
+    window.sessionStorage.removeItem(SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+  }
+
+  if (scanType) {
+    window.sessionStorage.setItem(SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY, scanType);
+  } else {
+    window.sessionStorage.removeItem(SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY);
+  }
+};
+
+const clearActivePrimaryScanTracking = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.removeItem(SCAN_ACTIVE_RUN_ID_STORAGE_KEY);
+  window.sessionStorage.removeItem(SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+  window.sessionStorage.removeItem(SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY);
+};
+
 const getHoldedScanInProgress = () => {
   if (typeof window === 'undefined') {
     return false;
@@ -170,6 +291,163 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const [showCredentialsRevokedModal, setShowCredentialsRevokedModal] = React.useState(false);
   const [revokedModalStage, setRevokedModalStage] = React.useState<RevokedModalStage>('warning');
   const [isRedirectingToOAuth, setIsRedirectingToOAuth] = React.useState(false);
+  const [activeScanRunId, setActiveScanRunId] = React.useState<string | null>(() => getActivePrimaryScanRunId());
+  const [activeScanUserUid, setActiveScanUserUid] = React.useState<string | null>(() => getActivePrimaryScanUserUid());
+  const [activeScanType, setActiveScanType] = React.useState<'gmail' | 'outlook' | null>(() => getActivePrimaryScanType());
+  const [scanStatusMessage, setScanStatusMessage] = React.useState<ScanStatusQueueItem | null>(null);
+  const [isScanStatusVisible, setIsScanStatusVisible] = React.useState(true);
+  const [stopStatusSpinner, setStopStatusSpinner] = React.useState(false);
+  const completedRunToastRef = React.useRef<string | null>(null);
+  const credentialsFailedRunRef = React.useRef<string | null>(null);
+  const activeScanRunIdRef = React.useRef<string | null>(activeScanRunId);
+  const activeScanUserUidRef = React.useRef<string | null>(activeScanUserUid);
+  const activeScanTypeRef = React.useRef<'gmail' | 'outlook' | null>(activeScanType);
+  const scanStepBufferRef = React.useRef<Map<string, ScanStepRealtimeRow[]>>(new Map());
+  const invoiceProcessingTotalRef = React.useRef<number | null>(null);
+  const scanStatusQueueRef = React.useRef<ScanStatusQueueItem[]>([]);
+  const scanStatusTimerRef = React.useRef<number | null>(null);
+  const scanStatusSwapTimerRef = React.useRef<number | null>(null);
+  const scanStatusShownAtRef = React.useRef<number>(0);
+  const currentScanStatusKeyRef = React.useRef<string | null>(null);
+  const scanStatusQueueProcessorRef = React.useRef<() => void>(() => undefined);
+  const scanCompletionTimerRef = React.useRef<number | null>(null);
+  const onScannedRef = React.useRef<InvoiceScanControlsProps['onScanned']>(onScanned);
+  const toastRef = React.useRef(toast);
+
+  React.useEffect(() => {
+    onScannedRef.current = onScanned;
+  }, [onScanned]);
+
+  React.useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  React.useEffect(() => {
+    activeScanRunIdRef.current = activeScanRunId;
+  }, [activeScanRunId]);
+
+  React.useEffect(() => {
+    activeScanUserUidRef.current = activeScanUserUid;
+  }, [activeScanUserUid]);
+
+  React.useEffect(() => {
+    activeScanTypeRef.current = activeScanType;
+  }, [activeScanType]);
+
+  const clearScanStatusTimers = React.useCallback(() => {
+    if (scanStatusTimerRef.current !== null) {
+      window.clearTimeout(scanStatusTimerRef.current);
+      scanStatusTimerRef.current = null;
+    }
+
+    if (scanStatusSwapTimerRef.current !== null) {
+      window.clearTimeout(scanStatusSwapTimerRef.current);
+      scanStatusSwapTimerRef.current = null;
+    }
+
+    if (scanCompletionTimerRef.current !== null) {
+      window.clearTimeout(scanCompletionTimerRef.current);
+      scanCompletionTimerRef.current = null;
+    }
+  }, []);
+
+  const resetScanStatusUI = React.useCallback(() => {
+    clearScanStatusTimers();
+    scanStatusQueueRef.current = [];
+    scanStatusShownAtRef.current = 0;
+    currentScanStatusKeyRef.current = null;
+    setScanStatusMessage(null);
+    setIsScanStatusVisible(true);
+    setStopStatusSpinner(false);
+    invoiceProcessingTotalRef.current = null;
+  }, [clearScanStatusTimers]);
+
+  const applyScanStatus = React.useCallback((item: ScanStatusQueueItem) => {
+    setIsScanStatusVisible(false);
+
+    if (scanStatusSwapTimerRef.current !== null) {
+      window.clearTimeout(scanStatusSwapTimerRef.current);
+      scanStatusSwapTimerRef.current = null;
+    }
+
+    scanStatusSwapTimerRef.current = window.setTimeout(() => {
+      scanStatusSwapTimerRef.current = null;
+      setScanStatusMessage(item);
+      setStopStatusSpinner(Boolean(item.stopSpinner));
+      setIsScanStatusVisible(true);
+      scanStatusShownAtRef.current = Date.now();
+      currentScanStatusKeyRef.current = item.key;
+      item.onDisplayed?.();
+    }, SCAN_STATUS_TRANSITION_MS);
+  }, []);
+
+  scanStatusQueueProcessorRef.current = () => {
+    if (scanStatusTimerRef.current !== null) {
+      return;
+    }
+
+    if (scanStatusQueueRef.current.length === 0) {
+      return;
+    }
+
+    const elapsed = Date.now() - scanStatusShownAtRef.current;
+    const waitMs = scanStatusShownAtRef.current === 0 ? 0 : Math.max(0, SCAN_STATUS_MIN_VISIBLE_MS - elapsed);
+
+    scanStatusTimerRef.current = window.setTimeout(() => {
+      scanStatusTimerRef.current = null;
+      const next = scanStatusQueueRef.current.shift();
+      if (!next) {
+        return;
+      }
+
+      applyScanStatus(next);
+      scanStatusQueueProcessorRef.current();
+    }, waitMs);
+  };
+
+  const enqueueScanStatus = React.useCallback(
+    (
+      item: ScanStatusQueueItem,
+      options?: {
+        immediate?: boolean;
+        replacePending?: boolean;
+      }
+    ) => {
+      const immediate = Boolean(options?.immediate);
+      const replacePending = Boolean(options?.replacePending);
+
+      if (replacePending) {
+        scanStatusQueueRef.current = [];
+      }
+
+      const lastQueuedKey = scanStatusQueueRef.current[scanStatusQueueRef.current.length - 1]?.key ?? null;
+      const isSameAsCurrent = currentScanStatusKeyRef.current === item.key;
+      const isSameAsLastQueued = lastQueuedKey === item.key;
+
+      if (!immediate && (isSameAsCurrent || isSameAsLastQueued)) {
+        return;
+      }
+
+      if (immediate) {
+        if (scanStatusTimerRef.current !== null) {
+          window.clearTimeout(scanStatusTimerRef.current);
+          scanStatusTimerRef.current = null;
+        }
+        applyScanStatus(item);
+        return;
+      }
+
+      scanStatusQueueRef.current.push(item);
+      scanStatusQueueProcessorRef.current();
+    },
+    [applyScanStatus]
+  );
+
+  React.useEffect(() => {
+    return () => {
+      clearScanStatusTimers();
+    };
+  }, [clearScanStatusTimers]);
 
   const setReconnectFlowStage = React.useCallback((stage: 'gmail' | 'drive' | 'success' | null) => {
     if (typeof window === 'undefined') {
@@ -221,10 +499,6 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   }, [cacheKey]);
 
   React.useEffect(() => {
-    if (!user?.id) {
-      return;
-    }
-
     invoiceScanMetaCache.set(cacheKey, {
       emailType,
       lastScanAt,
@@ -244,7 +518,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     const cached = invoiceScanMetaCache.get(cacheKey);
     setIsBootstrapping(!cached);
 
-    const [{ data: authUser, error: authUserError }, { data: lastLog, error: logError }, holdedStatusResult] =
+    const [{ data: authUser, error: authUserError }, { data: lastRun, error: runError }, holdedStatusResult] =
       await Promise.all([
         supabase
           .from('auth_users')
@@ -252,11 +526,12 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
           .eq('user_uid', user.id)
           .maybeSingle(),
         supabase
-          .from('logs')
-          .select('created_at')
+          .from('scan_runs')
+          .select('finished_at')
           .eq('user_uid', user.id)
-          .eq('log', 'Escaner ejecutado')
-          .order('created_at', { ascending: false })
+          .in('scan_type', ['gmail', 'outlook', 'holded'])
+          .not('finished_at', 'is', null)
+          .order('finished_at', { ascending: false })
           .limit(1)
           .maybeSingle(),
         showHoldedScan
@@ -272,15 +547,15 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       console.error('Error fetching auth user scan settings', authUserError);
     }
 
-    if (logError) {
-      console.error('Error fetching last scan log', logError);
+    if (runError) {
+      console.error('Error fetching last scan run', runError);
     }
 
     const typedAuthUser = authUser as AuthUserScanSettings | null;
-    const typedLastLog = lastLog as ScanLogRow | null;
+    const typedLastRun = lastRun as ScanRunRow | null;
 
     const nextEmailType = authUserError ? (cached?.emailType ?? null) : typedAuthUser?.email_type?.trim() || null;
-    const nextLastScanAt = logError ? (cached?.lastScanAt ?? null) : typedLastLog?.created_at ?? null;
+    const nextLastScanAt = runError ? (cached?.lastScanAt ?? null) : typedLastRun?.finished_at ?? null;
 
     setEmailType(nextEmailType);
     setLastScanAt(nextLastScanAt);
@@ -305,6 +580,12 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setIsBootstrapping(false);
   }, [cacheKey, showHoldedScan, user?.id]);
 
+  const loadScanMetaRef = React.useRef(loadScanMeta);
+
+  React.useEffect(() => {
+    loadScanMetaRef.current = loadScanMeta;
+  }, [loadScanMeta]);
+
   React.useEffect(() => {
     void loadScanMeta();
   }, [loadScanMeta]);
@@ -314,13 +595,28 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       const customEvent = event as CustomEvent<{ inProgress?: boolean }>;
       if (typeof customEvent.detail?.inProgress === 'boolean') {
         setIsScanInProgress(customEvent.detail.inProgress);
+        if (customEvent.detail.inProgress) {
+          setActiveScanRunId(getActivePrimaryScanRunId());
+          setActiveScanUserUid(getActivePrimaryScanUserUid());
+          setActiveScanType(getActivePrimaryScanType());
+        } else {
+          setActiveScanRunId(null);
+          setActiveScanUserUid(null);
+          setActiveScanType(null);
+        }
         return;
       }
 
       setIsScanInProgress(getScanInProgress());
+      setActiveScanRunId(getActivePrimaryScanRunId());
+      setActiveScanUserUid(getActivePrimaryScanUserUid());
+      setActiveScanType(getActivePrimaryScanType());
     };
 
     setIsScanInProgress(getScanInProgress());
+    setActiveScanRunId(getActivePrimaryScanRunId());
+    setActiveScanUserUid(getActivePrimaryScanUserUid());
+    setActiveScanType(getActivePrimaryScanType());
     window.addEventListener(SCAN_IN_PROGRESS_EVENT, handleScanInProgressChange);
 
     return () => {
@@ -480,6 +776,279 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     };
   }, [getReconnectFlowStage, setReconnectFlowStage, toast]);
 
+  const finishPrimaryScan = React.useCallback((runId: string) => {
+    if (completedRunToastRef.current === runId) {
+      return;
+    }
+
+    completedRunToastRef.current = runId;
+    credentialsFailedRunRef.current = null;
+    clearActivePrimaryScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeScanRunIdRef.current = null;
+    activeScanUserUidRef.current = null;
+    activeScanTypeRef.current = null;
+    setActiveScanRunId(null);
+    setActiveScanUserUid(null);
+    setActiveScanType(null);
+    setLoading(false);
+    setScanInProgress(false);
+    setLastScanAt(new Date().toISOString());
+    resetScanStatusUI();
+    toastRef.current({
+      title: 'Escaneo finalizado',
+      description: 'Se ha finalizado el escaneo de facturas.',
+      duration: SCAN_TOAST_DURATION_MS,
+      className: SCAN_TOAST_SUCCESS_CLASS,
+    });
+    onScannedRef.current?.();
+    window.setTimeout(() => {
+      void loadScanMetaRef.current();
+    }, 1200);
+  }, [resetScanStatusUI]);
+
+  const stopPrimaryScanForCredentials = React.useCallback((runId: string) => {
+    if (credentialsFailedRunRef.current === runId) {
+      return;
+    }
+
+    credentialsFailedRunRef.current = runId;
+
+    enqueueScanStatus(
+      {
+        key: `credentials-failed-${runId}`,
+        text: 'Credenciales caducadas',
+        tone: 'warning',
+        stopSpinner: true,
+      },
+      { immediate: true, replacePending: true }
+    );
+
+    clearActivePrimaryScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeScanRunIdRef.current = null;
+    activeScanUserUidRef.current = null;
+    activeScanTypeRef.current = null;
+    setActiveScanRunId(null);
+    setActiveScanUserUid(null);
+    setActiveScanType(null);
+    setLoading(false);
+    setScanInProgress(false);
+    setIsRedirectingToOAuth(false);
+    setRevokedModalStage('warning');
+    setReconnectFlowStage(null);
+    setShowCredentialsRevokedModal(true);
+  }, [enqueueScanStatus, setReconnectFlowStage]);
+
+  const schedulePrimaryScanCompletion = React.useCallback((runId: string) => {
+    enqueueScanStatus(
+      {
+        key: `scan-finished-${runId}`,
+        text: 'Escaneo finalizado',
+        tone: 'success',
+        stopSpinner: true,
+        showSuccessIcon: true,
+        onDisplayed: () => {
+          if (scanCompletionTimerRef.current !== null) {
+            window.clearTimeout(scanCompletionTimerRef.current);
+          }
+
+          scanCompletionTimerRef.current = window.setTimeout(() => {
+            scanCompletionTimerRef.current = null;
+            finishPrimaryScan(runId);
+          }, SCAN_STATUS_FINAL_HOLD_MS);
+        },
+      },
+      { replacePending: true }
+    );
+  }, [enqueueScanStatus, finishPrimaryScan]);
+
+  React.useEffect(() => {
+    if (!user?.id || !isScanInProgress) {
+      return;
+    }
+
+    let isCleaningUp = false;
+
+    const channel = supabase
+      .channel(`scan_steps_user_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scan_steps',
+        },
+        (payload: { new?: unknown }) => {
+          const row = (payload.new as ScanStepRealtimeRow | null) ?? null;
+          if (!row) {
+            console.info('[scan:realtime] payload ignored: missing payload.new', payload);
+            return;
+          }
+
+          const rowRunId = row.run_id != null ? String(row.run_id) : null;
+          const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+          const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+          const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+          const rowProgressTotal = toNonNegativeInteger(row.progress_total);
+          const rowProgressCurrent = toNonNegativeInteger(row.progress_current);
+          const currentUserUid = activeScanUserUidRef.current;
+
+          if (rowRunId) {
+            const bufferedRows = scanStepBufferRef.current.get(rowRunId) ?? [];
+            const nextBufferedRows = [...bufferedRows, row].slice(-SCAN_STEPS_BUFFER_LIMIT);
+            scanStepBufferRef.current.set(rowRunId, nextBufferedRows);
+          }
+
+          const currentRunId = activeScanRunIdRef.current;
+          if (!currentRunId) {
+            console.info('[scan:realtime] payload buffered: no active run id yet', {
+              rowRunId,
+              rowStep,
+              rowStatus,
+            });
+            return;
+          }
+
+          const isSameRun = rowRunId === currentRunId;
+          const isSameUser = !rowUserUid || !currentUserUid || rowUserUid === currentUserUid;
+          const expectedScanType = activeScanTypeRef.current;
+          const isEndStep =
+            expectedScanType === 'gmail'
+              ? rowStep === 'gmail_scrapper_end'
+              : expectedScanType === 'outlook'
+                ? rowStep === 'outlook_scrapper_end'
+                : rowStep === 'gmail_scrapper_end' || rowStep === 'outlook_scrapper_end';
+          const isSuccess = rowStatus === 'success';
+
+          console.info('[scan:realtime] payload received', {
+            rowRunId,
+            rowUserUid,
+            rowStep,
+            rowStatus,
+            rowProgressTotal,
+            rowProgressCurrent,
+            currentRunId,
+            currentUserUid,
+            expectedScanType,
+            isSameRun,
+            isSameUser,
+            isEndStep,
+            isSuccess,
+          });
+
+          if (!isSameRun || !isSameUser) {
+            return;
+          }
+
+          if (rowStep === 'credentials_failed') {
+            stopPrimaryScanForCredentials(currentRunId);
+            return;
+          }
+
+          if (rowStep === 'gmail_scanning_inbox') {
+            enqueueScanStatus({
+              key: `scanning-inbox-${currentRunId}`,
+              text: 'Escaneando correo...',
+              tone: 'neutral',
+            });
+          }
+
+          if (rowStep === 'drive_files_processing') {
+            enqueueScanStatus({
+              key: `drive-files-processing-${currentRunId}`,
+              text: 'Escaneando nube...',
+              tone: 'neutral',
+            });
+          }
+
+          if (rowStep === 'drive_empty') {
+            enqueueScanStatus({
+              key: `drive-empty-${currentRunId}`,
+              text: 'No hay archivos por procesar',
+              tone: 'neutral',
+            });
+          }
+
+          if (rowStep === 'invoice_processing') {
+            const total = rowProgressTotal ?? invoiceProcessingTotalRef.current;
+            if (typeof total === 'number' && total >= 0) {
+              invoiceProcessingTotalRef.current = total;
+            }
+
+            const effectiveTotal = invoiceProcessingTotalRef.current;
+            if (effectiveTotal && rowProgressCurrent === 0) {
+              enqueueScanStatus({
+                key: `invoice-found-${currentRunId}-${effectiveTotal}`,
+                text: `Se han encontrado ${effectiveTotal} documentos`,
+                tone: 'neutral',
+              });
+            }
+
+            if (effectiveTotal && typeof rowProgressCurrent === 'number' && rowProgressCurrent > 0) {
+              const currentInvoice = Math.min(rowProgressCurrent, effectiveTotal);
+              enqueueScanStatus({
+                key: `invoice-progress-${currentRunId}-${currentInvoice}-${effectiveTotal}`,
+                text: `Escaneando factura ${currentInvoice} de ${effectiveTotal}...`,
+                tone: 'neutral',
+              });
+            }
+          }
+
+          if (isEndStep && isSuccess) {
+            console.info('[scan:realtime] finishing run', currentRunId);
+            schedulePrimaryScanCompletion(currentRunId);
+          }
+        }
+      )
+      .subscribe((
+        status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR',
+        err?: Error
+      ) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('[scan:realtime] subscribed', { userUid: user.id, activeRunId: activeScanRunIdRef.current });
+          return;
+        }
+
+        if (status === 'CLOSED' && isCleaningUp) {
+          console.info('[scan:realtime] channel closed after cleanup', {
+            userUid: user.id,
+            activeRunId: activeScanRunIdRef.current,
+          });
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[scan:realtime] channel status', { status, err, userUid: user.id, activeRunId: activeScanRunIdRef.current });
+          return;
+        }
+
+        console.info('[scan:realtime] channel status', { status, userUid: user.id, activeRunId: activeScanRunIdRef.current });
+      });
+
+    return () => {
+      isCleaningUp = true;
+      console.info('[scan:realtime] remove channel', { userUid: user.id });
+      void supabase.removeChannel(channel);
+    };
+  }, [enqueueScanStatus, isScanInProgress, schedulePrimaryScanCompletion, stopPrimaryScanForCredentials, user?.id]);
+
+  const handleCancelScanLock = React.useCallback(() => {
+    const runId = activeScanRunIdRef.current;
+    if (runId) {
+      scanStepBufferRef.current.delete(runId);
+    }
+    clearActivePrimaryScanTracking();
+    activeScanRunIdRef.current = null;
+    activeScanUserUidRef.current = null;
+    setActiveScanRunId(null);
+    setActiveScanUserUid(null);
+    setActiveScanType(null);
+    setLoading(false);
+    setScanInProgress(false);
+    resetScanStatusUI();
+  }, [resetScanStatusUI]);
+
   const handleScan = async () => {
     if (!user?.id || loading || isScanInProgress) {
       return;
@@ -498,6 +1067,17 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
 
     setLoading(true);
     setScanInProgress(true);
+    completedRunToastRef.current = null;
+    credentialsFailedRunRef.current = null;
+    invoiceProcessingTotalRef.current = null;
+    enqueueScanStatus(
+      {
+        key: 'scan-starting',
+        text: 'Iniciando escaneo...',
+        tone: 'neutral',
+      },
+      { immediate: true, replacePending: true }
+    );
     toast({
       title: 'Escaneo iniciado',
       description: (
@@ -518,31 +1098,65 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
 
     try {
       const response = await triggerN8nAction(emailType);
-      const payload = (await response.json().catch(() => null)) as unknown;
+      const payload = (await response.json().catch(() => null)) as ScanStartWebhookResponse | null;
 
-      const hasRevokedCredentials = hasRevokedCredentialsStatus(payload);
+      const runId = typeof payload?.run_id === 'string' && payload.run_id.trim().length > 0 ? payload.run_id.trim() : null;
+      const userUid =
+        typeof payload?.user_uid === 'string' && payload.user_uid.trim().length > 0 ? payload.user_uid.trim() : user?.id ?? null;
+      const scanType = normalizeScanType(payload?.scan_type) ?? normalizeScanType(emailType) ?? 'gmail';
 
-      if (!hasRevokedCredentials) {
-        toast({
-          title: 'Escaneo finalizado',
-          description: 'Se ha finalizado el escaneo de facturas.',
-          duration: SCAN_TOAST_DURATION_MS,
-          className: SCAN_TOAST_SUCCESS_CLASS,
-        });
+      if (!runId || !userUid) {
+        throw new Error('El webhook no devolvió run_id/user_uid válidos.');
       }
 
-      onScanned?.();
-      window.setTimeout(() => {
-        void loadScanMeta();
-      }, 1200);
+      console.info('[scan:start] webhook ack', { runId, userUid, scanType, emailType });
+
+      setActivePrimaryScanTracking(runId, userUid, scanType);
+      activeScanRunIdRef.current = runId;
+      activeScanUserUidRef.current = userUid;
+      activeScanTypeRef.current = scanType;
+      setActiveScanRunId(runId);
+      setActiveScanUserUid(userUid);
+      setActiveScanType(scanType);
+
+      const bufferedRows = scanStepBufferRef.current.get(runId) ?? [];
+      const hasBufferedCredentialsFailure = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && rowStep === 'credentials_failed';
+      });
+      const hasBufferedFinish = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        const isEndStep = scanType === 'outlook' ? rowStep === 'outlook_scrapper_end' : rowStep === 'gmail_scrapper_end';
+        const isSuccess = rowStatus === 'success';
+        return isSameUser && isEndStep && isSuccess;
+      });
+
+      if (hasBufferedCredentialsFailure) {
+        stopPrimaryScanForCredentials(runId);
+        return;
+      }
+
+      if (hasBufferedFinish) {
+        console.info('[scan:realtime] finishing run from buffered events', runId);
+        schedulePrimaryScanCompletion(runId);
+        return;
+      }
+
+      const hasRevokedCredentials = hasRevokedCredentialsStatus(payload as unknown);
+
+      if (!hasRevokedCredentials) {
+        setLoading(false);
+      }
 
       if (hasRevokedCredentials) {
         const errorCode = SCAN_ERROR_CODES.GOOGLE_CREDENTIALS_REVOKED;
         console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
-        setIsRedirectingToOAuth(false);
-        setRevokedModalStage('warning');
-        setReconnectFlowStage(null);
-        setShowCredentialsRevokedModal(true);
+        stopPrimaryScanForCredentials(runId);
       }
     } catch (error) {
       toast({
@@ -551,9 +1165,22 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         variant: 'destructive',
         className: SCAN_TOAST_BASE_CLASS,
       });
+      clearActivePrimaryScanTracking();
+      const runId = activeScanRunIdRef.current;
+      if (runId) {
+        scanStepBufferRef.current.delete(runId);
+      }
+      activeScanRunIdRef.current = null;
+      activeScanUserUidRef.current = null;
+      activeScanTypeRef.current = null;
+      setActiveScanRunId(null);
+      setActiveScanUserUid(null);
+      setActiveScanType(null);
+      setScanInProgress(false);
+      setLoading(false);
+      resetScanStatusUI();
     } finally {
       setLoading(false);
-      setScanInProgress(false);
     }
   };
 
@@ -614,14 +1241,34 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }
   };
 
+  const statusToneClass =
+    scanStatusMessage?.tone === 'success'
+      ? 'text-emerald-700'
+      : scanStatusMessage?.tone === 'warning'
+        ? 'text-amber-700'
+        : 'text-gray-500';
+  const shouldSpinStatusIcon = (loading || isBootstrapping || isScanInProgress) && !stopStatusSpinner;
+  const statusText = scanStatusMessage?.text ?? `Último escaneo hace ${formatElapsedSince(lastScanAt)}`;
+
   return (
     <>
       <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center text-sm text-gray-500 gap-2">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
           <RefreshCw
-            className={`h-4 w-4 transition-colors ${loading || isBootstrapping ? 'animate-spin text-slate-900' : 'text-gray-500'}`}
+            className={`h-4 w-4 transition-colors ${shouldSpinStatusIcon ? 'animate-spin text-slate-900' : 'text-gray-500'}`}
           />
-          <span>{`Último escaneo hace ${formatElapsedSince(lastScanAt)}`}</span>
+          <div aria-live="polite" className="flex min-h-[20px] items-center gap-1.5 overflow-hidden">
+            <span
+              className={`block transform-gpu transition-all duration-300 ${isScanStatusVisible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'} ${statusToneClass}`}
+            >
+              {statusText}
+            </span>
+            {scanStatusMessage?.showSuccessIcon ? (
+              <span className="inline-flex h-4 w-4 items-center justify-center rounded-[5px] bg-emerald-500 text-white">
+                <Check className="h-3 w-3" />
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -644,6 +1291,17 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
                 />
               )}
               Escanear Holded
+            </Button>
+          ) : null}
+
+          {isScanInProgress ? (
+            <Button
+              type="button"
+              onClick={handleCancelScanLock}
+              variant="outline"
+              className="border-slate-300 text-slate-700 hover:bg-slate-100"
+            >
+              Cancelar
             </Button>
           ) : null}
 
