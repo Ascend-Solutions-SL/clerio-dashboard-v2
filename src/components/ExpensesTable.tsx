@@ -33,6 +33,7 @@ import { InvoiceDetailDrawer, type InvoiceDetailDrawerRow } from '@/components/I
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filters';
+import { DateRangeSelector, getDefaultCurrentYearRange, type DateRangeValue } from '@/components/ui/date-range-selector';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
@@ -43,6 +44,8 @@ type PendingTooltipState = {
   x: number;
   y: number;
 };
+
+const DEFAULT_DATE_RANGE = getDefaultCurrentYearRange();
 
 const normalizeFacturaValidada = (value: unknown): boolean | null => {
   if (value === true || value === false) {
@@ -197,11 +200,6 @@ function ExpensesActionsCell({
   );
 }
 
-const buildDriveDownloadUrl = (driveFileId?: string | null) =>
-  driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : undefined;
-const buildDrivePreviewUrl = (driveFileId?: string | null) =>
-  driveFileId ? `https://drive.google.com/file/d/${driveFileId}/preview` : undefined;
-
 const SortIndicator = ({ state }: { state: false | 'asc' | 'desc' }) => (
   <span
     aria-hidden
@@ -231,6 +229,7 @@ const normalizeClientLabel = (value: string) =>
 interface ExpensesTableProps {
   onTotalExpensesChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
+  onDateRangeChange?: (range: DateRangeValue) => void;
   refreshKey?: number;
   processedInvoiceCount?: number;
   processedInvoiceCountReady?: boolean;
@@ -502,6 +501,7 @@ export const columns: ColumnDef<Expense>[] = [
 export function ExpensesTable({
   onTotalExpensesChange,
   onInvoiceCountChange,
+  onDateRangeChange,
   refreshKey = 0,
   processedInvoiceCount = 0,
   processedInvoiceCountReady = true,
@@ -517,12 +517,16 @@ export function ExpensesTable({
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [filters, setFilters] = React.useState<TableFiltersValue>({
-    startDate: '', 
-    endDate: '',
-    clients: [],
+    startDate: DEFAULT_DATE_RANGE.startDate,
+    endDate: DEFAULT_DATE_RANGE.endDate,
     minAmount: null,
     maxAmount: null,
+    clients: [],
   });
+
+  React.useEffect(() => {
+    onDateRangeChange?.({ startDate: filters.startDate, endDate: filters.endDate });
+  }, [filters.endDate, filters.startDate, onDateRangeChange]);
 
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
   const queryCacheKey = React.useMemo(() => {
@@ -694,15 +698,11 @@ export function ExpensesTable({
         nextOffsetRef.current = cached.nextOffset;
         setIsDataHydrated(true);
       } else {
-        setSourceData([]);
-        setIsDataHydrated(false);
         nextOffsetRef.current = 0;
         setHasMoreRows(true);
         hasMoreRowsRef.current = true;
       }
     } else {
-      setSourceData([]);
-      setIsDataHydrated(false);
       nextOffsetRef.current = 0;
       setHasMoreRows(true);
       hasMoreRowsRef.current = true;
@@ -781,8 +781,8 @@ export function ExpensesTable({
 
   const resetFilters = () => {
     setFilters({
-      startDate: '',
-      endDate: '',
+      startDate: DEFAULT_DATE_RANGE.startDate,
+      endDate: DEFAULT_DATE_RANGE.endDate,
       clients: [],
       minAmount: null,
       maxAmount: null,
@@ -791,9 +791,7 @@ export function ExpensesTable({
   };
 
   const hasAmountFilter = filters.minAmount != null && filters.maxAmount != null;
-  const hasActiveFilters = Boolean(
-    filters.startDate || filters.endDate || filters.clients.length > 0 || hasAmountFilter
-  );
+  const hasActiveFilters = Boolean(filters.clients.length > 0 || hasAmountFilter);
   const hasGlobalFilter = globalFilter.trim().length > 0;
   const hasAnyUserFilter = hasActiveFilters || hasGlobalFilter;
   const emptyStateMessage = !hasAnyUserFilter && !processedInvoiceCountReady
@@ -853,24 +851,13 @@ export function ExpensesTable({
               clients={clients}
               amountBounds={amountBounds}
               className="flex-1"
+              hideDateSection
             />
             <Button variant="outline" size="sm" className="h-8 border-dashed" disabled>
               <Download className="h-4 w-4" />
             </Button>
             {hasActiveFilters && (
               <div className="flex items-center gap-1.5 flex-wrap">
-                {filters.startDate && filters.endDate && (
-                  <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                    Periodo: {formatDate(filters.startDate)} - {formatDate(filters.endDate)}
-                    <button
-                      type="button"
-                      className="text-blue-200 hover:text-white text-xs leading-none"
-                      onClick={() => setFilters((prev) => ({ ...prev, startDate: '', endDate: '' }))}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
                 {filters.clients.length > 0 && (
                   <div className="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5">
                     Clientes: {filters.clients.length}
@@ -906,8 +893,8 @@ export function ExpensesTable({
               </div>
             )}
           </div>
-          <div className="w-full sm:w-auto">
-            <div className="relative">
+          <div className="w-full sm:w-auto flex items-center gap-2">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
@@ -917,6 +904,13 @@ export function ExpensesTable({
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGlobalFilter(event.target.value)}
               />
             </div>
+            <DateRangeSelector
+              value={{ startDate: filters.startDate, endDate: filters.endDate }}
+              onChange={(next) => {
+                setFilters((prev) => ({ ...prev, startDate: next.startDate, endDate: next.endDate }));
+              }}
+              className="h-8 min-w-[210px]"
+            />
           </div>
         </div>
       </div>

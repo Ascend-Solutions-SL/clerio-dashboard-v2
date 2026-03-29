@@ -17,6 +17,7 @@ interface TableFiltersProps {
   };
   className?: string;
   clientLabel?: string;
+  hideDateSection?: boolean;
 }
 
 export type TableFiltersValue = {
@@ -33,9 +34,9 @@ const formatAmount = (value: number) =>
     maximumFractionDigits: 0,
   }).format(Math.round(value));
 
-const countActiveFilters = (filters: TableFiltersValue) => {
+const countActiveFilters = (filters: TableFiltersValue, includeDate = true) => {
   let count = 0;
-  if (filters.startDate && filters.endDate) count += 1;
+  if (includeDate && filters.startDate && filters.endDate) count += 1;
   if (filters.clients.length > 0) count += 1;
   if (filters.minAmount != null && filters.maxAmount != null) count += 1;
   return count;
@@ -73,6 +74,7 @@ export function TableFilters({
   amountBounds,
   className,
   clientLabel = 'Cliente',
+  hideDateSection = false,
 }: TableFiltersProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [draftStartDate, setDraftStartDate] = React.useState(filters.startDate);
@@ -157,7 +159,7 @@ export function TableFilters({
     };
   }, [normalizedClients, isOpen]);
 
-  const activeFiltersCount = countActiveFilters(filters);
+  const activeFiltersCount = countActiveFilters(filters, !hideDateSection);
   const hasDateDraft = Boolean(draftStartDate && draftEndDate);
   const hasAmountDraft = Number.isFinite(draftMinAmount) && Number.isFinite(draftMaxAmount);
   const isDateDraftValid = !hasDateDraft || draftStartDate <= draftEndDate;
@@ -172,8 +174,10 @@ export function TableFilters({
   const rightPercent = ((selectedMax - amountBounds.min) / amountSpan) * 100;
 
   const resetDraft = () => {
-    setDraftStartDate('');
-    setDraftEndDate('');
+    if (!hideDateSection) {
+      setDraftStartDate('');
+      setDraftEndDate('');
+    }
     setDraftClients([]);
     setDraftMinAmount(amountBounds.min);
     setDraftMaxAmount(amountBounds.max);
@@ -181,9 +185,12 @@ export function TableFilters({
   };
 
   const resetApplied = () => {
+    const preservedStartDate = hideDateSection ? filters.startDate : '';
+    const preservedEndDate = hideDateSection ? filters.endDate : '';
+
     onFiltersChange({
-      startDate: '',
-      endDate: '',
+      startDate: preservedStartDate,
+      endDate: preservedEndDate,
       clients: [],
       minAmount: null,
       maxAmount: null,
@@ -200,8 +207,8 @@ export function TableFilters({
       roundedMinAmount > amountBounds.min || roundedMaxAmount < amountBounds.max;
 
     onFiltersChange({
-      startDate: draftStartDate,
-      endDate: draftEndDate,
+      startDate: hideDateSection ? filters.startDate : draftStartDate,
+      endDate: hideDateSection ? filters.endDate : draftEndDate,
       clients: draftClients,
       minAmount: hasCustomAmountRange ? roundedMinAmount : null,
       maxAmount: hasCustomAmountRange ? roundedMaxAmount : null,
@@ -404,6 +411,7 @@ export function TableFilters({
         </PopoverTrigger>
         <PopoverContent className="w-[340px] p-2.5 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 duration-200" side="right" sideOffset={10} align="start" alignOffset={-24}>
           <div className="space-y-2">
+            {!hideDateSection ? (
             <div className="rounded-xl border border-slate-200/90 bg-gradient-to-b from-white to-slate-50/85 p-1.5 space-y-1.5 shadow-[0_1px_0_rgba(255,255,255,0.8)_inset]">
               <div className="flex items-center justify-between">
                 <label className="pl-1 text-xs font-semibold text-slate-800">Fecha</label>
@@ -510,6 +518,7 @@ export function TableFilters({
                 </button>
               </div>
             </div>
+            ) : null}
 
             <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-1.5 space-y-1.5">
               <div className="flex items-center justify-between">

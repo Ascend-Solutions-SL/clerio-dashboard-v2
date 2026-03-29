@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import Image from 'next/image';
 import StatCard from '@/components/StatCard';
 import { IncomeTable } from '@/components/IncomeTable';
 import { ArrowUpCircle, FileText, Link2 } from 'lucide-react';
@@ -9,6 +10,7 @@ import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 import InvoiceScanControls from '@/components/InvoiceScanControls';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
+import { getDefaultCurrentYearRange, type DateRangeValue } from '@/components/ui/date-range-selector';
 
 const holdedStatusCache = new Map<string, boolean>();
 const ingresosCardsCache = new Map<string, { total: number; count: number }>();
@@ -81,7 +83,8 @@ const IngresosPage = () => {
   const { user } = useDashboardSession();
   const holdedCacheKey = user?.id ?? 'anonymous';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
-  const cardsCacheKey = `${empresaId ?? 'none'}`;
+  const [dateRange, setDateRange] = React.useState<DateRangeValue>(getDefaultCurrentYearRange);
+  const cardsCacheKey = `${empresaId ?? 'none'}::${dateRange.startDate}::${dateRange.endDate}`;
   const [totalIncome, setTotalIncome] = React.useState<number>(0);
   const [invoiceCount, setInvoiceCount] = React.useState<number>(0);
   const [cardsLoading, setCardsLoading] = React.useState<boolean>(() => !ingresosCardsCache.has(cardsCacheKey));
@@ -91,6 +94,10 @@ const IngresosPage = () => {
     return cached === undefined ? null : cached;
   });
   const prevData = useRef({ total: 0, count: 0 });
+
+  const handleDateRangeChange = React.useCallback((next: DateRangeValue) => {
+    setDateRange((prev) => (prev.startDate === next.startDate && prev.endDate === next.endDate ? prev : next));
+  }, []);
 
   useEffect(() => {
     const cached = ingresosCardsCache.get(cardsCacheKey);
@@ -125,25 +132,35 @@ const IngresosPage = () => {
         setCardsLoading(true);
       }
       try {
-        const countPromise = supabase
+        let countQuery = supabase
           .from('facturas')
           .select('id', { count: 'exact', head: true })
           .eq('empresa_id', empresaId)
           .eq('tipo', 'Ingresos');
 
-        const { count: countedRows } = await countPromise;
+        if (dateRange.startDate && dateRange.endDate) {
+          countQuery = countQuery.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
+        }
+
+        const { count: countedRows } = await countQuery;
 
         const expectedRows = countedRows ?? 0;
         let total = 0;
         let from = 0;
         const chunk = 1000;
         while (from < expectedRows) {
-          const { data: rows, error } = await supabase
+          let sumQuery = supabase
             .from('facturas')
             .select('importe_total')
             .eq('empresa_id', empresaId)
             .eq('tipo', 'Ingresos')
             .range(from, from + chunk - 1);
+
+          if (dateRange.startDate && dateRange.endDate) {
+            sumQuery = sumQuery.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
+          }
+
+          const { data: rows, error } = await sumQuery;
 
           if (error || !rows) {
             break;
@@ -179,7 +196,7 @@ const IngresosPage = () => {
     return () => {
       isMounted = false;
     };
-  }, [cardsCacheKey, empresaId, tableRefreshKey]);
+  }, [cardsCacheKey, dateRange.endDate, dateRange.startDate, empresaId, tableRefreshKey]);
 
   useEffect(() => {
     let isMounted = true;
@@ -272,7 +289,7 @@ const IngresosPage = () => {
                 title="Conexiones"
                 value={
                   <div className="flex items-center gap-3 -mt-2">
-                    <img src="/brand/tab_ingresos/holded_logo.png" alt="Holded" className="h-8 w-8" />
+                    <Image src="/brand/tab_ingresos/holded_logo.png" alt="Holded" width={32} height={32} className="h-8 w-8" />
                     <div className="flex flex-col leading-tight">
                       <span className="text-sm md:text-base font-semibold text-inherit">Holded</span>
                       <span
@@ -303,6 +320,7 @@ const IngresosPage = () => {
                 refreshKey={tableRefreshKey}
                 processedInvoiceCount={invoiceCount}
                 processedInvoiceCountReady={!cardsLoading}
+                onDateRangeChange={handleDateRangeChange}
               />
             </div>
           </div>
