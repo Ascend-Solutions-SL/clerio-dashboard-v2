@@ -252,8 +252,6 @@ export default function RevisionsTable({
     sellerName: '',
     sellerTaxId: '',
     iva: '',
-    descuentos: '',
-    retenciones: '',
     importeSinIva: '',
     importeTotal: '',
   });
@@ -262,10 +260,7 @@ export default function RevisionsTable({
   const [hasLoadedRowsOnce, setHasLoadedRowsOnce] = React.useState(false);
   const [nfUnlock, setNfUnlock] = React.useState(false);
   const [validateConfirmStep, setValidateConfirmStep] = React.useState<0 | 1>(0);
-  const [showAmountsMismatchConfirm, setShowAmountsMismatchConfirm] = React.useState(false);
-  const [showAmountsMismatchHint, setShowAmountsMismatchHint] = React.useState(false);
   const [showInvalidTipoWarning, setShowInvalidTipoWarning] = React.useState(false);
-  const amountsMismatchAcceptedRef = React.useRef(false);
   const validateConfirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const confettiTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevPendingRowsCountRef = React.useRef<number | null>(null);
@@ -376,8 +371,6 @@ export default function RevisionsTable({
     }
 
     hydratedReviewInvoiceIdRef.current = selected.id;
-    setShowAmountsMismatchHint(false);
-    amountsMismatchAcceptedRef.current = false;
     const isNoFactura = selected.tipo === 'No Factura';
     const isAlreadyUnlocked = isNoFactura && unlockedNoFacturaIdsRef.current.has(selected.id);
     setNfUnlock(!isNoFactura || isAlreadyUnlocked);
@@ -391,8 +384,6 @@ export default function RevisionsTable({
       sellerName: selected.sellerName ?? '',
       sellerTaxId: selected.sellerTaxId ?? '',
       iva: selected.iva == null ? '' : String(selected.iva),
-      descuentos: selected.descuentos == null ? '' : String(selected.descuentos),
-      retenciones: selected.retenciones == null ? '' : String(selected.retenciones),
       importeSinIva: selected.importeSinIva == null ? '' : String(selected.importeSinIva),
       importeTotal: selected.importeTotal == null ? '' : String(selected.importeTotal),
     });
@@ -776,39 +767,6 @@ export default function RevisionsTable({
     return value;
   };
 
-  const amountsCheck = React.useMemo(() => {
-    const base = parseOptionalNumber(reviewForm.importeSinIva);
-    const iva = parseOptionalNumber(reviewForm.iva);
-    const descuentos = parseOptionalNumber(reviewForm.descuentos);
-    const retenciones = parseOptionalNumber(reviewForm.retenciones);
-    const total = parseOptionalNumber(reviewForm.importeTotal);
-
-    const anyInvalid =
-      base === undefined || iva === undefined || descuentos === undefined || retenciones === undefined || total === undefined;
-    if (anyInvalid) {
-      return { status: 'invalid' as const, expected: null as number | null };
-    }
-
-    if (base === null || iva === null || total === null) {
-      return { status: 'missing' as const, expected: null as number | null };
-    }
-
-    const expected = base + iva - (descuentos ?? 0) - (retenciones ?? 0);
-    const equal = Math.abs(expected - total) < 0.005;
-    const status: 'ok' | 'mismatch' = equal ? 'ok' : 'mismatch';
-    return { status, expected };
-  }, [reviewForm.descuentos, reviewForm.importeSinIva, reviewForm.importeTotal, reviewForm.iva, reviewForm.retenciones]);
-
-  React.useEffect(() => {
-    if (!showAmountsMismatchHint) {
-      return;
-    }
-
-    if (amountsCheck.status !== 'mismatch') {
-      setShowAmountsMismatchHint(false);
-    }
-  }, [amountsCheck.status, showAmountsMismatchHint]);
-
   const handleValidateAndNext = async () => {
     if (!selected) {
       return;
@@ -827,10 +785,6 @@ export default function RevisionsTable({
     }
 
     if (validateConfirmStep === 0) {
-      if (amountsCheck.status === 'mismatch') {
-        setShowAmountsMismatchHint(true);
-      }
-      amountsMismatchAcceptedRef.current = false;
       setValidateConfirmStep(1);
       if (validateConfirmTimeoutRef.current) {
         clearTimeout(validateConfirmTimeoutRef.current);
@@ -839,11 +793,6 @@ export default function RevisionsTable({
         setValidateConfirmStep(0);
         validateConfirmTimeoutRef.current = null;
       }, 3500);
-      return;
-    }
-
-    if (amountsCheck.status === 'mismatch' && !amountsMismatchAcceptedRef.current) {
-      setShowAmountsMismatchConfirm(true);
       return;
     }
 
@@ -889,25 +838,6 @@ export default function RevisionsTable({
         });
         return;
       }
-      const descuentos = parseOptionalNumber(reviewForm.descuentos);
-      if (descuentos === undefined) {
-        toast({
-          title: 'Formato incorrecto',
-          description: '“Descuentos” debe ser un número.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const retenciones = parseOptionalNumber(reviewForm.retenciones);
-      if (retenciones === undefined) {
-        toast({
-          title: 'Formato incorrecto',
-          description: '“Retenciones” debe ser un número.',
-          variant: 'destructive',
-        });
-        return;
-      }
       const importeTotal = parseOptionalNumber(reviewForm.importeTotal);
       if (importeTotal === undefined) {
         toast({
@@ -930,8 +860,8 @@ export default function RevisionsTable({
         sellerTaxId,
         importeSinIva,
         iva,
-        descuentos,
-        retenciones,
+        descuentos: selected.descuentos,
+        retenciones: selected.retenciones,
         importeTotal,
         reviewed: true,
         reviewedAt,
@@ -944,9 +874,16 @@ export default function RevisionsTable({
         setData((prev) => prev.map((row) => (row.id === selected.id ? optimisticRow : row)));
       }
 
-      const { data: updatedRows, error } = await supabase
-        .from('facturas')
-        .update({
+      const webhookPayload = {
+        user_uid: user?.id ?? null,
+        empresa_id: empresaId,
+        factura_id: selected.id,
+        invoice_uid: selected.invoice_uid,
+        reviewed_at: reviewedAt,
+        factura_validada: true,
+        factura: {
+          id: selected.id,
+          invoice_uid: selected.invoice_uid,
           numero,
           fecha,
           tipo,
@@ -954,23 +891,32 @@ export default function RevisionsTable({
           buyer_tax_id: buyerTaxId || null,
           seller_name: sellerName || null,
           seller_tax_id: sellerTaxId || null,
+          invoice_concept: selected.concepto || null,
           importe_sin_iva: importeSinIva,
           iva,
-          descuentos,
-          retenciones,
+          descuentos: selected.descuentos ?? null,
+          retenciones: selected.retenciones ?? null,
           importe_total: importeTotal,
-          factura_validada: true,
           reviewed_at: reviewedAt,
-        })
-        .eq('id', selected.id)
-        .select('id');
+          factura_validada: true,
+          deleted_at: selected.deletedAt,
+          is_trashed: selected.isTrashed,
+          drive_file_id: selected.driveFileId,
+          drive_type: selected.driveType,
+        },
+      };
 
-      if (error) {
-        throw error;
-      }
+      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(webhookPayload),
+      });
 
-      if (!updatedRows || updatedRows.length === 0) {
-        throw new Error('No se ha actualizado ninguna fila en Supabase.');
+      if (!webhookRes.ok) {
+        const text = await webhookRes.text().catch(() => '');
+        throw new Error(text || `Webhook error (${webhookRes.status})`);
       }
 
       void refreshPendingCount();
@@ -996,7 +942,6 @@ export default function RevisionsTable({
     } finally {
       setIsSaving(false);
       setValidateConfirmStep(0);
-      setShowAmountsMismatchConfirm(false);
       if (validateConfirmTimeoutRef.current) {
         clearTimeout(validateConfirmTimeoutRef.current);
         validateConfirmTimeoutRef.current = null;
@@ -1012,17 +957,6 @@ export default function RevisionsTable({
       sellerTaxId: prev.buyerTaxId,
       sellerName: prev.buyerName,
     }));
-  };
-
-  const clearAmountsMismatchFlow = () => {
-    setShowAmountsMismatchConfirm(false);
-    amountsMismatchAcceptedRef.current = false;
-    setShowAmountsMismatchHint(false);
-    setValidateConfirmStep(0);
-    if (validateConfirmTimeoutRef.current) {
-      clearTimeout(validateConfirmTimeoutRef.current);
-      validateConfirmTimeoutRef.current = null;
-    }
   };
 
   const handleNoFacturaConfirm = async () => {
@@ -1063,9 +997,6 @@ export default function RevisionsTable({
         }
         return prev.map((r) => (r.id === selected.id ? { ...r, reviewedAt, reviewed: true } : r));
       });
-
-      setShowAmountsMismatchHint(false);
-      amountsMismatchAcceptedRef.current = false;
       setNfUnlock(true);
       setMode('list');
     } catch (error) {
@@ -1282,9 +1213,6 @@ export default function RevisionsTable({
 
       setClosingInvoiceId(null);
       setValidateConfirmStep(0);
-      setShowAmountsMismatchConfirm(false);
-      setShowAmountsMismatchHint(false);
-      amountsMismatchAcceptedRef.current = false;
       onSelect?.(next.id, next);
       setMode(keepReviewMode ? 'review' : 'list');
       lastAutoScrolledInvoiceIdRef.current = keepReviewMode ? next.id : null;
@@ -1310,9 +1238,6 @@ export default function RevisionsTable({
         }
         return prev;
       });
-
-      setShowAmountsMismatchHint(false);
-      amountsMismatchAcceptedRef.current = false;
 
       if (closeAnimationTimeoutRef.current) {
         clearTimeout(closeAnimationTimeoutRef.current);
@@ -1407,38 +1332,6 @@ export default function RevisionsTable({
         scope === 'history' ? 'bg-slate-50 border-slate-300' : scope === 'trash' ? 'bg-red-50/30 border-red-200' : 'bg-white border-gray-200'
       }`}
     >
-      {showAmountsMismatchConfirm ? (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/20 p-4">
-          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
-            <div className="text-sm font-semibold text-slate-900">Importes no cuadran</div>
-            <div className="mt-2 text-sm text-slate-700">
-              El check de importes da un valor distinto al “Importe total”.
-            </div>
-            {amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
-              <div className="mt-2 text-sm text-slate-700">
-                Suma = <span className="font-mono font-semibold">{amountsCheck.expected.toFixed(2)}€</span>
-              </div>
-            ) : null}
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <Button type="button" variant="outline" className="h-8 text-xs" onClick={clearAmountsMismatchFlow}>
-                Atrás
-              </Button>
-              <Button
-                type="button"
-                className="h-8 bg-emerald-600 hover:bg-emerald-700 text-xs"
-                onClick={() => {
-                  amountsMismatchAcceptedRef.current = true;
-                  setShowAmountsMismatchConfirm(false);
-                  void handleValidateAndNext();
-                }}
-              >
-                Aceptar
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       {showInvalidTipoWarning ? (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/20 p-4">
           <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
@@ -1954,37 +1847,6 @@ export default function RevisionsTable({
                                       </div>
                                     </div>
                                     <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Descuentos</div>
-                                      <div className="relative">
-                                        <Input
-                                          inputMode="decimal"
-                                          className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                          value={reviewForm.descuentos}
-                                          onChange={(e) => setReviewForm((p) => ({ ...p, descuentos: e.target.value }))}
-                                        />
-                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                                          EUR
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-left pl-1 text-xs font-medium text-slate-600">Retenciones</div>
-                                      <div className="relative">
-                                        <Input
-                                          inputMode="decimal"
-                                          className="h-9 text-xs pr-12 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                          value={reviewForm.retenciones}
-                                          onChange={(e) => setReviewForm((p) => ({ ...p, retenciones: e.target.value }))}
-                                        />
-                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md border-l border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
-                                          EUR
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <div>
                                       <div className="text-left pl-1 text-xs font-medium text-slate-600">Importe sin IVA</div>
                                       <div className="relative">
                                         <Input
@@ -2003,11 +1865,7 @@ export default function RevisionsTable({
                                       <div className="relative">
                                         <Input
                                           inputMode="decimal"
-                                          className={`h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                                            showAmountsMismatchHint && amountsCheck.status === 'mismatch'
-                                              ? 'ring-2 ring-red-300 ring-offset-2 ring-offset-white'
-                                              : ''
-                                          }`}
+                                          className="h-9 text-xs pr-14 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                           value={reviewForm.importeTotal}
                                           onChange={(e) => setReviewForm((p) => ({ ...p, importeTotal: e.target.value }))}
                                         />
@@ -2015,11 +1873,6 @@ export default function RevisionsTable({
                                           EUR
                                         </div>
                                       </div>
-                                      {showAmountsMismatchHint && amountsCheck.status === 'mismatch' && amountsCheck.expected != null ? (
-                                        <div className="mt-1 pl-1 text-[11px] font-semibold text-red-700">
-                                          Check importes incorrecto. Suma = {amountsCheck.expected.toFixed(2)}€
-                                        </div>
-                                      ) : null}
                                     </div>
                                   </div>
                                 </div>

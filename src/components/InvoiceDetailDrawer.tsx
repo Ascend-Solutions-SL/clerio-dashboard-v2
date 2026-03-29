@@ -483,16 +483,6 @@ export function InvoiceDetailDrawer({ row, onClose, onInvoiceTrashed, closeAnima
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <Field label="IVA" value={<span className="font-mono">{renderMoney(dbRow?.iva)}</span>} />
                     <Field
-                      label="Descuentos"
-                      value={<span className="font-mono">{renderMoney(dbRow?.descuentos)}</span>}
-                    />
-                    <Field
-                      label="Retenciones"
-                      value={<span className="font-mono">{renderMoney(dbRow?.retenciones)}</span>}
-                    />
-                  </div>
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field
                       label="Importe sin IVA"
                       value={<span className="font-mono font-semibold">{renderMoney(dbRow?.importe_sin_iva)}</span>}
                     />

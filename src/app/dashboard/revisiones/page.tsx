@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock, Download, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import RevisionsTable from '@/components/RevisionsTable';
@@ -27,6 +27,76 @@ const RevisionesPageContent = () => {
   const [embedUrl, setEmbedUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
+
+  const handleRevisionSelect = useCallback(
+    (
+      id: number,
+      row: {
+        id: number;
+        driveFileId: string | null;
+        driveType: 'googledrive' | 'onedrive' | null;
+      }
+    ) => {
+      setSelectedId(id);
+      setSelectedRow({
+        id: row.id,
+        driveFileId: row.driveFileId,
+        driveType: row.driveType,
+      });
+    },
+    []
+  );
+
+  const handleRowsLoaded = useCallback(
+    (
+      rows: Array<{
+        id: number;
+        driveFileId: string | null;
+        driveType: 'googledrive' | 'onedrive' | null;
+      }>
+    ) => {
+      if (selectedId != null) {
+        const selectedFromQuery = rows.find((row) => row.id === selectedId);
+        if (selectedFromQuery) {
+          setSelectedRow({
+            id: selectedFromQuery.id,
+            driveFileId: selectedFromQuery.driveFileId,
+            driveType: selectedFromQuery.driveType,
+          });
+        } else {
+          const firstRow = rows[0] ?? null;
+          if (firstRow) {
+            setSelectedId(firstRow.id);
+            setSelectedRow({
+              id: firstRow.id,
+              driveFileId: firstRow.driveFileId,
+              driveType: firstRow.driveType,
+            });
+          } else {
+            setSelectedId(null);
+            setSelectedRow(null);
+            setEmbedUrl(null);
+            setIsPreviewLoading(false);
+          }
+        }
+        return;
+      }
+      const first = rows[0];
+      if (!first) {
+        setSelectedRow(null);
+        setEmbedUrl(null);
+        setIsPreviewLoading(false);
+        return;
+      }
+      setSelectedId(first.id);
+      setSelectedRow({
+        id: first.id,
+        driveFileId: first.driveFileId,
+        driveType: first.driveType,
+      });
+    },
+    [selectedId]
+  );
 
   const handleScopeChange = (nextScope: 'pending' | 'history' | 'trash') => {
     setScope(nextScope);
@@ -185,55 +255,8 @@ const RevisionesPageContent = () => {
                       onPapeleraCountChange={setPapeleraCount}
                       scope={scope}
                       selectedId={selectedId}
-                      onSelect={(id, row) => {
-                        setSelectedId(id);
-                        setSelectedRow({
-                          id: row.id,
-                          driveFileId: row.driveFileId,
-                          driveType: row.driveType,
-                        });
-                      }}
-                      onDataLoaded={(rows) => {
-                        if (selectedId != null) {
-                          const selectedFromQuery = rows.find((row) => row.id === selectedId);
-                          if (selectedFromQuery) {
-                            setSelectedRow({
-                              id: selectedFromQuery.id,
-                              driveFileId: selectedFromQuery.driveFileId,
-                              driveType: selectedFromQuery.driveType,
-                            });
-                          } else {
-                            const firstRow = rows[0] ?? null;
-                            if (firstRow) {
-                              setSelectedId(firstRow.id);
-                              setSelectedRow({
-                                id: firstRow.id,
-                                driveFileId: firstRow.driveFileId,
-                                driveType: firstRow.driveType,
-                              });
-                            } else {
-                              setSelectedId(null);
-                              setSelectedRow(null);
-                              setEmbedUrl(null);
-                              setIsPreviewLoading(false);
-                            }
-                          }
-                          return;
-                        }
-                        const first = rows[0];
-                        if (!first) {
-                          setSelectedRow(null);
-                          setEmbedUrl(null);
-                          setIsPreviewLoading(false);
-                          return;
-                        }
-                        setSelectedId(first.id);
-                        setSelectedRow({
-                          id: first.id,
-                          driveFileId: first.driveFileId,
-                          driveType: first.driveType,
-                        });
-                      }}
+                      onSelect={handleRevisionSelect}
+                      onDataLoaded={handleRowsLoaded}
                     />
                   </div>
                 </div>

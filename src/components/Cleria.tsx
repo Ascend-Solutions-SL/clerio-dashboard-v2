@@ -674,6 +674,9 @@ const Cleria: React.FC<CleriaProps> = ({
       if (message.id === 'local-initial-assistant-message') {
         return false;
       }
+      if (message.content.trim() === INITIAL_ASSISTANT_MESSAGE.trim()) {
+        return false;
+      }
       if (!message.createdAt) {
         return false;
       }
