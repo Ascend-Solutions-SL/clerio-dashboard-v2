@@ -33,6 +33,7 @@ const activeConversationCacheByUser = new Map<string, string | null>();
 
 const VISUAL_SCALE_KEY = 'dashboard-visual-scale-level';
 const CLERIA_INITIAL_ASSISTANT_MESSAGE = 'Hola, soy Cler IA y estoy aquí para ayudarte con los datos financieros de tu empresa.';
+const AUTO_NEW_CHAT_IDLE_MS = 5 * 60 * 1000;
 
 const MAIN_SCALE_CLASS_BY_LEVEL: Record<VisualScaleLevel, string> = {
   muy_grande: '[zoom:0.98]',
@@ -148,6 +149,29 @@ function ClerIAPageClient() {
     return rows;
   }, [areConversationRowsEqual, conversations, empresaId, user?.id]);
 
+  const getMostRecentConversationUpdatedAtMs = React.useCallback((rows: CleriaConversationRow[]): number | null => {
+    if (rows.length === 0) {
+      return null;
+    }
+
+    let mostRecentMs = 0;
+
+    for (const row of rows) {
+      if (!row.updated_at) {
+        continue;
+      }
+
+      const timestampMs = new Date(row.updated_at).getTime();
+      if (!Number.isFinite(timestampMs)) {
+        continue;
+      }
+
+      mostRecentMs = Math.max(mostRecentMs, timestampMs);
+    }
+
+    return mostRecentMs > 0 ? mostRecentMs : null;
+  }, []);
+
   const ensureDefaultConversation = React.useCallback(async () => {
     if (!user?.id || empresaId == null) {
       setIsBootstrapping(false);
@@ -163,9 +187,17 @@ function ClerIAPageClient() {
       const rows = await loadConversations();
       const idFromUrl = searchParams.get('conversationId');
       const idFromUrlExists = idFromUrl ? rows.some((row) => row.id === idFromUrl) : false;
+      const mostRecentUpdatedAtMs = getMostRecentConversationUpdatedAtMs(rows);
+      const shouldAutoOpenFreshChat =
+        !idFromUrl &&
+        Boolean(mostRecentUpdatedAtMs) &&
+        Date.now() - (mostRecentUpdatedAtMs ?? 0) > AUTO_NEW_CHAT_IDLE_MS;
 
       setActiveConversationId((prev) => {
         const resolved = (() => {
+          if (shouldAutoOpenFreshChat) {
+            return null;
+          }
           if (prev && rows.some((row) => row.id === prev)) {
             return prev;
           }
@@ -186,7 +218,7 @@ function ClerIAPageClient() {
         setIsBootstrapping(false);
       }
     }
-  }, [conversations.length, empresaId, loadConversations, searchParams, user?.id]);
+  }, [conversations.length, empresaId, getMostRecentConversationUpdatedAtMs, loadConversations, searchParams, user?.id]);
 
   // Sync active conversation with URL param when present and valid
   React.useEffect(() => {
@@ -413,7 +445,7 @@ function ClerIAPageClient() {
     }
 
     void loadConversations();
-  }, [empresaId, ensureDefaultConversation, isLoading, loadConversations, user?.id]);
+  }, [areConversationRowsEqual, empresaId, ensureDefaultConversation, isLoading, loadConversations, user?.id]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {

@@ -267,8 +267,6 @@ export default function RevisionsTable({
   const [showInvalidTipoWarning, setShowInvalidTipoWarning] = React.useState(false);
   const amountsMismatchAcceptedRef = React.useRef(false);
   const validateConfirmTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [realtimeRefreshKey, setRealtimeRefreshKey] = React.useState(0);
-  const realtimeDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const confettiTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevPendingRowsCountRef = React.useRef<number | null>(null);
   const [showPendingConfetti, setShowPendingConfetti] = React.useState(false);
@@ -329,48 +327,6 @@ export default function RevisionsTable({
 
     autoScrollRafRef.current = requestAnimationFrame(step);
   }, []);
-
-  React.useEffect(() => {
-    if (isLoading) {
-      return;
-    }
-
-    if (empresaId == null && !businessName) {
-      return;
-    }
-
-    const filter = empresaId != null ? `empresa_id=eq.${empresaId}` : `user_businessname=eq.${businessName}`;
-    const channel = supabase
-      .channel(`revisions-facturas-${empresaId ?? businessName}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'facturas',
-          filter,
-        },
-        () => {
-          if (realtimeDebounceRef.current) {
-            clearTimeout(realtimeDebounceRef.current);
-          }
-          realtimeDebounceRef.current = setTimeout(() => {
-            setRealtimeRefreshKey((prev) => prev + 1);
-            realtimeDebounceRef.current = null;
-          }, 400);
-        }
-      );
-
-    channel.subscribe();
-
-    return () => {
-      if (realtimeDebounceRef.current) {
-        clearTimeout(realtimeDebounceRef.current);
-        realtimeDebounceRef.current = null;
-      }
-      supabase.removeChannel(channel);
-    };
-  }, [businessName, empresaId, isLoading]);
 
   React.useEffect(() => {
     if (mode !== 'review' || selectedId == null) {
@@ -661,7 +617,6 @@ export default function RevisionsTable({
     customRange.endDate,
     periodRange,
     refreshKey,
-    realtimeRefreshKey,
     scope,
     onDataLoaded,
     onPorRevisarCountChange,
@@ -896,6 +851,7 @@ export default function RevisionsTable({
       return;
     }
 
+    const previousRows = data;
     setIsSaving(true);
     try {
       const numero = String(reviewForm.numero ?? '').trim();
@@ -962,58 +918,79 @@ export default function RevisionsTable({
         return;
       }
 
-      const userUid = user?.id ?? null;
-      if (!userUid) {
-        toast({
-          title: 'Sesión no válida',
-          description: 'No se ha podido obtener el usuario autenticado.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const webhookPayload = {
-        user_uid: userUid,
-        factura_id: selected.id,
-        invoice_uid: selected.invoice_uid,
+      const reviewedAt = new Date().toISOString();
+      const optimisticRow: RevisionRow = {
+        ...selected,
         numero,
-        fecha,
+        rawDate: fecha,
         tipo,
-        buyer_name: buyerName || null,
-        buyer_tax_id: buyerTaxId || null,
-        seller_name: sellerName || null,
-        seller_tax_id: sellerTaxId || null,
-        importe_sin_iva: importeSinIva,
+        buyerName,
+        buyerTaxId,
+        sellerName,
+        sellerTaxId,
+        importeSinIva,
         iva,
         descuentos,
         retenciones,
-        importe_total: importeTotal,
+        importeTotal,
+        reviewed: true,
+        reviewedAt,
       };
 
-      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(webhookPayload),
-      });
-
-      if (!webhookRes.ok) {
-        const text = await webhookRes.text().catch(() => '');
-        throw new Error(text || `Webhook error (${webhookRes.status})`);
+      if (scope === 'pending') {
+        suppressedPendingIdsRef.current.set(selected.id, Date.now() + 12000);
+        advanceToNext(selected.id);
+      } else {
+        setData((prev) => prev.map((row) => (row.id === selected.id ? optimisticRow : row)));
       }
+
+      const { data: updatedRows, error } = await supabase
+        .from('facturas')
+        .update({
+          numero,
+          fecha,
+          tipo,
+          buyer_name: buyerName || null,
+          buyer_tax_id: buyerTaxId || null,
+          seller_name: sellerName || null,
+          seller_tax_id: sellerTaxId || null,
+          importe_sin_iva: importeSinIva,
+          iva,
+          descuentos,
+          retenciones,
+          importe_total: importeTotal,
+          factura_validada: true,
+          reviewed_at: reviewedAt,
+        })
+        .eq('id', selected.id)
+        .select('id');
+
+      if (error) {
+        throw error;
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        throw new Error('No se ha actualizado ninguna fila en Supabase.');
+      }
+
+      void refreshPendingCount();
 
       toast({
         title: 'Enviado',
-        description: 'La validación se ha enviado correctamente.',
+        description: 'La validación se ha guardado correctamente.',
       });
-
-      advanceToNext(selected.id);
     } catch (error) {
-      console.error('Error validando factura (webhook)', error);
+      if (scope === 'pending') {
+        suppressedPendingIdsRef.current.delete(selected.id);
+      }
+      setData(previousRows);
+      onSelect?.(selected.id, selected);
+      setMode('review');
+
+      console.error('Error validando factura (supabase)', error);
       toast({
         title: 'No se pudo validar la factura',
-        description: 'Inténtalo de nuevo. Si el problema persiste, contacta con soporte en hola@clerio.es',
+        description: error instanceof Error ? error.message : 'Inténtalo de nuevo. Si el problema persiste, contacta con soporte en hola@clerio.es',
         variant: 'destructive',
       });
     } finally {

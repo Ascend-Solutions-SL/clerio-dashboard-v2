@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { useFinancialData } from '@/context/FinancialDataContext';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -17,6 +17,7 @@ const getNiceStep = (value: number) => {
 };
 
 const VISIBLE_MONTHS = 12;
+const CHART_HEIGHT = 300;
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
@@ -25,6 +26,8 @@ const BalanceChart = () => {
   const [renderYear, setRenderYear] = useState<number>(selectedYear);
   const [slideState, setSlideState] = useState<'idle' | 'out' | 'in'>('idle');
   const [slideDir, setSlideDir] = useState<'left' | 'right'>('left');
+  const [chartWidth, setChartWidth] = useState(0);
+  const chartContainerRef = React.useRef<HTMLDivElement | null>(null);
 
   const yearBounds = useMemo(() => ({ minYear, maxYear }), [maxYear, minYear]);
 
@@ -55,6 +58,29 @@ const BalanceChart = () => {
       window.clearTimeout(inTimer);
     };
   }, [renderYear, selectedYear]);
+
+  useEffect(() => {
+    const node = chartContainerRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateSize = () => {
+      const nextWidth = Math.max(0, Math.floor(node.getBoundingClientRect().width));
+      setChartWidth(nextWidth);
+    };
+
+    updateSize();
+
+    const observer = new ResizeObserver(() => {
+      updateSize();
+    });
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   const visibleData = useMemo(() => {
     if (!chartData.length) return [];
@@ -198,9 +224,10 @@ const BalanceChart = () => {
         </div>
       </div>
       <div>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div
-            style={{ width: '100%', height: 300 }}
+            ref={chartContainerRef}
+            style={{ width: '100%', height: 300, minWidth: 0, minHeight: 300 }}
             className={`transition-all duration-300 ease-out ${
               slideState === 'idle'
                 ? 'opacity-100 translate-x-0'
@@ -213,8 +240,10 @@ const BalanceChart = () => {
                     : 'opacity-100 -translate-x-4'
             }`}
           >
-            <ResponsiveContainer>
+            {chartWidth > 0 ? (
               <BarChart 
+                width={chartWidth}
+                height={CHART_HEIGHT}
                 data={visibleData} 
                 margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
                 barGap={0}
@@ -278,7 +307,9 @@ const BalanceChart = () => {
                   />
                 )}
               </BarChart>
-            </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px]" />
+            )}
           </div>
         </div>
       </div>
