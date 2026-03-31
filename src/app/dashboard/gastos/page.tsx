@@ -10,7 +10,7 @@ import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 import InvoiceScanControls from '@/components/InvoiceScanControls';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
-import { getDefaultCurrentYearRange, type DateRangeValue } from '@/components/ui/date-range-selector';
+import { getDefaultCurrentQuarterRange, type DateRangeValue } from '@/components/ui/date-range-selector';
 
 const holdedStatusCache = new Map<string, boolean>();
 const gastosCardsCache = new Map<string, { total: number; count: number }>();
@@ -83,7 +83,7 @@ const GastosPage = () => {
   const { user } = useDashboardSession();
   const holdedCacheKey = user?.id ?? 'anonymous';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDefaultCurrentYearRange);
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getDefaultCurrentQuarterRange);
   const cardsCacheKey = `${empresaId ?? 'none'}::${dateRange.startDate}::${dateRange.endDate}`;
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);

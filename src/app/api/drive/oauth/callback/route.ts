@@ -118,40 +118,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (existingRecord?.id) {
+    const nowIso = new Date().toISOString();
+    const payload = {
+      user_uid: userUid,
+      google_user_id: driveProfile.sub,
+      google_email: driveProfile.email,
+      access_token: tokenResponse.access_token,
+      refresh_token: refreshToken,
+      expires_at: expiresAt,
+      scopes,
+      drive_deposit_folder_id: '',
+      drive_org_folder_id: '',
+      updated_at: nowIso,
+    };
+
+    const insertResult = await supabaseAdmin.from('drive_accounts').insert(payload);
+
+    if (insertResult.error) {
+      if (insertResult.error.code !== '23505') {
+        throw insertResult.error;
+      }
+
       const updateResult = await supabaseAdmin
         .from('drive_accounts')
         .update({
+          google_user_id: driveProfile.sub,
+          google_email: driveProfile.email,
           access_token: tokenResponse.access_token,
           refresh_token: refreshToken,
           expires_at: expiresAt,
-          updated_at: new Date().toISOString(),
+          scopes,
+          updated_at: nowIso,
         })
         .eq('user_uid', userUid);
 
       if (updateResult.error) {
         throw updateResult.error;
-      }
-    } else {
-      const payload = {
-        user_uid: userUid,
-        google_user_id: driveProfile.sub,
-        google_email: driveProfile.email,
-        access_token: tokenResponse.access_token,
-        refresh_token: refreshToken,
-        expires_at: expiresAt,
-        scopes,
-        drive_deposit_folder_id: '',
-        drive_org_folder_id: '',
-        updated_at: new Date().toISOString(),
-      };
-
-      const upsertResult = await supabaseAdmin.from('drive_accounts').upsert(payload, {
-        onConflict: 'user_uid',
-      });
-
-      if (upsertResult.error) {
-        throw upsertResult.error;
       }
     }
 

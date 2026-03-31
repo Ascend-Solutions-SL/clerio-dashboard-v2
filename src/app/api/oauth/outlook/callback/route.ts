@@ -85,21 +85,42 @@ export async function GET(request: NextRequest) {
       throw new Error('No se pudo obtener el email principal de la cuenta Outlook');
     }
 
-    const { error: upsertError } = await supabaseAdmin.from('outlook_accounts').upsert(
-      {
-        user_uid: userUid,
-        onedrive_email: accountEmail,
-        access_token: tokenResponse.access_token,
-        refresh_token: refreshToken,
-        expires_at: expiresAt,
-      },
-      {
-        onConflict: 'user_uid',
-      }
-    );
+    const insertResult = await supabaseAdmin.from('outlook_accounts').insert({
+      user_uid: userUid,
+      onedrive_email: accountEmail,
+      access_token: tokenResponse.access_token,
+      refresh_token: refreshToken,
+      expires_at: expiresAt,
+    });
 
-    if (upsertError) {
-      throw upsertError;
+    if (insertResult.error) {
+      if (insertResult.error.code !== '23505') {
+        throw insertResult.error;
+      }
+
+      const updateResult = await supabaseAdmin
+        .from('outlook_accounts')
+        .update({
+          onedrive_email: accountEmail,
+          access_token: tokenResponse.access_token,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_uid', userUid);
+
+      if (updateResult.error) {
+        throw updateResult.error;
+      }
+    }
+
+    const { error: emailTypeUpdateError } = await supabaseAdmin
+      .from('auth_users')
+      .update({ email_type: 'outlook' })
+      .eq('user_uid', userUid);
+
+    if (emailTypeUpdateError) {
+      throw emailTypeUpdateError;
     }
 
     const redirectUrl = buildRedirectUrl(origin, redirectPath, 'success');

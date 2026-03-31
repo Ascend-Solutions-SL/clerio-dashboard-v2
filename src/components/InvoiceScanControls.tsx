@@ -63,6 +63,7 @@ type InvoiceScanMetaCacheEntry = {
 const SCAN_ERROR_CODES = {
   MISSING_EMAIL_TYPE: 700,
   GOOGLE_CREDENTIALS_REVOKED: 701,
+  CREDENTIALS_NON_EXISTING: 702,
 } as const;
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
@@ -77,6 +78,11 @@ const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
 const RECONNECT_FLOW_PARAM = 'scanReconnect';
 const RECONNECT_STAGE_PARAM = 'scanFlowStage';
 const RECONNECT_FLOW_STORAGE_KEY = 'scanReconnectStage';
+const CREDENTIALS_MISSING_FLOW_PARAM = 'scanCredentialsMissing';
+const CREDENTIALS_MISSING_STAGE_PARAM = 'scanMissingStage';
+const CREDENTIALS_MISSING_EMAIL_PARAM = 'scanMissingEmail';
+const CREDENTIALS_MISSING_FLOW_STAGE_STORAGE_KEY = 'scanCredentialsMissingStage';
+const CREDENTIALS_MISSING_FLOW_EMAIL_STORAGE_KEY = 'scanCredentialsMissingEmail';
 const SCAN_TOAST_DURATION_MS = 3000;
 const SCAN_TOAST_BASE_CLASS =
   'w-[420px] max-w-[calc(100vw-2rem)] min-h-[104px] data-[state=closed]:slide-out-to-right-0 data-[state=closed]:fade-out-100';
@@ -93,6 +99,13 @@ const SCAN_STATUS_FINAL_HOLD_MS = 1800;
 
 type RevokedModalStage = 'warning' | 'gmail' | 'drive' | 'success';
 const REVOKED_MODAL_STAGE_ORDER: ReadonlyArray<RevokedModalStage> = ['warning', 'gmail', 'drive', 'success'];
+
+type MissingCredentialsModalStage = 'warning' | 'email' | 'storage' | 'success';
+type EmailProvider = 'gmail' | 'outlook';
+const MISSING_CREDENTIALS_MODAL_STAGE_ORDER: ReadonlyArray<MissingCredentialsModalStage> = ['warning', 'email', 'storage', 'success'];
+
+const getStorageProviderForEmail = (emailProvider: EmailProvider): 'drive' | 'onedrive' =>
+  emailProvider === 'gmail' ? 'drive' : 'onedrive';
 
 const hasRevokedCredentialsStatus = (payload: unknown) => {
   if (!payload) {
@@ -290,6 +303,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const [isHoldedConnected, setIsHoldedConnected] = React.useState(() => cachedMeta?.isHoldedConnected ?? false);
   const [showCredentialsRevokedModal, setShowCredentialsRevokedModal] = React.useState(false);
   const [revokedModalStage, setRevokedModalStage] = React.useState<RevokedModalStage>('warning');
+  const [showCredentialsMissingModal, setShowCredentialsMissingModal] = React.useState(false);
+  const [missingCredentialsModalStage, setMissingCredentialsModalStage] = React.useState<MissingCredentialsModalStage>('warning');
+  const [missingEmailProvider, setMissingEmailProvider] = React.useState<EmailProvider | null>(null);
   const [isRedirectingToOAuth, setIsRedirectingToOAuth] = React.useState(false);
   const [activeScanRunId, setActiveScanRunId] = React.useState<string | null>(() => getActivePrimaryScanRunId());
   const [activeScanUserUid, setActiveScanUserUid] = React.useState<string | null>(() => getActivePrimaryScanUserUid());
@@ -348,6 +364,64 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     if (scanCompletionTimerRef.current !== null) {
       window.clearTimeout(scanCompletionTimerRef.current);
       scanCompletionTimerRef.current = null;
+    }
+  }, []);
+
+  const setMissingCredentialsFlowState = React.useCallback(
+    (stage: 'email' | 'storage' | 'success' | null, emailProvider: EmailProvider | null) => {
+      if (typeof window === 'undefined') {
+        return;
+      }
+
+      try {
+        if (!stage) {
+          window.sessionStorage.removeItem(CREDENTIALS_MISSING_FLOW_STAGE_STORAGE_KEY);
+          window.sessionStorage.removeItem(CREDENTIALS_MISSING_FLOW_EMAIL_STORAGE_KEY);
+          return;
+        }
+
+        window.sessionStorage.setItem(CREDENTIALS_MISSING_FLOW_STAGE_STORAGE_KEY, stage);
+        if (emailProvider) {
+          window.sessionStorage.setItem(CREDENTIALS_MISSING_FLOW_EMAIL_STORAGE_KEY, emailProvider);
+        } else {
+          window.sessionStorage.removeItem(CREDENTIALS_MISSING_FLOW_EMAIL_STORAGE_KEY);
+        }
+      } catch {
+        // noop
+      }
+    },
+    []
+  );
+
+  const getMissingCredentialsFlowStage = React.useCallback((): 'email' | 'storage' | 'success' | null => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    try {
+      const value = window.sessionStorage.getItem(CREDENTIALS_MISSING_FLOW_STAGE_STORAGE_KEY);
+      if (value === 'email' || value === 'storage' || value === 'success') {
+        return value;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const getMissingCredentialsFlowEmail = React.useCallback((): EmailProvider | null => {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    try {
+      const value = window.sessionStorage.getItem(CREDENTIALS_MISSING_FLOW_EMAIL_STORAGE_KEY);
+      if (value === 'gmail' || value === 'outlook') {
+        return value;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }, []);
 
@@ -695,6 +769,67 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     window.location.href = url.toString();
   }, [buildReconnectRedirectPath, setReconnectFlowStage]);
 
+  const closeMissingCredentialsModal = React.useCallback(() => {
+    setShowCredentialsMissingModal(false);
+    setMissingCredentialsModalStage('warning');
+    setMissingEmailProvider(null);
+    setIsRedirectingToOAuth(false);
+    setMissingCredentialsFlowState(null, null);
+  }, [setMissingCredentialsFlowState]);
+
+  const buildMissingCredentialsRedirectPath = React.useCallback(
+    (stage: 'email' | 'storage' | 'success', emailProvider: EmailProvider) => {
+      const redirectUrl = new URL(window.location.href);
+      redirectUrl.searchParams.set(CREDENTIALS_MISSING_FLOW_PARAM, '1');
+      redirectUrl.searchParams.set(CREDENTIALS_MISSING_STAGE_PARAM, stage);
+      redirectUrl.searchParams.set(CREDENTIALS_MISSING_EMAIL_PARAM, emailProvider);
+
+      redirectUrl.searchParams.delete(RECONNECT_FLOW_PARAM);
+      redirectUrl.searchParams.delete(RECONNECT_STAGE_PARAM);
+      redirectUrl.searchParams.delete('skipDriveIntegrationWebhook');
+      redirectUrl.searchParams.delete('gmail');
+      redirectUrl.searchParams.delete('outlook');
+      redirectUrl.searchParams.delete('drive');
+      redirectUrl.searchParams.delete('onedrive');
+      redirectUrl.searchParams.delete('reason');
+
+      return `${redirectUrl.pathname}${redirectUrl.search}`;
+    },
+    []
+  );
+
+  const handleMissingCredentialsEmailConnect = React.useCallback(() => {
+    if (!missingEmailProvider) {
+      return;
+    }
+
+    setIsRedirectingToOAuth(true);
+    setReconnectFlowStage(null);
+    setMissingCredentialsFlowState('storage', missingEmailProvider);
+
+    const oauthPath =
+      missingEmailProvider === 'gmail' ? '/api/gmail/oauth/start' : '/api/oauth/outlook/start';
+    const url = new URL(oauthPath, window.location.origin);
+    url.searchParams.set('redirect', buildMissingCredentialsRedirectPath('storage', missingEmailProvider));
+    window.location.href = url.toString();
+  }, [buildMissingCredentialsRedirectPath, missingEmailProvider, setMissingCredentialsFlowState, setReconnectFlowStage]);
+
+  const handleMissingCredentialsStorageConnect = React.useCallback(() => {
+    if (!missingEmailProvider) {
+      return;
+    }
+
+    const storageProvider = getStorageProviderForEmail(missingEmailProvider);
+    const oauthPath = storageProvider === 'drive' ? '/api/drive/oauth/start' : '/api/oauth/onedrive/start';
+
+    setIsRedirectingToOAuth(true);
+    setReconnectFlowStage(null);
+    setMissingCredentialsFlowState('success', missingEmailProvider);
+    const url = new URL(oauthPath, window.location.origin);
+    url.searchParams.set('redirect', buildMissingCredentialsRedirectPath('success', missingEmailProvider));
+    window.location.href = url.toString();
+  }, [buildMissingCredentialsRedirectPath, missingEmailProvider, setMissingCredentialsFlowState, setReconnectFlowStage]);
+
   const handleReconnectDrive = React.useCallback(() => {
     setIsRedirectingToOAuth(true);
     setReconnectFlowStage('success');
@@ -706,7 +841,14 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   React.useEffect(() => {
     const currentUrl = new URL(window.location.href);
     const stageFromStorage = getReconnectFlowStage();
+    const missingStageFromStorage = getMissingCredentialsFlowStage();
     const isReconnectFlow = currentUrl.searchParams.get(RECONNECT_FLOW_PARAM) === '1' || Boolean(stageFromStorage);
+    const isMissingFlow =
+      currentUrl.searchParams.get(CREDENTIALS_MISSING_FLOW_PARAM) === '1' || Boolean(missingStageFromStorage);
+
+    if (isMissingFlow) {
+      return;
+    }
 
     if (!isReconnectFlow) {
       return;
@@ -774,7 +916,96 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         window.clearTimeout(slideTimeout);
       }
     };
-  }, [getReconnectFlowStage, setReconnectFlowStage, toast]);
+  }, [
+    getMissingCredentialsFlowStage,
+    getReconnectFlowStage,
+    setReconnectFlowStage,
+    toast,
+  ]);
+
+  React.useEffect(() => {
+    const currentUrl = new URL(window.location.href);
+    const stageFromStorage = getMissingCredentialsFlowStage();
+    const emailFromStorage = getMissingCredentialsFlowEmail();
+    const isMissingFlow =
+      currentUrl.searchParams.get(CREDENTIALS_MISSING_FLOW_PARAM) === '1' || Boolean(stageFromStorage);
+
+    if (!isMissingFlow) {
+      return;
+    }
+
+    const stageParam = currentUrl.searchParams.get(CREDENTIALS_MISSING_STAGE_PARAM);
+    const stageCandidate =
+      stageParam === 'email' || stageParam === 'storage' || stageParam === 'success'
+        ? stageParam
+        : stageFromStorage;
+    const emailParam = currentUrl.searchParams.get(CREDENTIALS_MISSING_EMAIL_PARAM);
+    const providerCandidate =
+      emailParam === 'gmail' || emailParam === 'outlook' ? emailParam : emailFromStorage;
+    const gmailStatus = currentUrl.searchParams.get('gmail');
+    const outlookStatus = currentUrl.searchParams.get('outlook');
+    const driveStatus = currentUrl.searchParams.get('drive');
+    const onedriveStatus = currentUrl.searchParams.get('onedrive');
+    const reason = currentUrl.searchParams.get('reason');
+
+    const resolvedProvider = providerCandidate === 'gmail' || providerCandidate === 'outlook' ? providerCandidate : null;
+
+    setShowCredentialsMissingModal(true);
+    setIsRedirectingToOAuth(false);
+    setReconnectFlowStage(null);
+    if (resolvedProvider) {
+      setMissingEmailProvider(resolvedProvider);
+    }
+
+    if (resolvedProvider && stageCandidate === 'success') {
+      const storageStatus = resolvedProvider === 'gmail' ? driveStatus : onedriveStatus;
+      if (storageStatus === 'error') {
+        setMissingCredentialsFlowState('storage', resolvedProvider);
+        setMissingCredentialsModalStage('storage');
+        toast({
+          title: resolvedProvider === 'gmail' ? 'No se pudo conectar Google Drive' : 'No se pudo conectar OneDrive',
+          description: reason || 'Inténtalo de nuevo.',
+          variant: 'destructive',
+        });
+      } else {
+        setMissingCredentialsFlowState('success', resolvedProvider);
+        setMissingCredentialsModalStage('success');
+      }
+    } else if (resolvedProvider && stageCandidate === 'storage') {
+      const emailStatus = resolvedProvider === 'gmail' ? gmailStatus : outlookStatus;
+      if (emailStatus === 'success' || emailStatus == null) {
+        setMissingCredentialsFlowState('storage', resolvedProvider);
+        setMissingCredentialsModalStage('storage');
+      } else {
+        setMissingCredentialsFlowState('email', resolvedProvider);
+        setMissingCredentialsModalStage('email');
+        toast({
+          title: resolvedProvider === 'gmail' ? 'No se pudo conectar Gmail' : 'No se pudo conectar Outlook',
+          description: reason || 'Inténtalo de nuevo.',
+          variant: 'destructive',
+        });
+      }
+    } else {
+      setMissingCredentialsFlowState('email', resolvedProvider);
+      setMissingCredentialsModalStage('email');
+    }
+
+    currentUrl.searchParams.delete(CREDENTIALS_MISSING_FLOW_PARAM);
+    currentUrl.searchParams.delete(CREDENTIALS_MISSING_STAGE_PARAM);
+    currentUrl.searchParams.delete(CREDENTIALS_MISSING_EMAIL_PARAM);
+    currentUrl.searchParams.delete('gmail');
+    currentUrl.searchParams.delete('outlook');
+    currentUrl.searchParams.delete('drive');
+    currentUrl.searchParams.delete('onedrive');
+    currentUrl.searchParams.delete('reason');
+    window.history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+  }, [
+    getMissingCredentialsFlowEmail,
+    getMissingCredentialsFlowStage,
+    setMissingCredentialsFlowState,
+    setReconnectFlowStage,
+    toast,
+  ]);
 
   const finishPrimaryScan = React.useCallback((runId: string) => {
     if (completedRunToastRef.current === runId) {
@@ -839,6 +1070,41 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setReconnectFlowStage(null);
     setShowCredentialsRevokedModal(true);
   }, [enqueueScanStatus, setReconnectFlowStage]);
+
+  const stopPrimaryScanForMissingCredentials = React.useCallback((runId: string) => {
+    if (credentialsFailedRunRef.current === runId) {
+      return;
+    }
+
+    credentialsFailedRunRef.current = runId;
+
+    enqueueScanStatus(
+      {
+        key: `credentials-missing-${runId}`,
+        text: 'Integración requerida',
+        tone: 'warning',
+        stopSpinner: true,
+      },
+      { immediate: true, replacePending: true }
+    );
+
+    clearActivePrimaryScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeScanRunIdRef.current = null;
+    activeScanUserUidRef.current = null;
+    activeScanTypeRef.current = null;
+    setActiveScanRunId(null);
+    setActiveScanUserUid(null);
+    setActiveScanType(null);
+    setLoading(false);
+    setScanInProgress(false);
+    setIsRedirectingToOAuth(false);
+    setMissingCredentialsModalStage('warning');
+    setMissingEmailProvider(null);
+    setReconnectFlowStage(null);
+    setMissingCredentialsFlowState(null, null);
+    setShowCredentialsMissingModal(true);
+  }, [enqueueScanStatus, setMissingCredentialsFlowState, setReconnectFlowStage]);
 
   const schedulePrimaryScanCompletion = React.useCallback((runId: string) => {
     enqueueScanStatus(
@@ -946,6 +1212,13 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
             return;
           }
 
+          if (rowStep === 'credentials_non_existing') {
+            const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+            console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+            stopPrimaryScanForMissingCredentials(currentRunId);
+            return;
+          }
+
           if (rowStep === 'gmail_scanning_inbox') {
             enqueueScanStatus({
               key: `scanning-inbox-${currentRunId}`,
@@ -1031,7 +1304,14 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       console.info('[scan:realtime] remove channel', { userUid: user.id });
       void supabase.removeChannel(channel);
     };
-  }, [enqueueScanStatus, isScanInProgress, schedulePrimaryScanCompletion, stopPrimaryScanForCredentials, user?.id]);
+  }, [
+    enqueueScanStatus,
+    isScanInProgress,
+    schedulePrimaryScanCompletion,
+    stopPrimaryScanForCredentials,
+    stopPrimaryScanForMissingCredentials,
+    user?.id,
+  ]);
 
   const handleCancelScanLock = React.useCallback(() => {
     const runId = activeScanRunIdRef.current;
@@ -1124,7 +1404,13 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && rowStep === 'credentials_failed';
+        return isSameUser && (rowStep === 'credentials_failed' || rowStep === 'credentials_non_existing');
+      });
+      const hasBufferedMissingCredentials = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && rowStep === 'credentials_non_existing';
       });
       const hasBufferedFinish = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
@@ -1137,6 +1423,12 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       });
 
       if (hasBufferedCredentialsFailure) {
+        if (hasBufferedMissingCredentials) {
+          const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+          console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+          stopPrimaryScanForMissingCredentials(runId);
+          return;
+        }
         stopPrimaryScanForCredentials(runId);
         return;
       }
@@ -1428,6 +1720,139 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
           </div>
         </div>
       ) : null}
+
+      {showCredentialsMissingModal ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" />
+          <div className="relative w-full max-w-[470px] overflow-hidden rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:px-6">
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={closeMissingCredentialsModal}
+              className="absolute right-4 top-4 z-30 rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="relative w-full overflow-hidden">
+              <div
+                className="flex w-full transform-gpu transition-transform duration-500 ease-in-out"
+                style={{ transform: `translate3d(-${MISSING_CREDENTIALS_MODAL_STAGE_ORDER.indexOf(missingCredentialsModalStage) * 100}%, 0, 0)` }}
+              >
+                <div className="w-full min-w-full flex-none px-1 text-center">
+                  <h3 className="pr-7 text-[28px] font-semibold tracking-[-0.02em] leading-[1.08] text-[#0a1f44] sm:text-[30px]">
+                    Integración necesaria para escanear
+                  </h3>
+                  <p className="mt-2 text-base leading-7 text-slate-600">
+                    No has integrado aún un proveedor de correo y nube. Para continuar, conecta primero el correo y
+                    después su almacenamiento asociado.
+                  </p>
+                  <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                    <Button
+                      type="button"
+                      onClick={closeMissingCredentialsModal}
+                      variant="outline"
+                      className="h-11 w-full max-w-[180px] rounded-xl border-slate-300 text-base text-slate-700 hover:bg-slate-100"
+                    >
+                      Más tarde
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setMissingCredentialsFlowState('email', missingEmailProvider);
+                        setMissingCredentialsModalStage('email');
+                      }}
+                      className="h-11 w-full max-w-[180px] rounded-xl bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-base font-semibold text-white shadow-[0_14px_30px_rgba(21,95,245,0.35)] transition-transform duration-200 hover:-translate-y-0.5 hover:brightness-[0.98] hover:shadow-[0_18px_34px_rgba(21,95,245,0.38)] active:translate-y-0"
+                    >
+                      Integrar ahora
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="w-full min-w-full flex-none px-1 text-center">
+                  <h3 className="pr-7 text-[28px] font-semibold tracking-[-0.02em] leading-[1.08] text-[#0a1f44] sm:text-[30px]">
+                    Integra tu correo
+                  </h3>
+                  <div className="mt-4 space-y-3">
+                    <SelectableIntegrationCard
+                      logoSrc="/brand/onboarding/gmail_logo.png"
+                      name="Gmail"
+                      selected={missingEmailProvider === 'gmail'}
+                      onClick={() => setMissingEmailProvider('gmail')}
+                    />
+                    <SelectableIntegrationCard
+                      logoSrc="/brand/onboarding/outlook_logo.png"
+                      name="Outlook"
+                      selected={missingEmailProvider === 'outlook'}
+                      onClick={() => setMissingEmailProvider('outlook')}
+                    />
+                  </div>
+                  <div className="mt-7 flex justify-center">
+                    <Button
+                      type="button"
+                      onClick={handleMissingCredentialsEmailConnect}
+                      disabled={isRedirectingToOAuth || !missingEmailProvider}
+                      className="h-11 w-full max-w-[240px] rounded-xl bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-base font-semibold text-white shadow-[0_14px_30px_rgba(21,95,245,0.35)] transition-transform duration-200 hover:-translate-y-0.5 hover:brightness-[0.98] hover:shadow-[0_18px_34px_rgba(21,95,245,0.38)] active:translate-y-0"
+                    >
+                      <Plug className="mr-1 h-4 w-4" />
+                      {isRedirectingToOAuth ? 'Conectando…' : 'Conectar'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="w-full min-w-full flex-none px-1 text-center">
+                  <h3 className="pr-7 text-[28px] font-semibold tracking-[-0.02em] leading-[1.08] text-[#0a1f44] sm:text-[30px]">
+                    {missingEmailProvider === 'outlook' ? 'Conecta OneDrive' : 'Conecta Google Drive'}
+                  </h3>
+                  <div className="mt-4">
+                    <ReconnectIntegrationCard
+                      logoSrc={missingEmailProvider === 'outlook' ? '/brand/onboarding/onedrive_logo.png' : '/brand/onboarding/drive_logo.png'}
+                      name={missingEmailProvider === 'outlook' ? 'OneDrive' : 'Google Drive'}
+                    />
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    {missingEmailProvider === 'outlook'
+                      ? 'Tras Outlook, debes integrar OneDrive para completar el proceso.'
+                      : 'Tras Gmail, debes integrar Google Drive para completar el proceso.'}
+                  </p>
+                  <div className="mt-7 flex justify-center">
+                    <Button
+                      type="button"
+                      onClick={handleMissingCredentialsStorageConnect}
+                      disabled={isRedirectingToOAuth || !missingEmailProvider}
+                      className="h-11 w-full max-w-[240px] rounded-xl bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-base font-semibold text-white shadow-[0_14px_30px_rgba(21,95,245,0.35)] transition-transform duration-200 hover:-translate-y-0.5 hover:brightness-[0.98] hover:shadow-[0_18px_34px_rgba(21,95,245,0.38)] active:translate-y-0"
+                    >
+                      <Plug className="mr-1 h-4 w-4" />
+                      {isRedirectingToOAuth ? 'Conectando…' : 'Conectar'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="w-full min-w-full flex-none px-1 text-center">
+                  <div className="text-5xl leading-none">🥳</div>
+                  <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.02em] leading-[1.08] text-[#0a1f44] sm:text-[30px]">
+                    ¡Integración completada!
+                  </h3>
+                  <p className="mt-2 text-base leading-7 text-slate-600">
+                    {missingEmailProvider === 'outlook'
+                      ? 'Outlook y OneDrive ya están integrados. Por favor, ejecuta el escaneo de nuevo.'
+                      : 'Gmail y Google Drive ya están integrados. Por favor, ejecuta el escaneo de nuevo.'}
+                  </p>
+                  <div className="mt-6 flex justify-center">
+                    <Button
+                      type="button"
+                      onClick={closeMissingCredentialsModal}
+                      className="h-11 min-w-[170px] rounded-xl bg-gradient-to-r from-[#1d6bff] to-[#00a3ff] text-base font-semibold text-white shadow-[0_14px_30px_rgba(21,95,245,0.35)] transition-transform duration-200 hover:-translate-y-0.5 hover:brightness-[0.98] hover:shadow-[0_18px_34px_rgba(21,95,245,0.38)] active:translate-y-0"
+                    >
+                      Continuar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -1442,5 +1867,33 @@ function ReconnectIntegrationCard({ logoSrc, name }: { logoSrc: string; name: st
       </span>
       <p className="text-base font-semibold text-[#0a1f44]">{name}</p>
     </div>
+  );
+}
+
+function SelectableIntegrationCard({
+  logoSrc,
+  name,
+  selected,
+  onClick,
+}: {
+  logoSrc: string;
+  name: string;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`mx-auto flex w-full max-w-[340px] items-center justify-center gap-3 rounded-2xl border px-5 py-3 shadow-[0_10px_24px_rgba(12,32,72,0.05)] transition ${
+        selected ? 'border-[#1d6bff] bg-[#eef5ff]' : 'border-[#dde4f3] bg-white hover:border-[#b7cdf8]'
+      }`}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white">
+        <Image src={logoSrc} alt={name} width={36} height={36} className="h-9 w-9 rounded-lg" />
+      </span>
+      <p className="text-base font-semibold text-[#0a1f44]">{name}</p>
+      {selected ? <Check className="h-4 w-4 text-[#1d6bff]" /> : null}
+    </button>
   );
 }

@@ -627,3 +627,4 @@ export function DateRangeSelector({ value, onChange, className }: DateRangeSelec
 }
 
 export const getDefaultCurrentYearRange = (): DateRangeValue => getCurrentYearRange();
+export const getDefaultCurrentQuarterRange = (): DateRangeValue => getCurrentQuarterRange();

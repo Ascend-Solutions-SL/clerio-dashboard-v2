@@ -73,25 +73,41 @@ export async function GET(request: NextRequest) {
       throw new Error('No se pudo obtener el email principal de la cuenta OneDrive');
     }
 
-    const { error: upsertError } = await supabaseAdmin.from('onedrive_accounts').upsert(
-      {
-        user_uid: userUid,
-        onedrive_email: onedriveEmail,
-        onedrive_id: driveInfo.id ?? null,
-        drive_created_at: driveInfo.createdDateTime ?? null,
-        access_token: tokenResponse.access_token,
-        refresh_token: refreshToken,
-        expires_at: expiresAt,
-        onedrive_org_folder_id: null,
-        onedrive_deposit_folder_id: null,
-      },
-      {
-        onConflict: 'user_uid',
-      }
-    );
+    const insertResult = await supabaseAdmin.from('onedrive_accounts').insert({
+      user_uid: userUid,
+      onedrive_email: onedriveEmail,
+      onedrive_id: driveInfo.id ?? null,
+      drive_created_at: driveInfo.createdDateTime ?? null,
+      access_token: tokenResponse.access_token,
+      refresh_token: refreshToken,
+      expires_at: expiresAt,
+      drive_org_folder_id: null,
+      drive_deposit_folder_id: null,
+    });
 
-    if (upsertError) {
-      throw upsertError;
+    if (insertResult.error) {
+      if (insertResult.error.code !== '23505') {
+        throw insertResult.error;
+      }
+
+      const updateResult = await supabaseAdmin
+        .from('onedrive_accounts')
+        .update({
+          onedrive_email: onedriveEmail,
+          onedrive_id: driveInfo.id ?? null,
+          drive_created_at: driveInfo.createdDateTime ?? null,
+          access_token: tokenResponse.access_token,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          drive_org_folder_id: null,
+          drive_deposit_folder_id: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_uid', userUid);
+
+      if (updateResult.error) {
+        throw updateResult.error;
+      }
     }
 
     try {

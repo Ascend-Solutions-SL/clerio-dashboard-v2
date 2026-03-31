@@ -33,7 +33,7 @@ import { InvoiceDetailDrawer, type InvoiceDetailDrawerRow } from '@/components/I
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { TableFilters, type TableFiltersValue } from '@/components/ui/table-filters';
-import { DateRangeSelector, getDefaultCurrentYearRange, type DateRangeValue } from '@/components/ui/date-range-selector';
+import { DateRangeSelector, getDefaultCurrentQuarterRange, type DateRangeValue } from '@/components/ui/date-range-selector';
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 type DriveType = 'googledrive' | 'onedrive';
@@ -45,7 +45,7 @@ type PendingTooltipState = {
   y: number;
 };
 
-const DEFAULT_DATE_RANGE = getDefaultCurrentYearRange();
+const DEFAULT_DATE_RANGE = getDefaultCurrentQuarterRange();
 
 const normalizeFacturaValidada = (value: unknown): boolean | null => {
   if (value === true || value === false) {
