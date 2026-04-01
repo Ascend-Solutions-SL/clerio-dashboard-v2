@@ -10,7 +10,8 @@ import InvoiceUploadDialog from '@/components/InvoiceUploadDialog';
 import InvoiceScanControls from '@/components/InvoiceScanControls';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
-import { getDefaultCurrentQuarterRange, type DateRangeValue } from '@/components/ui/date-range-selector';
+import { type DateRangeValue } from '@/components/ui/date-range-selector';
+import { getSharedDashboardDateRange, setSharedDashboardDateRange } from '@/lib/dashboard-date-range';
 
 const holdedStatusCache = new Map<string, boolean>();
 const gastosCardsCache = new Map<string, { total: number; count: number }>();
@@ -83,7 +84,7 @@ const GastosPage = () => {
   const { user } = useDashboardSession();
   const holdedCacheKey = user?.id ?? 'anonymous';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getDefaultCurrentQuarterRange);
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getSharedDashboardDateRange);
   const cardsCacheKey = `${empresaId ?? 'none'}::${dateRange.startDate}::${dateRange.endDate}`;
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);
@@ -96,7 +97,14 @@ const GastosPage = () => {
   const prevData = useRef({ total: 0, count: 0 });
 
   const handleDateRangeChange = React.useCallback((next: DateRangeValue) => {
-    setDateRange((prev) => (prev.startDate === next.startDate && prev.endDate === next.endDate ? prev : next));
+    setDateRange((prev) => {
+      if (prev.startDate === next.startDate && prev.endDate === next.endDate) {
+        return prev;
+      }
+
+      setSharedDashboardDateRange(next);
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -323,6 +331,7 @@ const GastosPage = () => {
                 refreshKey={tableRefreshKey}
                 processedInvoiceCount={invoiceCount}
                 processedInvoiceCountReady={!cardsLoading}
+                initialDateRange={dateRange}
                 onDateRangeChange={handleDateRangeChange}
               />
             </div>

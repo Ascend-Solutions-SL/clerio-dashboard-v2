@@ -213,6 +213,7 @@ interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
   onDateRangeChange?: (range: DateRangeValue) => void;
+  initialDateRange?: DateRangeValue;
   refreshKey?: number;
   processedInvoiceCount?: number;
   processedInvoiceCountReady?: boolean;
@@ -479,6 +480,7 @@ export function IncomeTable({
   onTotalIncomeChange,
   onInvoiceCountChange,
   onDateRangeChange,
+  initialDateRange,
   refreshKey = 0,
   processedInvoiceCount = 0,
   processedInvoiceCountReady = true,
@@ -494,12 +496,30 @@ export function IncomeTable({
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState('');
   const [filters, setFilters] = React.useState<TableFiltersValue>({
-    startDate: DEFAULT_DATE_RANGE.startDate,
-    endDate: DEFAULT_DATE_RANGE.endDate,
+    startDate: initialDateRange?.startDate ?? DEFAULT_DATE_RANGE.startDate,
+    endDate: initialDateRange?.endDate ?? DEFAULT_DATE_RANGE.endDate,
     minAmount: null,
     maxAmount: null,
     clients: [],
   });
+
+  React.useEffect(() => {
+    if (!initialDateRange) {
+      return;
+    }
+
+    setFilters((prev) => {
+      if (prev.startDate === initialDateRange.startDate && prev.endDate === initialDateRange.endDate) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        startDate: initialDateRange.startDate,
+        endDate: initialDateRange.endDate,
+      };
+    });
+  }, [initialDateRange]);
 
   React.useEffect(() => {
     onDateRangeChange?.({ startDate: filters.startDate, endDate: filters.endDate });

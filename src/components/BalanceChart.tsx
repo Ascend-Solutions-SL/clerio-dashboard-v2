@@ -90,17 +90,25 @@ const BalanceChart = () => {
 
   const chartExtents = useMemo(() => {
     const slice = visibleData.length ? visibleData : chartData.slice(-VISIBLE_MONTHS);
-    let maxIncomeExpense = 0;
+    let maxIncome = 0;
+    let maxExpenses = 0;
     let minTotal = 0;
     let maxTotal = 0;
 
     slice.forEach(({ ingresos = 0, gastos = 0, total = 0 }) => {
-      maxIncomeExpense = Math.max(maxIncomeExpense, ingresos, gastos);
+      maxIncome = Math.max(maxIncome, ingresos);
+      maxExpenses = Math.max(maxExpenses, gastos);
       minTotal = Math.min(minTotal, total);
       maxTotal = Math.max(maxTotal, total);
     });
 
-    return { maxIncomeExpense, minTotal, maxTotal };
+    return {
+      maxIncome,
+      maxExpenses,
+      maxCombined: Math.max(maxIncome, maxExpenses),
+      minTotal,
+      maxTotal,
+    };
   }, [chartData, visibleData]);
 
   const yAxisConfig = useMemo<{ domain?: [number, number]; ticks?: number[] }>(() => {
@@ -117,13 +125,26 @@ const BalanceChart = () => {
       return { domain: [-maxAxis, maxAxis], ticks };
     }
 
-    const maxValue = chartExtents.maxIncomeExpense;
+    const maxValue =
+      activeTab === 'Ingresos'
+        ? chartExtents.maxIncome
+        : activeTab === 'Gastos'
+          ? chartExtents.maxExpenses
+          : chartExtents.maxCombined;
     const step = getNiceStep((maxValue || 1) / targetIntervals);
     const maxAxis = Math.max(step, Math.ceil((maxValue || step) / step) * step);
     const ticks = Array.from({ length: Math.round(maxAxis / step) + 1 }, (_, idx) => idx * step);
 
     return { domain: [0, maxAxis], ticks };
-  }, [activeTab, chartExtents.maxIncomeExpense, chartExtents.maxTotal, chartExtents.minTotal, visibleData.length]);
+  }, [
+    activeTab,
+    chartExtents.maxCombined,
+    chartExtents.maxExpenses,
+    chartExtents.maxIncome,
+    chartExtents.maxTotal,
+    chartExtents.minTotal,
+    visibleData.length,
+  ]);
 
   const activeDataKey = useMemo<'ingresos' | 'gastos' | 'total'>(() => {
     if (activeTab === 'Ingresos') return 'ingresos';
