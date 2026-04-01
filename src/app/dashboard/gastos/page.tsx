@@ -11,7 +11,11 @@ import InvoiceScanControls from '@/components/InvoiceScanControls';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { type DateRangeValue } from '@/components/ui/date-range-selector';
-import { getSharedDashboardDateRange, setSharedDashboardDateRange } from '@/lib/dashboard-date-range';
+import {
+  getInitialSharedDashboardDateRange,
+  getSharedDashboardDateRangeFromStorage,
+  setSharedDashboardDateRange,
+} from '@/lib/dashboard-date-range';
 
 const holdedStatusCache = new Map<string, boolean>();
 const gastosCardsCache = new Map<string, { total: number; count: number }>();
@@ -84,7 +88,7 @@ const GastosPage = () => {
   const { user } = useDashboardSession();
   const holdedCacheKey = user?.id ?? 'anonymous';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
-  const [dateRange, setDateRange] = useState<DateRangeValue>(getSharedDashboardDateRange);
+  const [dateRange, setDateRange] = useState<DateRangeValue>(getInitialSharedDashboardDateRange);
   const cardsCacheKey = `${empresaId ?? 'none'}::${dateRange.startDate}::${dateRange.endDate}`;
   const [totalExpenses, setTotalExpenses] = useState<number>(0);
   const [invoiceCount, setInvoiceCount] = useState<number>(0);
@@ -105,6 +109,13 @@ const GastosPage = () => {
       setSharedDashboardDateRange(next);
       return next;
     });
+  }, []);
+
+  React.useEffect(() => {
+    const storedRange = getSharedDashboardDateRangeFromStorage();
+    setDateRange((prev) =>
+      prev.startDate === storedRange.startDate && prev.endDate === storedRange.endDate ? prev : storedRange
+    );
   }, []);
 
   useEffect(() => {

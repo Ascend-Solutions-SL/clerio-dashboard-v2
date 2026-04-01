@@ -11,7 +11,11 @@ import { useFinancialData } from '@/context/FinancialDataContext';
 import { useDashboardSession } from '@/context/dashboard-session-context';
 import { supabase } from '@/lib/supabase';
 import { DateRangeSelector, type DateRangeValue } from '@/components/ui/date-range-selector';
-import { getSharedDashboardDateRange, setSharedDashboardDateRange } from '@/lib/dashboard-date-range';
+import {
+  getInitialSharedDashboardDateRange,
+  getSharedDashboardDateRangeFromStorage,
+  setSharedDashboardDateRange,
+} from '@/lib/dashboard-date-range';
 
 type DashboardCardsTotals = {
   totalIncome: number;
@@ -99,7 +103,7 @@ export default function DashboardHome() {
   const { user, isLoading: isSessionLoading } = useDashboardSession();
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
 
-  const [dateRange, setDateRange] = React.useState<DateRangeValue>(getSharedDashboardDateRange);
+  const [dateRange, setDateRange] = React.useState<DateRangeValue>(getInitialSharedDashboardDateRange);
   const [cardsLoading, setCardsLoading] = React.useState(false);
   const [cardsTotals, setCardsTotals] = React.useState<DashboardCardsTotals | null>(null);
 
@@ -117,6 +121,13 @@ export default function DashboardHome() {
       setSharedDashboardDateRange(next);
       return next;
     });
+  }, []);
+
+  React.useEffect(() => {
+    const storedRange = getSharedDashboardDateRangeFromStorage();
+    setDateRange((prev) =>
+      prev.startDate === storedRange.startDate && prev.endDate === storedRange.endDate ? prev : storedRange
+    );
   }, []);
 
   React.useEffect(() => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
 import { useDashboardSession } from '@/context/dashboard-session-context';
@@ -42,6 +42,7 @@ interface FinancialDataContextValue {
 const FinancialDataContext = createContext<FinancialDataContextValue | undefined>(undefined);
 
 const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const ADJACENT_CACHE_DISTANCE = 1;
 
 const createYearTimeline = (year: number): MonthlyData[] =>
   Array.from({ length: 12 }).map((_, month) => ({
@@ -77,6 +78,23 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
   const [data, setData] = useState<FinancialData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const inFlightYearsRef = useRef<Record<number, Promise<MonthlyData[]> | undefined>>({});
+
+  const pruneYearCache = useCallback(
+    (cache: Record<number, MonthlyData[]>, centerYear: number) => {
+      const allowedYears = new Set<number>();
+      for (let year = centerYear - ADJACENT_CACHE_DISTANCE; year <= centerYear + ADJACENT_CACHE_DISTANCE; year += 1) {
+        if (year >= minYear && year <= maxYear) {
+          allowedYears.add(year);
+        }
+      }
+
+      return Object.fromEntries(
+        Object.entries(cache).filter(([year]) => allowedYears.has(Number(year)))
+      ) as Record<number, MonthlyData[]>;
+    },
+    [maxYear, minYear],
+  );
 
   const buildYearData = useCallback((year: number, incomes: FacturaAggregateRow[], expenses: FacturaAggregateRow[]) => {
     const monthlyData = createYearTimeline(year);
@@ -112,6 +130,57 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
     };
   }, []);
 
+  const fetchMonthlyDataForYear = useCallback(
+    async (empresaId: number, year: number): Promise<MonthlyData[]> => {
+      const inFlight = inFlightYearsRef.current[year];
+      if (inFlight) {
+        return inFlight;
+      }
+
+      const request = (async () => {
+        const startDate = `${year}-01-01`;
+        const endDate = `${year}-12-31`;
+
+        const [incomeResult, expensesResult] = await Promise.all([
+          supabase
+            .from('facturas')
+            .select('fecha, importe_total')
+            .eq('empresa_id', empresaId)
+            .eq('tipo', 'Ingresos')
+            .gte('fecha', startDate)
+            .lte('fecha', endDate),
+          supabase
+            .from('facturas')
+            .select('fecha, importe_total')
+            .eq('empresa_id', empresaId)
+            .eq('tipo', 'Gastos')
+            .gte('fecha', startDate)
+            .lte('fecha', endDate),
+        ]);
+
+        if (incomeResult.error) throw incomeResult.error;
+        if (expensesResult.error) throw expensesResult.error;
+
+        const yearData = buildYearData(
+          year,
+          (incomeResult.data ?? []) as FacturaAggregateRow[],
+          (expensesResult.data ?? []) as FacturaAggregateRow[],
+        );
+
+        return yearData.monthlyData;
+      })();
+
+      inFlightYearsRef.current[year] = request;
+
+      try {
+        return await request;
+      } finally {
+        delete inFlightYearsRef.current[year];
+      }
+    },
+    [buildYearData],
+  );
+
   const fetchYear = useCallback(
     async (year: number, force = false) => {
       const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
@@ -137,48 +206,43 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
         return;
       }
 
-      const startDate = `${year}-01-01`;
-      const endDate = `${year}-12-31`;
-
       try {
         setLoading(true);
         setError(null);
 
-        const [incomeResult, expensesResult] = await Promise.all([
-          supabase
-            .from('facturas')
-            .select('fecha, importe_total')
-            .eq('empresa_id', empresaId)
-            .eq('tipo', 'Ingresos')
-            .gte('fecha', startDate)
-            .lte('fecha', endDate),
-          supabase
-            .from('facturas')
-            .select('fecha, importe_total')
-            .eq('empresa_id', empresaId)
-            .eq('tipo', 'Gastos')
-            .gte('fecha', startDate)
-            .lte('fecha', endDate),
-        ]);
+        const yearRows = await fetchMonthlyDataForYear(empresaId, year);
 
-        if (incomeResult.error) throw incomeResult.error;
-        if (expensesResult.error) throw expensesResult.error;
-
-        const yearData = buildYearData(
-          year,
-          (incomeResult.data ?? []) as FacturaAggregateRow[],
-          (expensesResult.data ?? []) as FacturaAggregateRow[]
-        );
-
-        setYearCache((prev) => ({ ...prev, [year]: yearData.monthlyData }));
+        setYearCache((prev) => pruneYearCache({ ...prev, [year]: yearRows }, year));
         setData({
-          totalIncome: yearData.totalIncome,
-          incomeCount: yearData.incomeCount,
-          totalExpenses: yearData.totalExpenses,
-          expenseCount: yearData.expenseCount,
-          balance: yearData.totalIncome - yearData.totalExpenses,
-          monthlyData: yearData.monthlyData,
+          totalIncome: yearRows.reduce((acc, row) => acc + row.ingresos, 0),
+          incomeCount: 0,
+          totalExpenses: yearRows.reduce((acc, row) => acc + row.gastos, 0),
+          expenseCount: 0,
+          balance: yearRows.reduce((acc, row) => acc + row.total, 0),
+          monthlyData: yearRows,
         });
+
+        const adjacentYears = [year - 1, year + 1].filter((candidate) => candidate >= minYear && candidate <= maxYear);
+        void Promise.all(
+          adjacentYears.map(async (adjacentYear) => {
+            if (yearCache[adjacentYear]) {
+              return;
+            }
+
+            try {
+              const adjacentRows = await fetchMonthlyDataForYear(empresaId, adjacentYear);
+              setYearCache((prev) => {
+                if (prev[adjacentYear]) {
+                  return pruneYearCache(prev, year);
+                }
+
+                return pruneYearCache({ ...prev, [adjacentYear]: adjacentRows }, year);
+              });
+            } catch {
+              // ignore adjacent prefetch errors
+            }
+          }),
+        );
       } catch (err) {
         const message = (() => {
           if (err instanceof Error) return err.message;
@@ -202,7 +266,7 @@ export const FinancialDataProvider = ({ children }: { children: React.ReactNode 
         setLoading(false);
       }
     },
-    [buildYearData, user?.empresaId, yearCache],
+    [fetchMonthlyDataForYear, maxYear, minYear, pruneYearCache, user?.empresaId, yearCache],
   );
 
   useEffect(() => {

@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useFinancialData } from '@/context/FinancialDataContext';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -18,78 +18,93 @@ const getNiceStep = (value: number) => {
 
 const VISIBLE_MONTHS = 12;
 const CHART_HEIGHT = 300;
+const YEAR_SLIDE_DURATION_MS = 380;
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
   const { data, loading, error, refresh, selectedYear, setSelectedYear, minYear, maxYear } = useFinancialData();
   const chartData = useMemo(() => data?.monthlyData ?? [], [data]);
-  const [renderYear, setRenderYear] = useState<number>(selectedYear);
-  const [slideState, setSlideState] = useState<'idle' | 'out' | 'in'>('idle');
-  const [slideDir, setSlideDir] = useState<'left' | 'right'>('left');
-  const [chartWidth, setChartWidth] = useState(0);
-  const chartContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const [renderedData, setRenderedData] = useState<typeof chartData>(chartData);
+  const [incomingData, setIncomingData] = useState<typeof chartData | null>(null);
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
+  const [isSliding, setIsSliding] = useState(false);
+  const [slideInActive, setSlideInActive] = useState(false);
+  const renderedYearRef = useRef<number | null>(chartData[0]?.year ?? null);
+  const slideTimeoutRef = useRef<number | null>(null);
+  const slideTransitionClass =
+    'absolute inset-0 transform-gpu will-change-transform will-change-opacity transition-[transform,opacity] duration-[380ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
 
   const yearBounds = useMemo(() => ({ minYear, maxYear }), [maxYear, minYear]);
 
   useEffect(() => {
-    setRenderYear((prev) => {
-      if (prev === selectedYear) return prev;
-      return prev;
-    });
-
-    if (renderYear === selectedYear) {
+    if (!chartData.length) {
       return;
     }
 
-    setSlideDir(selectedYear < renderYear ? 'left' : 'right');
-    setSlideState('out');
+    const incomingYear = chartData[0]?.year;
+    if (!incomingYear || incomingYear !== selectedYear) {
+      return;
+    }
 
-    const outTimer = window.setTimeout(() => {
-      setRenderYear(selectedYear);
-      setSlideState('in');
-    }, 150);
+    const renderedYear = renderedYearRef.current;
+    if (renderedYear == null) {
+      renderedYearRef.current = incomingYear;
+      setRenderedData(chartData);
+      return;
+    }
 
-    const inTimer = window.setTimeout(() => {
-      setSlideState('idle');
-    }, 300);
+    if (incomingYear === renderedYear) {
+      setRenderedData(chartData);
+      return;
+    }
+
+    if (slideTimeoutRef.current != null) {
+      window.clearTimeout(slideTimeoutRef.current);
+    }
+
+    setSlideDirection(incomingYear > renderedYear ? 'left' : 'right');
+    setIncomingData(chartData);
+    setIsSliding(true);
+    setSlideInActive(false);
+
+    const frame = window.requestAnimationFrame(() => {
+      setSlideInActive(true);
+    });
+
+    slideTimeoutRef.current = window.setTimeout(() => {
+      renderedYearRef.current = incomingYear;
+      setRenderedData(chartData);
+      setIncomingData(null);
+      setIsSliding(false);
+      setSlideInActive(false);
+      slideTimeoutRef.current = null;
+    }, YEAR_SLIDE_DURATION_MS);
 
     return () => {
-      window.clearTimeout(outTimer);
-      window.clearTimeout(inTimer);
+      window.cancelAnimationFrame(frame);
     };
-  }, [renderYear, selectedYear]);
+  }, [chartData, selectedYear]);
 
   useEffect(() => {
-    const node = chartContainerRef.current;
-    if (!node) {
-      return;
-    }
-
-    const updateSize = () => {
-      const nextWidth = Math.max(0, Math.floor(node.getBoundingClientRect().width));
-      setChartWidth(nextWidth);
-    };
-
-    updateSize();
-
-    const observer = new ResizeObserver(() => {
-      updateSize();
-    });
-    observer.observe(node);
-
     return () => {
-      observer.disconnect();
+      if (slideTimeoutRef.current != null) {
+        window.clearTimeout(slideTimeoutRef.current);
+      }
     };
   }, []);
 
   const visibleData = useMemo(() => {
-    if (!chartData.length) return [];
-    const yearRows = chartData.filter((row) => row.year === renderYear);
-    return yearRows.slice(0, VISIBLE_MONTHS);
-  }, [chartData, renderYear]);
+    if (!renderedData.length) return [];
+    return renderedData.slice(0, VISIBLE_MONTHS);
+  }, [renderedData]);
 
-  const chartExtents = useMemo(() => {
-    const slice = visibleData.length ? visibleData : chartData.slice(-VISIBLE_MONTHS);
+  const incomingVisibleData = useMemo(() => {
+    if (!incomingData?.length) return [];
+    return incomingData.slice(0, VISIBLE_MONTHS);
+  }, [incomingData]);
+
+  const getYAxisConfigForRows = (rows: typeof visibleData): { domain?: [number, number]; ticks?: number[] } => {
+    const slice = rows.length ? rows : chartData.slice(-VISIBLE_MONTHS);
     let maxIncome = 0;
     let maxExpenses = 0;
     let minTotal = 0;
@@ -102,23 +117,14 @@ const BalanceChart = () => {
       maxTotal = Math.max(maxTotal, total);
     });
 
-    return {
-      maxIncome,
-      maxExpenses,
-      maxCombined: Math.max(maxIncome, maxExpenses),
-      minTotal,
-      maxTotal,
-    };
-  }, [chartData, visibleData]);
-
-  const yAxisConfig = useMemo<{ domain?: [number, number]; ticks?: number[] }>(() => {
-    const sliceLength = visibleData.length;
+    const sliceLength = rows.length;
     if (!sliceLength) return {};
 
     const targetIntervals = 3;
+    const maxCombined = Math.max(maxIncome, maxExpenses);
 
     if (activeTab === 'Neto') {
-      const maxAbs = Math.max(Math.abs(chartExtents.minTotal), Math.abs(chartExtents.maxTotal));
+      const maxAbs = Math.max(Math.abs(minTotal), Math.abs(maxTotal));
       const step = getNiceStep((maxAbs || 1) / targetIntervals);
       const maxAxis = Math.max(step, Math.ceil((maxAbs || step) / step) * step);
       const ticks = Array.from({ length: targetIntervals * 2 + 1 }, (_, idx) => -maxAxis + idx * step);
@@ -127,30 +133,106 @@ const BalanceChart = () => {
 
     const maxValue =
       activeTab === 'Ingresos'
-        ? chartExtents.maxIncome
+        ? maxIncome
         : activeTab === 'Gastos'
-          ? chartExtents.maxExpenses
-          : chartExtents.maxCombined;
+          ? maxExpenses
+          : maxCombined;
     const step = getNiceStep((maxValue || 1) / targetIntervals);
     const maxAxis = Math.max(step, Math.ceil((maxValue || step) / step) * step);
     const ticks = Array.from({ length: Math.round(maxAxis / step) + 1 }, (_, idx) => idx * step);
 
     return { domain: [0, maxAxis], ticks };
-  }, [
-    activeTab,
-    chartExtents.maxCombined,
-    chartExtents.maxExpenses,
-    chartExtents.maxIncome,
-    chartExtents.maxTotal,
-    chartExtents.minTotal,
-    visibleData.length,
-  ]);
+  };
 
   const activeDataKey = useMemo<'ingresos' | 'gastos' | 'total'>(() => {
     if (activeTab === 'Ingresos') return 'ingresos';
     if (activeTab === 'Gastos') return 'gastos';
     return 'total';
   }, [activeTab]);
+
+  const hasInvoicesForRows = (rows: typeof visibleData) => {
+    if (!rows.length) {
+      return false;
+    }
+
+    if (activeTab === 'Ingresos') {
+      return rows.some((row) => (row.ingresos ?? 0) > 0);
+    }
+
+    if (activeTab === 'Gastos') {
+      return rows.some((row) => (row.gastos ?? 0) > 0);
+    }
+
+    return rows.some((row) => (row.ingresos ?? 0) > 0 || (row.gastos ?? 0) > 0);
+  };
+
+  const hasInvoicesForSelection = useMemo(() => hasInvoicesForRows(visibleData), [activeTab, visibleData]);
+
+  const renderChartBars = (rows: typeof visibleData) => {
+    const yAxisConfig = getYAxisConfigForRows(rows);
+
+    return (
+      <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+        <BarChart data={rows} margin={{ top: 5, right: 20, left: 20, bottom: 5 }} barGap={0}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+          <YAxis
+            width={60}
+            axisLine={false}
+            tickLine={false}
+            domain={yAxisConfig.domain}
+            ticks={yAxisConfig.ticks}
+            tickFormatter={(value) =>
+              new Intl.NumberFormat('es-ES', {
+                style: 'currency',
+                currency: 'EUR',
+                maximumFractionDigits: 0,
+              }).format(Number(value))
+            }
+          />
+          <Tooltip
+            formatter={(value: unknown) =>
+              new Intl.NumberFormat('es-ES', {
+                style: 'currency',
+                currency: 'EUR',
+              }).format(Number(value))
+            }
+          />
+
+          {activeTab === 'Combinado' ? (
+            <>
+              <Bar
+                name="Ingresos"
+                dataKey="ingresos"
+                fill="#10B981"
+                radius={[4, 4, 0, 0]}
+                isAnimationActive={false}
+                barSize={12}
+              />
+              <Bar
+                name="Gastos"
+                dataKey="gastos"
+                fill="#EF4444"
+                radius={[4, 4, 0, 0]}
+                isAnimationActive={false}
+                barSize={12}
+              />
+            </>
+          ) : (
+            <Bar
+              name={activeTab}
+              dataKey={activeDataKey}
+              fill={activeTab === 'Gastos' ? '#EF4444' : activeTab === 'Ingresos' ? '#10B981' : '#3B82F6'}
+              radius={[4, 4, 0, 0]}
+              isAnimationActive={false}
+            />
+          )}
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  };
+
+  const isRenderYearDataReady = visibleData.length > 0;
 
   const hasRenderableData = Boolean(data?.monthlyData);
   const isChartLoadingState = !hasRenderableData && (loading || (!data && !error));
@@ -246,90 +328,44 @@ const BalanceChart = () => {
       </div>
       <div>
         <div className="flex-1 min-w-0">
-          <div
-            ref={chartContainerRef}
-            style={{ width: '100%', height: 300, minWidth: 0, minHeight: 300 }}
-            className={`transition-all duration-300 ease-out ${
-              slideState === 'idle'
-                ? 'opacity-100 translate-x-0'
-                : slideState === 'out'
-                  ? slideDir === 'left'
-                    ? 'opacity-0 -translate-x-4'
-                    : 'opacity-0 translate-x-4'
-                  : slideDir === 'left'
-                    ? 'opacity-100 translate-x-4'
-                    : 'opacity-100 -translate-x-4'
-            }`}
-          >
-            {chartWidth > 0 ? (
-              <BarChart 
-                width={chartWidth}
-                height={CHART_HEIGHT}
-                data={visibleData} 
-                margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
-                barGap={0}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 12 }}
-                />
-                <YAxis 
-                  width={60}
-                  axisLine={false} 
-                  tickLine={false} 
-                  domain={yAxisConfig.domain}
-                  ticks={yAxisConfig.ticks}
-                  tickFormatter={(value) =>
-                    new Intl.NumberFormat('es-ES', {
-                      style: 'currency',
-                      currency: 'EUR',
-                      maximumFractionDigits: 0,
-                    }).format(Number(value))
-                  }
-                />
-                <Tooltip
-                  formatter={(value: unknown) =>
-                    new Intl.NumberFormat('es-ES', {
-                      style: 'currency',
-                      currency: 'EUR',
-                    }).format(Number(value))
-                  }
-                />
-
-                {activeTab === 'Combinado' ? (
-                  <>
-                    <Bar
-                      name="Ingresos"
-                      dataKey="ingresos"
-                      fill="#10B981"
-                      radius={[4, 4, 0, 0]}
-                      isAnimationActive={false}
-                      barSize={12}
-                    />
-                    <Bar
-                      name="Gastos"
-                      dataKey="gastos"
-                      fill="#EF4444"
-                      radius={[4, 4, 0, 0]}
-                      isAnimationActive={false}
-                      barSize={12}
-                    />
-                  </>
-                ) : (
-                  <Bar
-                    name={activeTab}
-                    dataKey={activeDataKey}
-                    fill={activeTab === 'Gastos' ? '#EF4444' : activeTab === 'Ingresos' ? '#10B981' : '#3B82F6'}
-                    radius={[4, 4, 0, 0]}
-                    isAnimationActive={false}
-                  />
-                )}
-              </BarChart>
+          <div style={{ width: '100%', height: 300, minWidth: 0, minHeight: 300 }}>
+            {!isRenderYearDataReady ? (
+              <div className="h-[300px] flex items-center justify-center">
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 shadow-sm">
+                  <span className="h-3.5 w-3.5 rounded-full border-2 border-slate-300 border-t-slate-700 animate-spin" />
+                  Cargando gráfico...
+                </div>
+              </div>
+            ) : isSliding && incomingVisibleData.length > 0 ? (
+              <div className="relative h-[300px] overflow-hidden">
+                <div
+                  className={`${slideTransitionClass} ${
+                    slideInActive
+                      ? 'translate-x-0 opacity-100'
+                      : slideDirection === 'left'
+                        ? 'translate-x-full opacity-100'
+                        : '-translate-x-full opacity-100'
+                  }`}
+                >
+                  {hasInvoicesForRows(incomingVisibleData) ? (
+                    renderChartBars(incomingVisibleData)
+                  ) : (
+                    <div className="flex h-[300px] items-center justify-center text-center">
+                      <p className="max-w-[360px] text-sm text-slate-500">
+                        No hay facturas registradas para el periodo seleccionado.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : hasInvoicesForSelection ? (
+              renderChartBars(visibleData)
             ) : (
-              <div className="h-[300px]" />
+              <div className="flex h-[300px] items-center justify-center text-center">
+                <p className="max-w-[360px] text-sm text-slate-500">
+                  No hay facturas registradas para el periodo seleccionado.
+                </p>
+              </div>
             )}
           </div>
         </div>

@@ -13,15 +13,19 @@ const isValidRange = (value: unknown): value is DateRangeValue => {
   return isValidDate(candidate.startDate) && isValidDate(candidate.endDate);
 };
 
-export const getSharedDashboardDateRange = (): DateRangeValue => {
+const getFallbackRange = (): DateRangeValue => getDefaultCurrentQuarterRange();
+
+export const getInitialSharedDashboardDateRange = (): DateRangeValue => getFallbackRange();
+
+export const getSharedDashboardDateRangeFromStorage = (): DateRangeValue => {
   if (typeof window === 'undefined') {
-    return getDefaultCurrentQuarterRange();
+    return getFallbackRange();
   }
 
   try {
     const raw = window.localStorage.getItem(DASHBOARD_SHARED_DATE_RANGE_KEY);
     if (!raw) {
-      return getDefaultCurrentQuarterRange();
+      return getFallbackRange();
     }
 
     const parsed = JSON.parse(raw) as unknown;
@@ -32,7 +36,7 @@ export const getSharedDashboardDateRange = (): DateRangeValue => {
     // ignore storage parsing errors
   }
 
-  return getDefaultCurrentQuarterRange();
+  return getFallbackRange();
 };
 
 export const setSharedDashboardDateRange = (range: DateRangeValue) => {
