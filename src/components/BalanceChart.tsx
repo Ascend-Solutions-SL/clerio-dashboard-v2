@@ -18,21 +18,16 @@ const getNiceStep = (value: number) => {
 
 const VISIBLE_MONTHS = 12;
 const CHART_HEIGHT = 300;
-const YEAR_SLIDE_DURATION_MS = 380;
+const YEAR_TRANSITION_DURATION_MS = 220;
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
   const { data, loading, error, refresh, selectedYear, setSelectedYear, minYear, maxYear } = useFinancialData();
   const chartData = useMemo(() => data?.monthlyData ?? [], [data]);
   const [renderedData, setRenderedData] = useState<typeof chartData>(chartData);
-  const [incomingData, setIncomingData] = useState<typeof chartData | null>(null);
-  const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
-  const [isSliding, setIsSliding] = useState(false);
-  const [slideInActive, setSlideInActive] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const renderedYearRef = useRef<number | null>(chartData[0]?.year ?? null);
-  const slideTimeoutRef = useRef<number | null>(null);
-  const slideTransitionClass =
-    'absolute inset-0 transform-gpu will-change-transform will-change-opacity transition-[transform,opacity] duration-[380ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
+  const transitionTimeoutRef = useRef<number | null>(null);
 
   const yearBounds = useMemo(() => ({ minYear, maxYear }), [maxYear, minYear]);
 
@@ -58,37 +53,24 @@ const BalanceChart = () => {
       return;
     }
 
-    if (slideTimeoutRef.current != null) {
-      window.clearTimeout(slideTimeoutRef.current);
+    if (transitionTimeoutRef.current != null) {
+      window.clearTimeout(transitionTimeoutRef.current);
     }
 
-    setSlideDirection(incomingYear > renderedYear ? 'left' : 'right');
-    setIncomingData(chartData);
-    setIsSliding(true);
-    setSlideInActive(false);
+    setIsTransitioning(true);
 
-    const frame = window.requestAnimationFrame(() => {
-      setSlideInActive(true);
-    });
-
-    slideTimeoutRef.current = window.setTimeout(() => {
+    transitionTimeoutRef.current = window.setTimeout(() => {
       renderedYearRef.current = incomingYear;
       setRenderedData(chartData);
-      setIncomingData(null);
-      setIsSliding(false);
-      setSlideInActive(false);
-      slideTimeoutRef.current = null;
-    }, YEAR_SLIDE_DURATION_MS);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-    };
+      setIsTransitioning(false);
+      transitionTimeoutRef.current = null;
+    }, YEAR_TRANSITION_DURATION_MS);
   }, [chartData, selectedYear]);
 
   useEffect(() => {
     return () => {
-      if (slideTimeoutRef.current != null) {
-        window.clearTimeout(slideTimeoutRef.current);
+      if (transitionTimeoutRef.current != null) {
+        window.clearTimeout(transitionTimeoutRef.current);
       }
     };
   }, []);
@@ -97,11 +79,6 @@ const BalanceChart = () => {
     if (!renderedData.length) return [];
     return renderedData.slice(0, VISIBLE_MONTHS);
   }, [renderedData]);
-
-  const incomingVisibleData = useMemo(() => {
-    if (!incomingData?.length) return [];
-    return incomingData.slice(0, VISIBLE_MONTHS);
-  }, [incomingData]);
 
   const getYAxisConfigForRows = (rows: typeof visibleData): { domain?: [number, number]; ticks?: number[] } => {
     const slice = rows.length ? rows : chartData.slice(-VISIBLE_MONTHS);
@@ -336,35 +313,20 @@ const BalanceChart = () => {
                   Cargando gráfico...
                 </div>
               </div>
-            ) : isSliding && incomingVisibleData.length > 0 ? (
-              <div className="relative h-[300px] overflow-hidden">
-                <div
-                  className={`${slideTransitionClass} ${
-                    slideInActive
-                      ? 'translate-x-0 opacity-100'
-                      : slideDirection === 'left'
-                        ? 'translate-x-full opacity-100'
-                        : '-translate-x-full opacity-100'
-                  }`}
-                >
-                  {hasInvoicesForRows(incomingVisibleData) ? (
-                    renderChartBars(incomingVisibleData)
-                  ) : (
-                    <div className="flex h-[300px] items-center justify-center text-center">
-                      <p className="max-w-[360px] text-sm text-slate-500">
-                        No hay facturas registradas para el periodo seleccionado.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : hasInvoicesForSelection ? (
-              renderChartBars(visibleData)
             ) : (
-              <div className="flex h-[300px] items-center justify-center text-center">
-                <p className="max-w-[360px] text-sm text-slate-500">
-                  No hay facturas registradas para el periodo seleccionado.
-                </p>
+              <div
+                className={`h-[300px] transition-opacity ease-out ${isTransitioning ? 'opacity-60' : 'opacity-100'}`}
+                style={{ transitionDuration: `${YEAR_TRANSITION_DURATION_MS}ms` }}
+              >
+                {hasInvoicesForSelection ? (
+                  renderChartBars(visibleData)
+                ) : (
+                  <div className="flex h-[300px] items-center justify-center text-center">
+                    <p className="max-w-[360px] text-sm text-slate-500">
+                      No hay facturas registradas para el periodo seleccionado.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>
