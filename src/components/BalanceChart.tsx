@@ -18,16 +18,16 @@ const getNiceStep = (value: number) => {
 
 const VISIBLE_MONTHS = 12;
 const CHART_HEIGHT = 300;
-const YEAR_TRANSITION_DURATION_MS = 220;
+const YEAR_FADE_DURATION_MS = 220;
 
 const BalanceChart = () => {
   const [activeTab, setActiveTab] = useState<'Ingresos' | 'Gastos' | 'Neto' | 'Combinado'>('Ingresos');
   const { data, loading, error, refresh, selectedYear, setSelectedYear, minYear, maxYear } = useFinancialData();
   const chartData = useMemo(() => data?.monthlyData ?? [], [data]);
   const [renderedData, setRenderedData] = useState<typeof chartData>(chartData);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isFadingIn, setIsFadingIn] = useState(false);
   const renderedYearRef = useRef<number | null>(chartData[0]?.year ?? null);
-  const transitionTimeoutRef = useRef<number | null>(null);
+  const fadeFrameRef = useRef<number | null>(null);
 
   const yearBounds = useMemo(() => ({ minYear, maxYear }), [maxYear, minYear]);
 
@@ -45,32 +45,35 @@ const BalanceChart = () => {
     if (renderedYear == null) {
       renderedYearRef.current = incomingYear;
       setRenderedData(chartData);
+      setIsFadingIn(false);
       return;
     }
 
     if (incomingYear === renderedYear) {
       setRenderedData(chartData);
+      setIsFadingIn(false);
       return;
     }
 
-    if (transitionTimeoutRef.current != null) {
-      window.clearTimeout(transitionTimeoutRef.current);
+    if (fadeFrameRef.current != null) {
+      window.cancelAnimationFrame(fadeFrameRef.current);
     }
 
-    setIsTransitioning(true);
+    setIsFadingIn(true);
 
-    transitionTimeoutRef.current = window.setTimeout(() => {
-      renderedYearRef.current = incomingYear;
-      setRenderedData(chartData);
-      setIsTransitioning(false);
-      transitionTimeoutRef.current = null;
-    }, YEAR_TRANSITION_DURATION_MS);
+    renderedYearRef.current = incomingYear;
+    setRenderedData(chartData);
+
+    fadeFrameRef.current = window.requestAnimationFrame(() => {
+      setIsFadingIn(false);
+      fadeFrameRef.current = null;
+    });
   }, [chartData, selectedYear]);
 
   useEffect(() => {
     return () => {
-      if (transitionTimeoutRef.current != null) {
-        window.clearTimeout(transitionTimeoutRef.current);
+      if (fadeFrameRef.current != null) {
+        window.cancelAnimationFrame(fadeFrameRef.current);
       }
     };
   }, []);
@@ -315,13 +318,12 @@ const BalanceChart = () => {
               </div>
             ) : (
               <div
-                className={`h-[300px] transition-opacity ease-out ${isTransitioning ? 'opacity-60' : 'opacity-100'}`}
-                style={{ transitionDuration: `${YEAR_TRANSITION_DURATION_MS}ms` }}
+                className={`relative h-[300px] transition-opacity ease-out ${isFadingIn ? 'opacity-0' : 'opacity-100'}`}
+                style={{ transitionDuration: `${YEAR_FADE_DURATION_MS}ms` }}
               >
-                {hasInvoicesForSelection ? (
-                  renderChartBars(visibleData)
-                ) : (
-                  <div className="flex h-[300px] items-center justify-center text-center">
+                {renderChartBars(visibleData)}
+                {!hasInvoicesForSelection && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/85 text-center">
                     <p className="max-w-[360px] text-sm text-slate-500">
                       No hay facturas registradas para el periodo seleccionado.
                     </p>
