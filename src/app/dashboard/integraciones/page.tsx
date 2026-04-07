@@ -9,6 +9,7 @@ import { DriveConnectButton } from '@/features/integrations/drive/components/Dri
 import { OutlookConnectButton } from '@/features/integrations/outlook/components/OutlookConnectButton';
 import { OneDriveConnectButton } from '@/features/integrations/onedrive/components/OneDriveConnectButton';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/use-toast';
 
 const HOLDED_STATUS_EVENT = 'holded-status-changed';
@@ -22,6 +23,36 @@ const SCAN_TOAST_HOLDED_START_CLASS = `${SCAN_TOAST_BASE_CLASS} border-[#ff4254]
 const SCAN_TOAST_LOGO_SIZE = 40;
 const SCAN_TOAST_LOGO_CLASS = 'pointer-events-none absolute right-5 top-1/2 h-10 w-10 -translate-y-1/2 object-contain';
 const SCAN_TOAST_DESCRIPTION_CLASS = 'block pr-16';
+
+type ScanStartWebhookResponse = {
+  run_id?: string | null;
+  user_uid?: string | null;
+  scan_type?: string | null;
+};
+
+type ScanStepRealtimeRow = {
+  run_id?: string | number | null;
+  user_uid?: string | null;
+  step?: string | null;
+  status?: string | null;
+  progress_total?: number | string | null;
+  progress_current?: number | string | null;
+};
+
+const toNonNegativeInteger = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value >= 0 ? Math.floor(value) : null;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+
+  return null;
+};
 
 const getHoldedScanInProgress = () => {
   if (typeof window === 'undefined') {
@@ -701,6 +732,114 @@ const IntegracionesPage = () => {
           if (!scanResponse.ok) {
             throw new Error(`Webhook respondió con ${scanResponse.status}`);
           }
+
+          const payload = (await scanResponse.json().catch(() => null)) as ScanStartWebhookResponse | null;
+          const runId = typeof payload?.run_id === 'string' && payload.run_id.trim().length > 0 ? payload.run_id.trim() : null;
+          const userUid = typeof payload?.user_uid === 'string' && payload.user_uid.trim().length > 0 ? payload.user_uid.trim() : user?.id ?? null;
+
+          if (!runId || !userUid) {
+            throw new Error('El webhook de Holded no devolvió run_id/user_uid válidos.');
+          }
+
+          console.info('[holded:integraciones] webhook ack', {
+            runId,
+            userUid,
+            scanType: payload?.scan_type,
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            let isSettled = false;
+            const timeoutId = window.setTimeout(() => {
+              if (isSettled) {
+                return;
+              }
+              isSettled = true;
+              console.error('[holded:integraciones] realtime timeout waiting for completion', { runId, userUid });
+              void supabase.removeChannel(channel);
+              reject(new Error('Tiempo de espera agotado al escuchar logs realtime de Holded.'));
+            }, 8 * 60 * 1000);
+
+            const settle = (kind: 'resolve' | 'reject', error?: Error) => {
+              if (isSettled) {
+                return;
+              }
+              isSettled = true;
+              window.clearTimeout(timeoutId);
+              void supabase.removeChannel(channel);
+              if (kind === 'resolve') {
+                resolve();
+                return;
+              }
+              reject(error ?? new Error('Se cerró la escucha realtime de Holded.'));
+            };
+
+            const channel = supabase
+              .channel(`holded_scan_integraciones_${runId}`)
+              .on(
+                'postgres_changes',
+                {
+                  event: '*',
+                  schema: 'public',
+                  table: 'scan_steps',
+                },
+                (eventPayload: { new?: unknown }) => {
+                  const row = (eventPayload.new as ScanStepRealtimeRow | null) ?? null;
+                  if (!row) {
+                    console.info('[holded:integraciones] payload ignored: missing payload.new', eventPayload);
+                    return;
+                  }
+
+                  const rowRunId = row.run_id != null ? String(row.run_id) : null;
+                  const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+                  const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+                  const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+                  const rowProgressTotal = toNonNegativeInteger(row.progress_total);
+                  const rowProgressCurrent = toNonNegativeInteger(row.progress_current);
+                  const isSameRun = rowRunId === runId;
+                  const isSameUser = !rowUserUid || rowUserUid === userUid;
+                  const isEndStep = rowStep === 'holded_scrapper_end';
+                  const isSuccess = rowStatus === 'success';
+
+                  console.info('[holded:integraciones] step payload received', {
+                    rowRunId,
+                    rowUserUid,
+                    rowStep,
+                    rowStatus,
+                    rowProgressTotal,
+                    rowProgressCurrent,
+                    runId,
+                    userUid,
+                    isSameRun,
+                    isSameUser,
+                    isEndStep,
+                    isSuccess,
+                  });
+
+                  if (!isSameRun || !isSameUser) {
+                    return;
+                  }
+
+                  if (isEndStep && isSuccess) {
+                    console.info('[holded:integraciones] finishing run from scan_steps', runId);
+                    settle('resolve');
+                  }
+                }
+              )
+              .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR', err?: Error) => {
+                if (status === 'SUBSCRIBED') {
+                  console.info('[holded:integraciones] subscribed', { runId, userUid });
+                  return;
+                }
+
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                  console.error('[holded:integraciones] channel status', { status, err, runId, userUid });
+                  settle('reject', err ?? new Error(`Estado realtime inesperado: ${status}`));
+                  return;
+                }
+
+                console.info('[holded:integraciones] channel status', { status, runId, userUid });
+              });
+          });
 
           toast({
             title: 'Escaneo finalizado',

@@ -16,6 +16,14 @@ type HoldedApiKeyRow = {
 
 const HOLDED_SCAN_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/escanear-holded';
 
+const parseJsonSafely = (value: string) => {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+};
+
 const resolveSource = (emailType: string | null) => {
   const normalized = (emailType ?? '').trim().toLowerCase();
   if (normalized === 'gmail') return 'googledrive';
@@ -88,8 +96,43 @@ export async function POST() {
   });
 
   if (!webhookResponse.ok) {
-    return NextResponse.json({ error: `Webhook respondió con ${webhookResponse.status}` }, { status: 502 });
+    const upstreamText = (await webhookResponse.text()).trim();
+    const upstreamPreview = upstreamText.length > 320 ? `${upstreamText.slice(0, 320)}...` : upstreamText;
+
+    return NextResponse.json(
+      {
+        error: `Webhook respondió con ${webhookResponse.status}`,
+        upstream_error: upstreamPreview || null,
+      },
+      { status: 502 }
+    );
   }
 
-  return NextResponse.json({ ok: true });
+  const rawBody = await webhookResponse.text();
+  const parsedBody = parseJsonSafely(rawBody.trim());
+  const normalizedBody =
+    typeof parsedBody === 'string'
+      ? parseJsonSafely(parsedBody)
+      : parsedBody;
+
+  const payload = normalizedBody && typeof normalizedBody === 'object'
+    ? (normalizedBody as { run_id?: unknown; user_uid?: unknown; scan_type?: unknown })
+    : null;
+
+  const runId = typeof payload?.run_id === 'string' && payload.run_id.trim().length > 0
+    ? payload.run_id.trim()
+    : null;
+  const userUid = typeof payload?.user_uid === 'string' && payload.user_uid.trim().length > 0
+    ? payload.user_uid.trim()
+    : user.id;
+  const scanType = typeof payload?.scan_type === 'string' && payload.scan_type.trim().length > 0
+    ? payload.scan_type.trim().toLowerCase()
+    : 'holded';
+
+  return NextResponse.json({
+    ok: true,
+    run_id: runId,
+    user_uid: userUid,
+    scan_type: scanType,
+  });
 }

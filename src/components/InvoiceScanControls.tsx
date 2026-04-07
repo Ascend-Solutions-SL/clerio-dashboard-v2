@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Check, Loader2, Plug, RefreshCw, ScanSearch, X } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, Plug, RefreshCw, ScanSearch, X } from 'lucide-react';
 import Image from 'next/image';
 
 import { useDashboardSession } from '@/context/dashboard-session-context';
@@ -14,6 +14,8 @@ type InvoiceScanControlsProps = {
   onScanned?: () => void;
   showHoldedScan?: boolean;
 };
+
+type HoldedErrorReason = 'holded_unpaid' | 'holded_error_other' | 'unknown';
 
 type AuthUserScanSettings = {
   email_type: string | null;
@@ -74,6 +76,8 @@ const SCAN_ACTIVE_USER_UID_STORAGE_KEY = 'invoice-scan-active-user-uid';
 const SCAN_ACTIVE_SCAN_TYPE_STORAGE_KEY = 'invoice-scan-active-scan-type';
 const HOLDED_SCAN_IN_PROGRESS_EVENT = 'holded-scan-in-progress-changed';
 const HOLDED_SCAN_IN_PROGRESS_STORAGE_KEY = 'holded-scan-in-progress';
+const HOLDED_SCAN_ACTIVE_RUN_ID_STORAGE_KEY = 'holded-scan-active-run-id';
+const HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY = 'holded-scan-active-user-uid';
 const invoiceScanMetaCache = new Map<string, InvoiceScanMetaCacheEntry>();
 const RECONNECT_FLOW_PARAM = 'scanReconnect';
 const RECONNECT_STAGE_PARAM = 'scanFlowStage';
@@ -96,6 +100,7 @@ const SCAN_STEPS_BUFFER_LIMIT = 24;
 const SCAN_STATUS_MIN_VISIBLE_MS = 1400;
 const SCAN_STATUS_TRANSITION_MS = 150;
 const SCAN_STATUS_FINAL_HOLD_MS = 1800;
+const SCAN_STATUS_WARNING_HOLD_MS = 3600;
 
 type RevokedModalStage = 'warning' | 'gmail' | 'drive' | 'success';
 const REVOKED_MODAL_STAGE_ORDER: ReadonlyArray<RevokedModalStage> = ['warning', 'gmail', 'drive', 'success'];
@@ -126,6 +131,33 @@ const hasRevokedCredentialsStatus = (payload: unknown) => {
   }
 
   return checkItem(payload);
+};
+
+const getHoldedErrorReasonFromMetadata = (metadata: unknown): HoldedErrorReason => {
+  const readReason = (value: unknown): HoldedErrorReason | null => {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const reason = (value as { reason?: unknown }).reason;
+    if (reason === 'holded_unpaid' || reason === 'holded_error_other') {
+      return reason;
+    }
+
+    return null;
+  };
+
+  if (Array.isArray(metadata)) {
+    for (const item of metadata) {
+      const reason = readReason(item);
+      if (reason) {
+        return reason;
+      }
+    }
+    return 'unknown';
+  }
+
+  return readReason(metadata) ?? 'unknown';
 };
 
 const normalizeScanType = (value: unknown): 'gmail' | 'outlook' | null => {
@@ -288,6 +320,46 @@ const setHoldedScanInProgress = (inProgress: boolean) => {
   window.dispatchEvent(new CustomEvent(HOLDED_SCAN_IN_PROGRESS_EVENT, { detail: { inProgress } }));
 };
 
+const getActiveHoldedScanRunId = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(HOLDED_SCAN_ACTIVE_RUN_ID_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+};
+
+const getActiveHoldedScanUserUid = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+};
+
+const setActiveHoldedScanTracking = (runId: string, userUid: string | null) => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.setItem(HOLDED_SCAN_ACTIVE_RUN_ID_STORAGE_KEY, runId);
+  if (userUid && userUid.trim().length > 0) {
+    window.sessionStorage.setItem(HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY, userUid);
+  } else {
+    window.sessionStorage.removeItem(HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+  }
+};
+
+const clearActiveHoldedScanTracking = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.sessionStorage.removeItem(HOLDED_SCAN_ACTIVE_RUN_ID_STORAGE_KEY);
+  window.sessionStorage.removeItem(HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY);
+};
+
 export function InvoiceScanControls({ onScanned, showHoldedScan = false }: InvoiceScanControlsProps) {
   const { user } = useDashboardSession();
   const { toast } = useToast();
@@ -306,27 +378,40 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const [showCredentialsMissingModal, setShowCredentialsMissingModal] = React.useState(false);
   const [missingCredentialsModalStage, setMissingCredentialsModalStage] = React.useState<MissingCredentialsModalStage>('warning');
   const [missingEmailProvider, setMissingEmailProvider] = React.useState<EmailProvider | null>(null);
+  const [showHoldedErrorModal, setShowHoldedErrorModal] = React.useState(false);
+  const [holdedErrorReason, setHoldedErrorReason] = React.useState<HoldedErrorReason>('unknown');
   const [isRedirectingToOAuth, setIsRedirectingToOAuth] = React.useState(false);
   const [activeScanRunId, setActiveScanRunId] = React.useState<string | null>(() => getActivePrimaryScanRunId());
   const [activeScanUserUid, setActiveScanUserUid] = React.useState<string | null>(() => getActivePrimaryScanUserUid());
   const [activeScanType, setActiveScanType] = React.useState<'gmail' | 'outlook' | null>(() => getActivePrimaryScanType());
+  const [activeHoldedScanRunId, setActiveHoldedScanRunId] = React.useState<string | null>(() => getActiveHoldedScanRunId());
+  const [activeHoldedScanUserUid, setActiveHoldedScanUserUid] = React.useState<string | null>(() => getActiveHoldedScanUserUid());
   const [scanStatusMessage, setScanStatusMessage] = React.useState<ScanStatusQueueItem | null>(null);
   const [isScanStatusVisible, setIsScanStatusVisible] = React.useState(true);
   const [stopStatusSpinner, setStopStatusSpinner] = React.useState(false);
   const completedRunToastRef = React.useRef<string | null>(null);
+  const completedHoldedRunToastRef = React.useRef<string | null>(null);
   const credentialsFailedRunRef = React.useRef<string | null>(null);
+  const holdedErrorRunRef = React.useRef<string | null>(null);
   const activeScanRunIdRef = React.useRef<string | null>(activeScanRunId);
   const activeScanUserUidRef = React.useRef<string | null>(activeScanUserUid);
   const activeScanTypeRef = React.useRef<'gmail' | 'outlook' | null>(activeScanType);
+  const activeHoldedScanRunIdRef = React.useRef<string | null>(activeHoldedScanRunId);
+  const activeHoldedScanUserUidRef = React.useRef<string | null>(activeHoldedScanUserUid);
   const scanStepBufferRef = React.useRef<Map<string, ScanStepRealtimeRow[]>>(new Map());
   const invoiceProcessingTotalRef = React.useRef<number | null>(null);
+  const holdedProcessingTotalRef = React.useRef<number | null>(null);
   const scanStatusQueueRef = React.useRef<ScanStatusQueueItem[]>([]);
   const scanStatusTimerRef = React.useRef<number | null>(null);
   const scanStatusSwapTimerRef = React.useRef<number | null>(null);
+  const scanStatusWarningTimerRef = React.useRef<number | null>(null);
   const scanStatusShownAtRef = React.useRef<number>(0);
   const currentScanStatusKeyRef = React.useRef<string | null>(null);
   const scanStatusQueueProcessorRef = React.useRef<() => void>(() => undefined);
   const scanCompletionTimerRef = React.useRef<number | null>(null);
+  const holdedCredentialsSuccessRunsRef = React.useRef<Set<string>>(new Set());
+  const holdedScrapperStartRunsRef = React.useRef<Set<string>>(new Set());
+  const holdedConnectingShownRunsRef = React.useRef<Set<string>>(new Set());
   const onScannedRef = React.useRef<InvoiceScanControlsProps['onScanned']>(onScanned);
   const toastRef = React.useRef(toast);
 
@@ -350,6 +435,14 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     activeScanTypeRef.current = activeScanType;
   }, [activeScanType]);
 
+  React.useEffect(() => {
+    activeHoldedScanRunIdRef.current = activeHoldedScanRunId;
+  }, [activeHoldedScanRunId]);
+
+  React.useEffect(() => {
+    activeHoldedScanUserUidRef.current = activeHoldedScanUserUid;
+  }, [activeHoldedScanUserUid]);
+
   const clearScanStatusTimers = React.useCallback(() => {
     if (scanStatusTimerRef.current !== null) {
       window.clearTimeout(scanStatusTimerRef.current);
@@ -361,10 +454,45 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       scanStatusSwapTimerRef.current = null;
     }
 
+    if (scanStatusWarningTimerRef.current !== null) {
+      window.clearTimeout(scanStatusWarningTimerRef.current);
+      scanStatusWarningTimerRef.current = null;
+    }
+
     if (scanCompletionTimerRef.current !== null) {
       window.clearTimeout(scanCompletionTimerRef.current);
       scanCompletionTimerRef.current = null;
     }
+  }, []);
+
+  const scheduleStatusFallbackToLastScan = React.useCallback((statusKey: string) => {
+    if (scanStatusWarningTimerRef.current !== null) {
+      window.clearTimeout(scanStatusWarningTimerRef.current);
+      scanStatusWarningTimerRef.current = null;
+    }
+
+    scanStatusWarningTimerRef.current = window.setTimeout(() => {
+      scanStatusWarningTimerRef.current = null;
+      if (currentScanStatusKeyRef.current !== statusKey) {
+        return;
+      }
+
+      currentScanStatusKeyRef.current = null;
+      scanStatusShownAtRef.current = 0;
+      setScanStatusMessage(null);
+      setIsScanStatusVisible(true);
+      setStopStatusSpinner(false);
+    }, SCAN_STATUS_WARNING_HOLD_MS);
+  }, []);
+
+  const clearHoldedRunRealtimeMarkers = React.useCallback((runId: string | null) => {
+    if (!runId) {
+      return;
+    }
+
+    holdedCredentialsSuccessRunsRef.current.delete(runId);
+    holdedScrapperStartRunsRef.current.delete(runId);
+    holdedConnectingShownRunsRef.current.delete(runId);
   }, []);
 
   const setMissingCredentialsFlowState = React.useCallback(
@@ -434,6 +562,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setIsScanStatusVisible(true);
     setStopStatusSpinner(false);
     invoiceProcessingTotalRef.current = null;
+    holdedProcessingTotalRef.current = null;
   }, [clearScanStatusTimers]);
 
   const applyScanStatus = React.useCallback((item: ScanStatusQueueItem) => {
@@ -515,6 +644,26 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       scanStatusQueueProcessorRef.current();
     },
     [applyScanStatus]
+  );
+
+  const tryEnqueueHoldedConnectingStatus = React.useCallback(
+    (runId: string) => {
+      if (
+        holdedConnectingShownRunsRef.current.has(runId) ||
+        !holdedCredentialsSuccessRunsRef.current.has(runId) ||
+        !holdedScrapperStartRunsRef.current.has(runId)
+      ) {
+        return;
+      }
+
+      holdedConnectingShownRunsRef.current.add(runId);
+      enqueueScanStatus({
+        key: `holded-start-${runId}`,
+        text: 'Conectando con Holded...',
+        tone: 'neutral',
+      });
+    },
+    [enqueueScanStatus]
   );
 
   React.useEffect(() => {
@@ -603,7 +752,8 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
           .from('scan_runs')
           .select('finished_at')
           .eq('user_uid', user.id)
-          .in('scan_type', ['gmail', 'outlook', 'holded'])
+          .eq('status', 'success')
+          .in('scan_type', ['gmail', 'outlook', 'holded_invoice_scan'])
           .not('finished_at', 'is', null)
           .order('finished_at', { ascending: false })
           .limit(1)
@@ -776,6 +926,11 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setIsRedirectingToOAuth(false);
     setMissingCredentialsFlowState(null, null);
   }, [setMissingCredentialsFlowState]);
+
+  const closeHoldedErrorModal = React.useCallback(() => {
+    setShowHoldedErrorModal(false);
+    setHoldedErrorReason('unknown');
+  }, []);
 
   const buildMissingCredentialsRedirectPath = React.useCallback(
     (stage: 'email' | 'storage' | 'success', emailProvider: EmailProvider) => {
@@ -1038,6 +1193,36 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }, 1200);
   }, [resetScanStatusUI]);
 
+  const finishHoldedScan = React.useCallback((runId: string) => {
+    if (completedHoldedRunToastRef.current === runId) {
+      return;
+    }
+
+    completedHoldedRunToastRef.current = runId;
+    clearHoldedRunRealtimeMarkers(runId);
+    clearActiveHoldedScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeHoldedScanRunIdRef.current = null;
+    activeHoldedScanUserUidRef.current = null;
+    setActiveHoldedScanRunId(null);
+    setActiveHoldedScanUserUid(null);
+    setHoldedLoading(false);
+    setHoldedScanInProgress(false);
+    setIsHoldedScanInProgress(false);
+    setLastScanAt(new Date().toISOString());
+    resetScanStatusUI();
+    toastRef.current({
+      title: 'Escaneo finalizado',
+      description: 'Se ha finalizado el escaneo de facturas de Holded.',
+      duration: SCAN_TOAST_DURATION_MS,
+      className: SCAN_TOAST_SUCCESS_CLASS,
+    });
+    onScannedRef.current?.();
+    window.setTimeout(() => {
+      void loadScanMetaRef.current();
+    }, 1200);
+  }, [clearHoldedRunRealtimeMarkers, resetScanStatusUI]);
+
   const stopPrimaryScanForCredentials = React.useCallback((runId: string) => {
     if (credentialsFailedRunRef.current === runId) {
       return;
@@ -1051,6 +1236,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         text: 'Credenciales caducadas',
         tone: 'warning',
         stopSpinner: true,
+        onDisplayed: () => {
+          scheduleStatusFallbackToLastScan(`credentials-failed-${runId}`);
+        },
       },
       { immediate: true, replacePending: true }
     );
@@ -1069,7 +1257,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setRevokedModalStage('warning');
     setReconnectFlowStage(null);
     setShowCredentialsRevokedModal(true);
-  }, [enqueueScanStatus, setReconnectFlowStage]);
+  }, [enqueueScanStatus, scheduleStatusFallbackToLastScan, setReconnectFlowStage]);
 
   const stopPrimaryScanForMissingCredentials = React.useCallback((runId: string) => {
     if (credentialsFailedRunRef.current === runId) {
@@ -1084,6 +1272,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         text: 'Integración requerida',
         tone: 'warning',
         stopSpinner: true,
+        onDisplayed: () => {
+          scheduleStatusFallbackToLastScan(`credentials-missing-${runId}`);
+        },
       },
       { immediate: true, replacePending: true }
     );
@@ -1104,7 +1295,118 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setReconnectFlowStage(null);
     setMissingCredentialsFlowState(null, null);
     setShowCredentialsMissingModal(true);
-  }, [enqueueScanStatus, setMissingCredentialsFlowState, setReconnectFlowStage]);
+  }, [enqueueScanStatus, scheduleStatusFallbackToLastScan, setMissingCredentialsFlowState, setReconnectFlowStage]);
+
+  const stopHoldedScanForCredentials = React.useCallback((runId: string) => {
+    if (credentialsFailedRunRef.current === runId) {
+      return;
+    }
+
+    credentialsFailedRunRef.current = runId;
+
+    enqueueScanStatus(
+      {
+        key: `holded-credentials-failed-${runId}`,
+        text: 'Credenciales caducadas',
+        tone: 'warning',
+        stopSpinner: true,
+        onDisplayed: () => {
+          scheduleStatusFallbackToLastScan(`holded-credentials-failed-${runId}`);
+        },
+      },
+      { immediate: true, replacePending: true }
+    );
+
+    clearHoldedRunRealtimeMarkers(runId);
+    clearActiveHoldedScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeHoldedScanRunIdRef.current = null;
+    activeHoldedScanUserUidRef.current = null;
+    setActiveHoldedScanRunId(null);
+    setActiveHoldedScanUserUid(null);
+    setHoldedLoading(false);
+    setHoldedScanInProgress(false);
+    setIsHoldedScanInProgress(false);
+    setIsRedirectingToOAuth(false);
+    setRevokedModalStage('warning');
+    setReconnectFlowStage(null);
+    setShowCredentialsRevokedModal(true);
+  }, [clearHoldedRunRealtimeMarkers, enqueueScanStatus, scheduleStatusFallbackToLastScan, setReconnectFlowStage]);
+
+  const stopHoldedScanForMissingCredentials = React.useCallback((runId: string) => {
+    if (credentialsFailedRunRef.current === runId) {
+      return;
+    }
+
+    credentialsFailedRunRef.current = runId;
+
+    enqueueScanStatus(
+      {
+        key: `holded-credentials-missing-${runId}`,
+        text: 'Integración requerida',
+        tone: 'warning',
+        stopSpinner: true,
+        onDisplayed: () => {
+          scheduleStatusFallbackToLastScan(`holded-credentials-missing-${runId}`);
+        },
+      },
+      { immediate: true, replacePending: true }
+    );
+
+    clearHoldedRunRealtimeMarkers(runId);
+    clearActiveHoldedScanTracking();
+    scanStepBufferRef.current.delete(runId);
+    activeHoldedScanRunIdRef.current = null;
+    activeHoldedScanUserUidRef.current = null;
+    setActiveHoldedScanRunId(null);
+    setActiveHoldedScanUserUid(null);
+    setHoldedLoading(false);
+    setHoldedScanInProgress(false);
+    setIsHoldedScanInProgress(false);
+    setIsRedirectingToOAuth(false);
+    setMissingCredentialsModalStage('warning');
+    setMissingEmailProvider(null);
+    setReconnectFlowStage(null);
+    setMissingCredentialsFlowState(null, null);
+    setShowCredentialsMissingModal(true);
+  }, [clearHoldedRunRealtimeMarkers, enqueueScanStatus, scheduleStatusFallbackToLastScan, setMissingCredentialsFlowState, setReconnectFlowStage]);
+
+  const stopHoldedScanForScrapperError = React.useCallback(
+    (runId: string, reason: HoldedErrorReason) => {
+      if (holdedErrorRunRef.current === runId) {
+        return;
+      }
+
+      holdedErrorRunRef.current = runId;
+
+      enqueueScanStatus(
+        {
+          key: `holded-end-error-${runId}`,
+          text: 'Error en la conexión con Holded',
+          tone: 'warning',
+          stopSpinner: true,
+          onDisplayed: () => {
+            scheduleStatusFallbackToLastScan(`holded-end-error-${runId}`);
+          },
+        },
+        { immediate: true, replacePending: true }
+      );
+
+      clearHoldedRunRealtimeMarkers(runId);
+      clearActiveHoldedScanTracking();
+      scanStepBufferRef.current.delete(runId);
+      activeHoldedScanRunIdRef.current = null;
+      activeHoldedScanUserUidRef.current = null;
+      setActiveHoldedScanRunId(null);
+      setActiveHoldedScanUserUid(null);
+      setHoldedLoading(false);
+      setHoldedScanInProgress(false);
+      setIsHoldedScanInProgress(false);
+      setHoldedErrorReason(reason);
+      setShowHoldedErrorModal(true);
+    },
+    [clearHoldedRunRealtimeMarkers, enqueueScanStatus, scheduleStatusFallbackToLastScan]
+  );
 
   const schedulePrimaryScanCompletion = React.useCallback((runId: string) => {
     enqueueScanStatus(
@@ -1128,6 +1430,29 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       { replacePending: true }
     );
   }, [enqueueScanStatus, finishPrimaryScan]);
+
+  const scheduleHoldedScanCompletion = React.useCallback((runId: string) => {
+    enqueueScanStatus(
+      {
+        key: `holded-scan-finished-${runId}`,
+        text: 'Escaneo Holded finalizado',
+        tone: 'success',
+        stopSpinner: true,
+        showSuccessIcon: true,
+        onDisplayed: () => {
+          if (scanCompletionTimerRef.current !== null) {
+            window.clearTimeout(scanCompletionTimerRef.current);
+          }
+
+          scanCompletionTimerRef.current = window.setTimeout(() => {
+            scanCompletionTimerRef.current = null;
+            finishHoldedScan(runId);
+          }, SCAN_STATUS_FINAL_HOLD_MS);
+        },
+      },
+      { replacePending: true }
+    );
+  }, [enqueueScanStatus, finishHoldedScan]);
 
   React.useEffect(() => {
     if (!user?.id || !isScanInProgress) {
@@ -1288,6 +1613,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
             userUid: user.id,
             activeRunId: activeScanRunIdRef.current,
           });
+          window.setTimeout(() => {
+            void loadScanMetaRef.current();
+          }, 400);
           return;
         }
 
@@ -1313,6 +1641,199 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     user?.id,
   ]);
 
+  React.useEffect(() => {
+    if (!user?.id || !isHoldedScanInProgress) {
+      return;
+    }
+
+    let isCleaningUp = false;
+
+    const channel = supabase
+      .channel(`holded_scan_realtime_user_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'scan_steps',
+        },
+        (payload: { new?: unknown }) => {
+          const row = (payload.new as ScanStepRealtimeRow | null) ?? null;
+          if (!row) {
+            console.info('[holded:realtime] payload ignored: missing payload.new', payload);
+            return;
+          }
+
+          const rowRunId = row.run_id != null ? String(row.run_id) : null;
+          const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+          const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+          const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+          const rowProgressTotal = toNonNegativeInteger(row.progress_total);
+          const rowProgressCurrent = toNonNegativeInteger(row.progress_current);
+          const currentUserUid = activeHoldedScanUserUidRef.current;
+
+          if (rowRunId) {
+            const bufferedRows = scanStepBufferRef.current.get(rowRunId) ?? [];
+            const nextBufferedRows = [...bufferedRows, row].slice(-SCAN_STEPS_BUFFER_LIMIT);
+            scanStepBufferRef.current.set(rowRunId, nextBufferedRows);
+          }
+
+          const currentRunId = activeHoldedScanRunIdRef.current;
+          if (!currentRunId) {
+            console.info('[holded:realtime] payload buffered: no active run id yet', {
+              rowRunId,
+              rowStep,
+              rowStatus,
+            });
+            return;
+          }
+
+          const isSameRun = rowRunId === currentRunId;
+          const isSameUser = !rowUserUid || !currentUserUid || rowUserUid === currentUserUid;
+          const isEndStep = rowStep === 'holded_scrapper_end';
+          const isSuccess = rowStatus === 'success';
+          const isError = rowStatus === 'error';
+          const isCredentialsStep = rowStep.includes('credential');
+
+          console.info('[holded:realtime] step payload received', {
+            rowRunId,
+            rowUserUid,
+            rowStep,
+            rowStatus,
+            rowProgressTotal,
+            rowProgressCurrent,
+            currentRunId,
+            currentUserUid,
+            isSameRun,
+            isSameUser,
+            isEndStep,
+            isSuccess,
+          });
+
+          if (!isSameRun || !isSameUser) {
+            return;
+          }
+
+          if (rowStep === 'credentials_failed') {
+            stopHoldedScanForCredentials(currentRunId);
+            return;
+          }
+
+          if (rowStep === 'credentials_non_existing') {
+            const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+            console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+            stopHoldedScanForMissingCredentials(currentRunId);
+            return;
+          }
+
+          if (isCredentialsStep) {
+            if (isSuccess) {
+              holdedCredentialsSuccessRunsRef.current.add(currentRunId);
+              tryEnqueueHoldedConnectingStatus(currentRunId);
+            }
+            return;
+          }
+
+          if (rowStep === 'holded_scrapper_start') {
+            holdedScrapperStartRunsRef.current.add(currentRunId);
+            tryEnqueueHoldedConnectingStatus(currentRunId);
+            return;
+          }
+
+          if (rowStep === 'holded_invoice_processing') {
+            tryEnqueueHoldedConnectingStatus(currentRunId);
+            const total = rowProgressTotal ?? holdedProcessingTotalRef.current;
+            if (typeof total === 'number' && total >= 0) {
+              holdedProcessingTotalRef.current = total;
+            }
+
+            const effectiveTotal = holdedProcessingTotalRef.current;
+            if (effectiveTotal && rowProgressCurrent === 0) {
+              enqueueScanStatus({
+                key: `holded-invoice-found-${currentRunId}-${effectiveTotal}`,
+                text: `Se han encontrado ${effectiveTotal} facturas en Holded`,
+                tone: 'neutral',
+              });
+            }
+
+            if (effectiveTotal && typeof rowProgressCurrent === 'number' && rowProgressCurrent > 0) {
+              const currentInvoice = Math.min(rowProgressCurrent, effectiveTotal);
+              enqueueScanStatus({
+                key: `holded-invoice-progress-${currentRunId}-${currentInvoice}-${effectiveTotal}`,
+                text: `Escaneando factura ${currentInvoice} de ${effectiveTotal}...`,
+                tone: 'neutral',
+              });
+            }
+          }
+
+          if (isEndStep && isError) {
+            const reason = getHoldedErrorReasonFromMetadata(row.metadata);
+            stopHoldedScanForScrapperError(currentRunId, reason);
+            return;
+          }
+
+          if (isEndStep && isSuccess) {
+            console.info('[holded:realtime] finishing run from scan_steps', currentRunId);
+            scheduleHoldedScanCompletion(currentRunId);
+          }
+        }
+      )
+      .subscribe((
+        status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR',
+        err?: Error
+      ) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('[holded:realtime] subscribed', {
+            userUid: user.id,
+            activeRunId: activeHoldedScanRunIdRef.current,
+          });
+          return;
+        }
+
+        if (status === 'CLOSED' && isCleaningUp) {
+          console.info('[holded:realtime] channel closed after cleanup', {
+            userUid: user.id,
+            activeRunId: activeHoldedScanRunIdRef.current,
+          });
+          window.setTimeout(() => {
+            void loadScanMetaRef.current();
+          }, 400);
+          return;
+        }
+
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error('[holded:realtime] channel status', {
+            status,
+            err,
+            userUid: user.id,
+            activeRunId: activeHoldedScanRunIdRef.current,
+          });
+          return;
+        }
+
+        console.info('[holded:realtime] channel status', {
+          status,
+          userUid: user.id,
+          activeRunId: activeHoldedScanRunIdRef.current,
+        });
+      });
+
+    return () => {
+      isCleaningUp = true;
+      console.info('[holded:realtime] remove channel', { userUid: user.id });
+      void supabase.removeChannel(channel);
+    };
+  }, [
+    enqueueScanStatus,
+    isHoldedScanInProgress,
+    scheduleHoldedScanCompletion,
+    stopHoldedScanForCredentials,
+    stopHoldedScanForMissingCredentials,
+    stopHoldedScanForScrapperError,
+    tryEnqueueHoldedConnectingStatus,
+    user?.id,
+  ]);
+
   const handleCancelScanLock = React.useCallback(() => {
     const runId = activeScanRunIdRef.current;
     if (runId) {
@@ -1328,6 +1849,23 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     setScanInProgress(false);
     resetScanStatusUI();
   }, [resetScanStatusUI]);
+
+  const handleCancelHoldedScanLock = React.useCallback(() => {
+    const runId = activeHoldedScanRunIdRef.current;
+    if (runId) {
+      scanStepBufferRef.current.delete(runId);
+    }
+    clearHoldedRunRealtimeMarkers(runId);
+    clearActiveHoldedScanTracking();
+    activeHoldedScanRunIdRef.current = null;
+    activeHoldedScanUserUidRef.current = null;
+    setActiveHoldedScanRunId(null);
+    setActiveHoldedScanUserUid(null);
+    setHoldedLoading(false);
+    setIsHoldedScanInProgress(false);
+    setHoldedScanInProgress(false);
+    resetScanStatusUI();
+  }, [clearHoldedRunRealtimeMarkers, resetScanStatusUI]);
 
   const handleScan = async () => {
     if (!user?.id || loading || isScanInProgress) {
@@ -1483,6 +2021,18 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
 
     setHoldedLoading(true);
     setHoldedScanInProgress(true);
+    setIsHoldedScanInProgress(true);
+    completedHoldedRunToastRef.current = null;
+    holdedErrorRunRef.current = null;
+    holdedProcessingTotalRef.current = null;
+    enqueueScanStatus(
+      {
+        key: 'holded-scan-starting',
+        text: 'Iniciando escaneo Holded...',
+        tone: 'neutral',
+      },
+      { immediate: true, replacePending: true }
+    );
     toast({
       title: 'Escaneo Holded iniciado',
       description: (
@@ -1513,13 +2063,98 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         throw new Error(`Webhook respondió con ${response.status}`);
       }
 
-      toast({
-        title: 'Escaneo finalizado',
-        description: 'Se ha finalizado el escaneo de facturas de Holded.',
-        duration: SCAN_TOAST_DURATION_MS,
-        className: SCAN_TOAST_SUCCESS_CLASS,
+      const payload = (await response.json().catch(() => null)) as ScanStartWebhookResponse | null;
+      const runId = typeof payload?.run_id === 'string' && payload.run_id.trim().length > 0 ? payload.run_id.trim() : null;
+      const userUid =
+        typeof payload?.user_uid === 'string' && payload.user_uid.trim().length > 0 ? payload.user_uid.trim() : user?.id ?? null;
+
+      if (!runId || !userUid) {
+        throw new Error('El webhook de Holded no devolvió run_id/user_uid válidos.');
+      }
+
+      console.info('[holded:start] webhook ack', {
+        runId,
+        userUid,
+        scanType: payload?.scan_type,
       });
-      onScanned?.();
+
+      setActiveHoldedScanTracking(runId, userUid);
+      activeHoldedScanRunIdRef.current = runId;
+      activeHoldedScanUserUidRef.current = userUid;
+      setActiveHoldedScanRunId(runId);
+      setActiveHoldedScanUserUid(userUid);
+
+      const bufferedRows = scanStepBufferRef.current.get(runId) ?? [];
+      bufferedRows.forEach((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+
+        if (!isSameUser) {
+          return;
+        }
+
+        if (rowStep.includes('credential') && rowStatus === 'success') {
+          holdedCredentialsSuccessRunsRef.current.add(runId);
+        }
+
+        if (rowStep === 'holded_scrapper_start') {
+          holdedScrapperStartRunsRef.current.add(runId);
+        }
+      });
+
+      tryEnqueueHoldedConnectingStatus(runId);
+
+      const hasBufferedCredentialsFailure = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && (rowStep === 'credentials_failed' || rowStep === 'credentials_non_existing');
+      });
+      const hasBufferedMissingCredentials = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && rowStep === 'credentials_non_existing';
+      });
+      const hasBufferedFinish = bufferedRows.some((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && rowStep === 'holded_scrapper_end' && rowStatus === 'success';
+      });
+      const bufferedEndErrorRow = bufferedRows.find((row) => {
+        const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+        const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+        const isSameUser = !rowUserUid || rowUserUid === userUid;
+        return isSameUser && rowStep === 'holded_scrapper_end' && rowStatus === 'error';
+      });
+
+      if (hasBufferedCredentialsFailure) {
+        if (hasBufferedMissingCredentials) {
+          const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+          console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+          stopHoldedScanForMissingCredentials(runId);
+          return;
+        }
+
+        stopHoldedScanForCredentials(runId);
+        return;
+      }
+
+      if (hasBufferedFinish) {
+        console.info('[holded:realtime] finishing run from buffered events', runId);
+        scheduleHoldedScanCompletion(runId);
+      }
+
+      if (bufferedEndErrorRow) {
+        const reason = getHoldedErrorReasonFromMetadata(bufferedEndErrorRow.metadata);
+        stopHoldedScanForScrapperError(runId, reason);
+        return;
+      }
     } catch (error) {
       toast({
         title: 'No se pudo lanzar Escanear Holded',
@@ -1527,9 +2162,22 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         variant: 'destructive',
         className: SCAN_TOAST_BASE_CLASS,
       });
+
+      clearActiveHoldedScanTracking();
+      const runId = activeHoldedScanRunIdRef.current;
+      if (runId) {
+        scanStepBufferRef.current.delete(runId);
+      }
+      clearHoldedRunRealtimeMarkers(runId);
+      activeHoldedScanRunIdRef.current = null;
+      activeHoldedScanUserUidRef.current = null;
+      setActiveHoldedScanRunId(null);
+      setActiveHoldedScanUserUid(null);
+      setIsHoldedScanInProgress(false);
+      setHoldedScanInProgress(false);
+      resetScanStatusUI();
     } finally {
       setHoldedLoading(false);
-      setHoldedScanInProgress(false);
     }
   };
 
@@ -1539,8 +2187,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       : scanStatusMessage?.tone === 'warning'
         ? 'text-amber-700'
         : 'text-gray-500';
-  const shouldSpinStatusIcon = (loading || isBootstrapping || isScanInProgress) && !stopStatusSpinner;
-  const statusText = scanStatusMessage?.text ?? `Último escaneo hace ${formatElapsedSince(lastScanAt)}`;
+  const shouldSpinStatusIcon =
+    (loading || holdedLoading || isBootstrapping || isScanInProgress || isHoldedScanInProgress) && !stopStatusSpinner;
+  const statusText = scanStatusMessage?.text ?? `Último escaneo exitoso hace ${formatElapsedSince(lastScanAt)}`;
 
   return (
     <>
@@ -1564,6 +2213,17 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
         </div>
 
         <div className="flex items-center gap-2">
+          {showHoldedScan && isHoldedConnected && isHoldedScanInProgress ? (
+            <Button
+              type="button"
+              onClick={handleCancelHoldedScanLock}
+              variant="outline"
+              className="border-[#ffafb7] text-[#d92d42] hover:bg-[#fff1f3]"
+            >
+              Cancelar
+            </Button>
+          ) : null}
+
           {showHoldedScan && isHoldedConnected ? (
             <Button
               type="button"
@@ -1848,6 +2508,62 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
                     </Button>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showHoldedErrorModal ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]" />
+          <div className="relative w-full max-w-[500px] overflow-hidden rounded-2xl border border-[#ffd3d8] bg-white px-5 py-6 shadow-[0_30px_90px_rgba(15,23,42,0.28)] sm:px-6">
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={closeHoldedErrorModal}
+              className="absolute right-4 top-4 rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <span className="absolute left-5 top-5 inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#fff1f3] text-[#d92d42] sm:left-6 sm:top-6">
+                <AlertTriangle className="h-5 w-5" />
+            </span>
+
+            <div className="flex flex-col items-center text-center">
+              <Image
+                src="/brand/tab_ingresos/holded_logo.png"
+                alt="Holded"
+                width={38}
+                height={38}
+                className="h-[38px] w-[38px] rounded-md"
+              />
+
+              <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.02em] leading-[1.08] text-[#0a1f44] sm:text-[30px]">
+                {holdedErrorReason === 'holded_unpaid' ? 'Suscripción de Holded impagada' : 'No se pudo completar el escaneo de Holded'}
+              </h3>
+
+              <p className="mt-2 max-w-[420px] text-base leading-7 text-slate-600">
+                {holdedErrorReason === 'holded_unpaid'
+                  ? 'Tu suscripción de Holded está impagada y no permite recoger facturas. Regularízala en Holded y vuelve a intentarlo.'
+                  : (
+                    <>
+                      Ha ocurrido un error con la conexión a Holded.
+                      <br />
+                      Por favor, ponte en contacto con soporte de Clerio en hola@clerio.es.
+                    </>
+                  )}
+              </p>
+
+              <div className="mt-6 flex justify-center">
+                <Button
+                  type="button"
+                  onClick={closeHoldedErrorModal}
+                  className="h-11 min-w-[160px] rounded-xl bg-[#ff4254] text-base font-semibold text-white shadow-[0_14px_30px_rgba(217,45,66,0.25)] transition-transform duration-200 hover:-translate-y-0.5 hover:bg-[#ff3247] hover:shadow-[0_18px_34px_rgba(217,45,66,0.32)] active:translate-y-0"
+                >
+                  Entendido
+                </Button>
               </div>
             </div>
           </div>
