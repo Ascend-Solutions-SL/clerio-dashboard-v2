@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/use-toast';
 
 type InvoiceScanControlsProps = {
   onScanned?: () => void;
+  onProgressUpdate?: () => void;
   showHoldedScan?: boolean;
 };
 
@@ -49,6 +50,7 @@ type ScanStatusQueueItem = {
   tone: ScanStatusTone;
   showSuccessIcon?: boolean;
   stopSpinner?: boolean;
+  minVisibleMs?: number;
   onDisplayed?: () => void;
 };
 
@@ -360,7 +362,7 @@ const clearActiveHoldedScanTracking = () => {
   window.sessionStorage.removeItem(HOLDED_SCAN_ACTIVE_USER_UID_STORAGE_KEY);
 };
 
-export function InvoiceScanControls({ onScanned, showHoldedScan = false }: InvoiceScanControlsProps) {
+export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedScan = false }: InvoiceScanControlsProps) {
   const { user } = useDashboardSession();
   const { toast } = useToast();
   const cacheKey = `${user?.id ?? 'anonymous'}|${showHoldedScan ? 'holded' : 'generic'}`;
@@ -405,6 +407,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const scanStatusTimerRef = React.useRef<number | null>(null);
   const scanStatusSwapTimerRef = React.useRef<number | null>(null);
   const scanStatusWarningTimerRef = React.useRef<number | null>(null);
+  const scanStatusMinVisibleMsRef = React.useRef<number>(SCAN_STATUS_MIN_VISIBLE_MS);
   const scanStatusShownAtRef = React.useRef<number>(0);
   const currentScanStatusKeyRef = React.useRef<string | null>(null);
   const scanStatusQueueProcessorRef = React.useRef<() => void>(() => undefined);
@@ -413,11 +416,16 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const holdedScrapperStartRunsRef = React.useRef<Set<string>>(new Set());
   const holdedConnectingShownRunsRef = React.useRef<Set<string>>(new Set());
   const onScannedRef = React.useRef<InvoiceScanControlsProps['onScanned']>(onScanned);
+  const onProgressUpdateRef = React.useRef<InvoiceScanControlsProps['onProgressUpdate']>(onProgressUpdate);
   const toastRef = React.useRef(toast);
 
   React.useEffect(() => {
     onScannedRef.current = onScanned;
   }, [onScanned]);
+
+  React.useEffect(() => {
+    onProgressUpdateRef.current = onProgressUpdate;
+  }, [onProgressUpdate]);
 
   React.useEffect(() => {
     toastRef.current = toast;
@@ -556,6 +564,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   const resetScanStatusUI = React.useCallback(() => {
     clearScanStatusTimers();
     scanStatusQueueRef.current = [];
+    scanStatusMinVisibleMsRef.current = SCAN_STATUS_MIN_VISIBLE_MS;
     scanStatusShownAtRef.current = 0;
     currentScanStatusKeyRef.current = null;
     setScanStatusMessage(null);
@@ -578,6 +587,8 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
       setScanStatusMessage(item);
       setStopStatusSpinner(Boolean(item.stopSpinner));
       setIsScanStatusVisible(true);
+      scanStatusMinVisibleMsRef.current =
+        typeof item.minVisibleMs === 'number' && item.minVisibleMs > 0 ? item.minVisibleMs : SCAN_STATUS_MIN_VISIBLE_MS;
       scanStatusShownAtRef.current = Date.now();
       currentScanStatusKeyRef.current = item.key;
       item.onDisplayed?.();
@@ -594,7 +605,8 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     }
 
     const elapsed = Date.now() - scanStatusShownAtRef.current;
-    const waitMs = scanStatusShownAtRef.current === 0 ? 0 : Math.max(0, SCAN_STATUS_MIN_VISIBLE_MS - elapsed);
+    const minVisibleMs = scanStatusShownAtRef.current === 0 ? 0 : scanStatusMinVisibleMsRef.current;
+    const waitMs = scanStatusShownAtRef.current === 0 ? 0 : Math.max(0, minVisibleMs - elapsed);
 
     scanStatusTimerRef.current = window.setTimeout(() => {
       scanStatusTimerRef.current = null;
@@ -1590,6 +1602,8 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
                 text: `Escaneando factura ${currentInvoice} de ${effectiveTotal}...`,
                 tone: 'neutral',
               });
+
+              onProgressUpdateRef.current?.();
             }
           }
 
@@ -1642,7 +1656,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
   ]);
 
   React.useEffect(() => {
-    if (!user?.id || !isHoldedScanInProgress) {
+    if (!user?.id || !showHoldedScan || !isHoldedScanInProgress) {
       return;
     }
 
@@ -1751,9 +1765,10 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
             if (effectiveTotal && rowProgressCurrent === 0) {
               enqueueScanStatus({
                 key: `holded-invoice-found-${currentRunId}-${effectiveTotal}`,
-                text: `Se han encontrado ${effectiveTotal} facturas en Holded`,
+                text: `Se han encontrado ${effectiveTotal} facturas nuevas en Holded`,
                 tone: 'neutral',
-              });
+                minVisibleMs: SCAN_STATUS_MIN_VISIBLE_MS,
+              }, { immediate: true, replacePending: true });
             }
 
             if (effectiveTotal && typeof rowProgressCurrent === 'number' && rowProgressCurrent > 0) {
@@ -1762,7 +1777,9 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
                 key: `holded-invoice-progress-${currentRunId}-${currentInvoice}-${effectiveTotal}`,
                 text: `Escaneando factura ${currentInvoice} de ${effectiveTotal}...`,
                 tone: 'neutral',
-              });
+              }, { replacePending: true });
+
+              onProgressUpdateRef.current?.();
             }
           }
 
@@ -1827,6 +1844,7 @@ export function InvoiceScanControls({ onScanned, showHoldedScan = false }: Invoi
     enqueueScanStatus,
     isHoldedScanInProgress,
     scheduleHoldedScanCompletion,
+    showHoldedScan,
     stopHoldedScanForCredentials,
     stopHoldedScanForMissingCredentials,
     stopHoldedScanForScrapperError,

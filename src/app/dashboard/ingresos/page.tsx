@@ -111,6 +111,10 @@ const IngresosPage = () => {
     });
   }, []);
 
+  const handleRealtimeProgressUpdate = React.useCallback(() => {
+    setTableRefreshKey((prev) => prev + 1);
+  }, []);
+
   React.useEffect(() => {
     const storedRange = getSharedDashboardDateRangeFromStorage();
     setDateRange((prev) =>
@@ -330,7 +334,11 @@ const IngresosPage = () => {
 
             <div>
               <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
-                <InvoiceScanControls showHoldedScan onScanned={() => setTableRefreshKey((prev) => prev + 1)} />
+                <InvoiceScanControls
+                  showHoldedScan
+                  onScanned={() => setTableRefreshKey((prev) => prev + 1)}
+                  onProgressUpdate={handleRealtimeProgressUpdate}
+                />
                 <div className="flex justify-end">
                   <InvoiceUploadDialog type="Ingresos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
                 </div>

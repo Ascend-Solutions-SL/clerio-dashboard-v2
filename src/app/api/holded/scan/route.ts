@@ -34,6 +34,9 @@ const resolveSource = (emailType: string | null) => {
 export async function POST() {
   const supabase = await createSupabaseServerClient();
   const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
@@ -79,11 +82,13 @@ export async function POST() {
 
   const holdedRow = (holdedApiKeyRow as HoldedApiKeyRow | null) ?? null;
   const holdedApiKey = (holdedRow?.holded_apikey ?? '').trim() || '-';
+  const userJwt = session?.access_token ?? null;
 
   const webhookResponse = await fetch(HOLDED_SCAN_WEBHOOK_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(userJwt ? { Authorization: `Bearer ${userJwt}` } : {}),
     },
     body: JSON.stringify({
       user_uid: user.id,
