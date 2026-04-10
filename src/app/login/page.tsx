@@ -126,8 +126,6 @@ function LoginForm() {
     setShowSessionExpiredNotice(true);
 
     const clear = async () => {
-      const supabase = createSupabaseBrowserClient();
-      await supabase.auth.signOut();
       await fetch('/api/auth/touch', { method: 'DELETE', credentials: 'include' });
     };
 

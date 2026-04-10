@@ -22,6 +22,7 @@ const isPublicPath = (pathname: string) =>
   pathname === '/onboarding' ||
   pathname.startsWith('/auth/confirm') ||
   pathname.startsWith('/auth/callback') ||
+  pathname.startsWith('/api/auth/touch') ||
   pathname.startsWith('/api/auth/verify') ||
   pathname.startsWith('/api/gmail/oauth/start') ||
   pathname.startsWith('/api/gmail/oauth/callback') ||
