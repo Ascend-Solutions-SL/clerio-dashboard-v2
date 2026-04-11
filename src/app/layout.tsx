@@ -7,6 +7,7 @@ import { DashboardSessionProvider } from '@/context/dashboard-session-context'
 import { ThemeProvider } from '@/components/theme-provider'
 import { InvoiceProvider } from '@/context/InvoiceContext'
 import { FinancialDataProvider } from '@/context/FinancialDataContext'
+import { ScanRealtimeProvider } from '@/context/scan-realtime-context'
 import { Toaster } from '@/components/ui/toaster'
 
 const manrope = Manrope({
@@ -38,16 +39,18 @@ export default function RootLayout({
     <html lang="es" suppressHydrationWarning>
       <body className={`${manrope.variable} ${robotoMono.variable} antialiased`}>
         <DashboardSessionProvider>
-          <FinancialDataProvider>
-            <InvoiceProvider>
-              <ThemeProvider>
-                <LayoutWrapper>
-                  {children}
-                </LayoutWrapper>
-                <Toaster />
-              </ThemeProvider>
-            </InvoiceProvider>
-          </FinancialDataProvider>
+          <ScanRealtimeProvider>
+            <FinancialDataProvider>
+              <InvoiceProvider>
+                <ThemeProvider>
+                  <LayoutWrapper>
+                    {children}
+                  </LayoutWrapper>
+                  <Toaster />
+                </ThemeProvider>
+              </InvoiceProvider>
+            </FinancialDataProvider>
+          </ScanRealtimeProvider>
         </DashboardSessionProvider>
       </body>
     </html>
