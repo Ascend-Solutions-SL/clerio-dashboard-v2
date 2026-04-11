@@ -158,6 +158,12 @@ const getPreviousYearRange = (): DateRangeValue => {
   return { startDate: toISODate(start), endDate: toISODate(end) };
 };
 
+const getFullHistoryRange = (): DateRangeValue => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return { startDate: '1900-01-01', endDate: toISODate(tomorrow) };
+};
+
 const isSameRange = (a: DateRangeValue, b: DateRangeValue) => a.startDate === b.startDate && a.endDate === b.endDate;
 
 const getCalendarDays = (monthDate: Date) => {
@@ -256,6 +262,8 @@ export function DateRangeSelector({ value, onChange, className }: DateRangeSelec
 
     return out;
   }, []);
+
+  const fullHistoryRange = React.useMemo(() => getFullHistoryRange(), []);
 
   const monthOptions = React.useMemo(() => {
     const now = new Date();
@@ -565,7 +573,7 @@ export function DateRangeSelector({ value, onChange, className }: DateRangeSelec
             </div>
 
             <div
-              className="relative mt-2 flex justify-end"
+              className="relative mt-2 flex items-center justify-between"
               onClick={(event) => {
                 if (event.target === event.currentTarget) {
                   setShowCustom(false);
@@ -602,6 +610,23 @@ export function DateRangeSelector({ value, onChange, className }: DateRangeSelec
                   {renderCalendar(endMonthView, setEndMonthView, draft.endDate, (iso) => handleCalendarPick('end', iso))}
                 </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  applyRange(fullHistoryRange);
+                  setSubmenu(null);
+                  setShowCustom(false);
+                }}
+                className={cn(
+                  'rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors',
+                  isSameRange(draft, fullHistoryRange)
+                    ? 'border-slate-300 bg-slate-100 text-slate-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                )}
+              >
+                Histórico completo
+              </button>
 
               <button
                 type="button"

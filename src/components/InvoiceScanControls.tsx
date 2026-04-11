@@ -36,6 +36,7 @@ type ScanStepRealtimeRow = {
   run_id?: string | number | null;
   user_uid?: string | null;
   step?: string | null;
+  provider?: string | null;
   status?: string | null;
   metadata?: unknown;
   progress_total?: number | string | null;
@@ -99,7 +100,7 @@ const SCAN_TOAST_LOGO_SIZE = 40;
 const SCAN_TOAST_LOGO_CLASS = 'pointer-events-none absolute right-5 top-1/2 h-10 w-10 -translate-y-1/2 object-contain';
 const SCAN_TOAST_DESCRIPTION_CLASS = 'block pr-16';
 const SCAN_STEPS_BUFFER_LIMIT = 24;
-const SCAN_STATUS_MIN_VISIBLE_MS = 1400;
+const SCAN_STATUS_MIN_VISIBLE_MS = 1300;
 const SCAN_STATUS_TRANSITION_MS = 150;
 const SCAN_STATUS_FINAL_HOLD_MS = 1800;
 const SCAN_STATUS_WARNING_HOLD_MS = 3600;
@@ -160,6 +161,50 @@ const getHoldedErrorReasonFromMetadata = (metadata: unknown): HoldedErrorReason 
   }
 
   return readReason(metadata) ?? 'unknown';
+};
+
+type CredentialRefreshErrorReason = 'revoked' | 'non_existing' | 'unknown';
+
+const getCredentialRefreshErrorReasonFromMetadata = (metadata: unknown): CredentialRefreshErrorReason => {
+  const readReason = (value: unknown): CredentialRefreshErrorReason | null => {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+
+    const reason = (value as { reason?: unknown }).reason;
+    if (reason === 'revoked' || reason === 'non_existing') {
+      return reason;
+    }
+
+    return null;
+  };
+
+  if (Array.isArray(metadata)) {
+    for (const item of metadata) {
+      const reason = readReason(item);
+      if (reason) {
+        return reason;
+      }
+    }
+
+    return 'unknown';
+  }
+
+  return readReason(metadata) ?? 'unknown';
+};
+
+const isCredentialsStepName = (step: string) => step === 'credentials_refresh';
+
+const isCredentialsErrorStep = (step: string, status: string) => {
+  return step === 'credentials_refresh' && status === 'error';
+};
+
+const isMissingCredentialsError = (step: string, status: string, metadata: unknown) => {
+  if (step === 'credentials_refresh' && status === 'error') {
+    return getCredentialRefreshErrorReasonFromMetadata(metadata) === 'non_existing';
+  }
+
+  return false;
 };
 
 const normalizeScanType = (value: unknown): 'gmail' | 'outlook' | null => {
@@ -592,11 +637,16 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
       scanStatusShownAtRef.current = Date.now();
       currentScanStatusKeyRef.current = item.key;
       item.onDisplayed?.();
+      scanStatusQueueProcessorRef.current();
     }, SCAN_STATUS_TRANSITION_MS);
   }, []);
 
   scanStatusQueueProcessorRef.current = () => {
     if (scanStatusTimerRef.current !== null) {
+      return;
+    }
+
+    if (scanStatusSwapTimerRef.current !== null) {
       return;
     }
 
@@ -616,7 +666,6 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
       }
 
       applyScanStatus(next);
-      scanStatusQueueProcessorRef.current();
     }, waitMs);
   };
 
@@ -1492,6 +1541,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
           const rowRunId = row.run_id != null ? String(row.run_id) : null;
           const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
           const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+          const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
           const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
           const rowProgressTotal = toNonNegativeInteger(row.progress_total);
           const rowProgressCurrent = toNonNegativeInteger(row.progress_current);
@@ -1505,77 +1555,76 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
 
           const currentRunId = activeScanRunIdRef.current;
           if (!currentRunId) {
-            console.info('[scan:realtime] payload buffered: no active run id yet', {
-              rowRunId,
-              rowStep,
-              rowStatus,
-            });
+            if (rowStep !== 'credentials_refresh') {
+              console.info('[scan:realtime] payload buffered: no active run id yet', {
+                rowRunId,
+                rowStep,
+                rowStatus,
+              });
+            }
             return;
           }
 
           const isSameRun = rowRunId === currentRunId;
           const isSameUser = !rowUserUid || !currentUserUid || rowUserUid === currentUserUid;
           const expectedScanType = activeScanTypeRef.current;
-          const isEndStep =
-            expectedScanType === 'gmail'
-              ? rowStep === 'gmail_scrapper_end'
-              : expectedScanType === 'outlook'
-                ? rowStep === 'outlook_scrapper_end'
-                : rowStep === 'gmail_scrapper_end' || rowStep === 'outlook_scrapper_end';
+          const isScrapperStep = rowStep === 'scrapper';
+          const isExpectedProvider = rowProvider === 'gmail' || rowProvider === 'outlook';
+          const isEndStep = isScrapperStep && isExpectedProvider;
           const isSuccess = rowStatus === 'success';
 
-          console.info('[scan:realtime] payload received', {
-            rowRunId,
-            rowUserUid,
-            rowStep,
-            rowStatus,
-            rowProgressTotal,
-            rowProgressCurrent,
-            currentRunId,
-            currentUserUid,
-            expectedScanType,
-            isSameRun,
-            isSameUser,
-            isEndStep,
-            isSuccess,
-          });
+          if (rowStep !== 'credentials_refresh') {
+            console.info('[scan:realtime] payload received', {
+              rowRunId,
+              rowUserUid,
+              rowStep,
+              rowProvider,
+              rowStatus,
+              rowProgressTotal,
+              rowProgressCurrent,
+              currentRunId,
+              currentUserUid,
+              expectedScanType,
+              isSameRun,
+              isSameUser,
+              isEndStep,
+              isSuccess,
+            });
+          }
 
           if (!isSameRun || !isSameUser) {
             return;
           }
 
-          if (rowStep === 'credentials_failed') {
-            stopPrimaryScanForCredentials(currentRunId);
+          if (isCredentialsStepName(rowStep)) {
+            if (isCredentialsErrorStep(rowStep, rowStatus)) {
+              if (isMissingCredentialsError(rowStep, rowStatus, row.metadata)) {
+                const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+                console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+                stopPrimaryScanForMissingCredentials(currentRunId);
+                return;
+              }
+
+              stopPrimaryScanForCredentials(currentRunId);
+              return;
+            }
+
             return;
           }
 
-          if (rowStep === 'credentials_non_existing') {
-            const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
-            console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
-            stopPrimaryScanForMissingCredentials(currentRunId);
-            return;
-          }
-
-          if (rowStep === 'gmail_scanning_inbox') {
+          if (rowStep === 'scrapper' && (rowProvider === 'gmail' || rowProvider === 'outlook') && rowStatus === 'processing') {
             enqueueScanStatus({
-              key: `scanning-inbox-${currentRunId}`,
-              text: 'Escaneando correo...',
+              key: `scrapper-processing-${currentRunId}`,
+              text: 'Escaneando e-mail...',
               tone: 'neutral',
-            });
+              minVisibleMs: SCAN_STATUS_MIN_VISIBLE_MS,
+            }, { immediate: true });
           }
 
-          if (rowStep === 'drive_files_processing') {
+          if (rowStep === 'scanning_cloud' && rowStatus === 'processing') {
             enqueueScanStatus({
-              key: `drive-files-processing-${currentRunId}`,
+              key: `scanning-cloud-${currentRunId}`,
               text: 'Escaneando nube...',
-              tone: 'neutral',
-            });
-          }
-
-          if (rowStep === 'drive_empty') {
-            enqueueScanStatus({
-              key: `drive-empty-${currentRunId}`,
-              text: 'No hay archivos por procesar',
               tone: 'neutral',
             });
           }
@@ -1587,11 +1636,21 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
             }
 
             const effectiveTotal = invoiceProcessingTotalRef.current;
+            if (effectiveTotal === 0 && rowProgressCurrent === 0) {
+              enqueueScanStatus({
+                key: `invoice-empty-${currentRunId}`,
+                text: 'No hay archivos por procesar',
+                tone: 'neutral',
+                minVisibleMs: SCAN_STATUS_MIN_VISIBLE_MS,
+              }, { immediate: true });
+            }
+
             if (effectiveTotal && rowProgressCurrent === 0) {
               enqueueScanStatus({
                 key: `invoice-found-${currentRunId}-${effectiveTotal}`,
                 text: `Se han encontrado ${effectiveTotal} documentos`,
                 tone: 'neutral',
+                minVisibleMs: SCAN_STATUS_MIN_VISIBLE_MS,
               });
             }
 
@@ -1681,6 +1740,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
           const rowRunId = row.run_id != null ? String(row.run_id) : null;
           const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
           const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+          const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
           const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
           const rowProgressTotal = toNonNegativeInteger(row.progress_total);
           const rowProgressCurrent = toNonNegativeInteger(row.progress_current);
@@ -1694,53 +1754,54 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
 
           const currentRunId = activeHoldedScanRunIdRef.current;
           if (!currentRunId) {
-            console.info('[holded:realtime] payload buffered: no active run id yet', {
-              rowRunId,
-              rowStep,
-              rowStatus,
-            });
+            if (rowStep !== 'credentials_refresh') {
+              console.info('[holded:realtime] payload buffered: no active run id yet', {
+                rowRunId,
+                rowStep,
+                rowStatus,
+              });
+            }
             return;
           }
 
           const isSameRun = rowRunId === currentRunId;
           const isSameUser = !rowUserUid || !currentUserUid || rowUserUid === currentUserUid;
-          const isEndStep = rowStep === 'holded_scrapper_end';
+          const isHoldedScrapperStep = rowStep === 'scrapper' && rowProvider === 'holded';
+          const isHoldedInvoiceProcessingStep = rowStep === 'invoice_processing' && rowProvider === 'holded';
           const isSuccess = rowStatus === 'success';
           const isError = rowStatus === 'error';
-          const isCredentialsStep = rowStep.includes('credential');
-
-          console.info('[holded:realtime] step payload received', {
-            rowRunId,
-            rowUserUid,
-            rowStep,
-            rowStatus,
-            rowProgressTotal,
-            rowProgressCurrent,
-            currentRunId,
-            currentUserUid,
-            isSameRun,
-            isSameUser,
-            isEndStep,
-            isSuccess,
-          });
-
-          if (!isSameRun || !isSameUser) {
-            return;
+          const isProcessing = rowStatus === 'processing';
+          const isCredentialsStep = isCredentialsStepName(rowStep);
+          if (rowStep !== 'credentials_refresh') {
+            console.info('[holded:realtime] step payload received', {
+              rowRunId,
+              rowUserUid,
+              rowStep,
+              rowProvider,
+              rowStatus,
+              rowProgressTotal,
+              rowProgressCurrent,
+              currentRunId,
+              currentUserUid,
+              isSameRun,
+              isSameUser,
+              isHoldedScrapperStep,
+              isSuccess,
+            });
           }
-
-          if (rowStep === 'credentials_failed') {
-            stopHoldedScanForCredentials(currentRunId);
-            return;
-          }
-
-          if (rowStep === 'credentials_non_existing') {
-            const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
-            console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
-            stopHoldedScanForMissingCredentials(currentRunId);
-            return;
-          }
-
           if (isCredentialsStep) {
+            if (isCredentialsErrorStep(rowStep, rowStatus)) {
+              if (isMissingCredentialsError(rowStep, rowStatus, row.metadata)) {
+                const errorCode = SCAN_ERROR_CODES.CREDENTIALS_NON_EXISTING;
+                console.warn(`[scan] ERROR CODE = ${errorCode}`, { userId: user?.id });
+                stopHoldedScanForMissingCredentials(currentRunId);
+                return;
+              }
+
+              stopHoldedScanForCredentials(currentRunId);
+              return;
+            }
+
             if (isSuccess) {
               holdedCredentialsSuccessRunsRef.current.add(currentRunId);
               tryEnqueueHoldedConnectingStatus(currentRunId);
@@ -1748,13 +1809,13 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
             return;
           }
 
-          if (rowStep === 'holded_scrapper_start') {
+          if (isHoldedScrapperStep && isProcessing) {
             holdedScrapperStartRunsRef.current.add(currentRunId);
             tryEnqueueHoldedConnectingStatus(currentRunId);
             return;
           }
 
-          if (rowStep === 'holded_invoice_processing') {
+          if (isHoldedInvoiceProcessingStep) {
             tryEnqueueHoldedConnectingStatus(currentRunId);
             const total = rowProgressTotal ?? holdedProcessingTotalRef.current;
             if (typeof total === 'number' && total >= 0) {
@@ -1768,7 +1829,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
                 text: `Se han encontrado ${effectiveTotal} facturas nuevas en Holded`,
                 tone: 'neutral',
                 minVisibleMs: SCAN_STATUS_MIN_VISIBLE_MS,
-              }, { immediate: true, replacePending: true });
+              }, { replacePending: true });
             }
 
             if (effectiveTotal && typeof rowProgressCurrent === 'number' && rowProgressCurrent > 0) {
@@ -1783,13 +1844,13 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
             }
           }
 
-          if (isEndStep && isError) {
+          if (isHoldedScrapperStep && isError) {
             const reason = getHoldedErrorReasonFromMetadata(row.metadata);
             stopHoldedScanForScrapperError(currentRunId, reason);
             return;
           }
 
-          if (isEndStep && isSuccess) {
+          if (isHoldedScrapperStep && isSuccess) {
             console.info('[holded:realtime] finishing run from scan_steps', currentRunId);
             scheduleHoldedScanCompletion(currentRunId);
           }
@@ -1959,21 +2020,24 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
       const hasBufferedCredentialsFailure = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && (rowStep === 'credentials_failed' || rowStep === 'credentials_non_existing');
+        return isSameUser && isCredentialsErrorStep(rowStep, rowStatus);
       });
       const hasBufferedMissingCredentials = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && rowStep === 'credentials_non_existing';
+        return isSameUser && isMissingCredentialsError(rowStep, rowStatus, row.metadata);
       });
       const hasBufferedFinish = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
         const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        const isEndStep = scanType === 'outlook' ? rowStep === 'outlook_scrapper_end' : rowStep === 'gmail_scrapper_end';
+        const isEndStep = rowStep === 'scrapper' && (rowProvider === 'gmail' || rowProvider === 'outlook');
         const isSuccess = rowStatus === 'success';
         return isSameUser && isEndStep && isSuccess;
       });
@@ -2106,6 +2170,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
       bufferedRows.forEach((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
         const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
 
@@ -2113,11 +2178,11 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
           return;
         }
 
-        if (rowStep.includes('credential') && rowStatus === 'success') {
+        if (isCredentialsStepName(rowStep) && rowStatus === 'success') {
           holdedCredentialsSuccessRunsRef.current.add(runId);
         }
 
-        if (rowStep === 'holded_scrapper_start') {
+        if (rowStep === 'scrapper' && rowProvider === 'holded' && rowStatus === 'processing') {
           holdedScrapperStartRunsRef.current.add(runId);
         }
       });
@@ -2127,28 +2192,32 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
       const hasBufferedCredentialsFailure = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && (rowStep === 'credentials_failed' || rowStep === 'credentials_non_existing');
+        return isSameUser && isCredentialsErrorStep(rowStep, rowStatus);
       });
       const hasBufferedMissingCredentials = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && rowStep === 'credentials_non_existing';
+        return isSameUser && isMissingCredentialsError(rowStep, rowStatus, row.metadata);
       });
       const hasBufferedFinish = bufferedRows.some((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
         const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && rowStep === 'holded_scrapper_end' && rowStatus === 'success';
+        return isSameUser && rowStep === 'scrapper' && rowProvider === 'holded' && rowStatus === 'success';
       });
       const bufferedEndErrorRow = bufferedRows.find((row) => {
         const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
         const rowStep = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+        const rowProvider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
         const rowStatus = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
         const isSameUser = !rowUserUid || rowUserUid === userUid;
-        return isSameUser && rowStep === 'holded_scrapper_end' && rowStatus === 'error';
+        return isSameUser && rowStep === 'scrapper' && rowProvider === 'holded' && rowStatus === 'error';
       });
 
       if (hasBufferedCredentialsFailure) {
@@ -2207,7 +2276,9 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
         : 'text-gray-500';
   const shouldSpinStatusIcon =
     (loading || holdedLoading || isBootstrapping || isScanInProgress || isHoldedScanInProgress) && !stopStatusSpinner;
-  const statusText = scanStatusMessage?.text ?? `Último escaneo exitoso hace ${formatElapsedSince(lastScanAt)}`;
+  const statusText =
+    scanStatusMessage?.text ??
+    `Último escaneo exitoso hace ${formatElapsedSince(lastScanAt)}`;
 
   return (
     <>
