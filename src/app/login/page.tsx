@@ -342,45 +342,16 @@ function LoginForm() {
             </>
           )}
 
-          {/* Google button (non-functional) */}
-          {mode === 'login' && (
-            <>
-              <button
-                type="button"
-                className="mt-5 w-full flex items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 transition"
-              >
-                <svg className="h-5 w-5" viewBox="0 0 24 24">
-                  <path
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                    fill="#4285F4"
-                  />
-                  <path
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    fill="#34A853"
-                  />
-                  <path
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    fill="#FBBC05"
-                  />
-                  <path
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    fill="#EA4335"
-                  />
-                </svg>
-                Continua con Google
-              </button>
-
-              {/* Separator */}
-              <div className="flex items-center gap-3 w-full my-4">
-                <div className="flex-1 h-px bg-gray-200" />
-                <span className="text-xs text-gray-400 font-medium">o</span>
-                <div className="flex-1 h-px bg-gray-200" />
-              </div>
-            </>
-          )}
+          {mode === 'login' ? (
+            <div className="flex items-center gap-2 w-full mt-3 mb-0.5">
+              <div className="flex-1 h-px bg-gray-200" />
+              <div className="h-1.5 w-1.5 rounded-full bg-gray-300" />
+              <div className="flex-1 h-px bg-gray-200" />
+            </div>
+          ) : null}
 
           {/* Form */}
-          <form className={`w-full ${mode === 'login' ? 'space-y-3' : 'space-y-3 mt-4'}`} onSubmit={handleSubmit}>
+          <form className={`w-full ${mode === 'login' ? 'space-y-3 mt-2' : 'space-y-3 mt-4'}`} onSubmit={handleSubmit}>
             {mode === 'login' ? (
               <>
                 {/* Email */}
@@ -651,10 +622,156 @@ function LoginForm() {
           </p>
         </div>
 
-        {/* Dashboard placeholder */}
-        <div className="relative z-10 flex-1 flex items-end justify-center mt-6 px-2">
-          <div className="w-full rounded-t-xl bg-white/10 backdrop-blur-sm border border-white/20 border-b-0 flex items-center justify-center" style={{ aspectRatio: '16/11' }}>
-            <span className="text-white/30 text-xs font-medium">Vista previa del dashboard</span>
+        {/* Dashboard mock (estética Inicio Clerio) */}
+        <div className="relative z-10 flex-1 flex items-start justify-center mt-25 px-2">
+          <div className="w-full" style={{ aspectRatio: '16/9' }}>
+            <div className="h-full w-full overflow-hidden rounded-xl border-[4px] border-blue-600 bg-blue-600">
+              <div className="flex h-full">
+                <aside className="w-[18.5%] bg-blue-600 text-white flex flex-col">
+                  <div className="h-10 px-2 flex items-center border-b border-white/20">
+                    <img src="/brand/IMAGO_BLANCO.png" alt="Clerio" className="h-4 w-4 object-contain" />
+                    <span className="ml-1.5 text-[10px] font-bold tracking-wide">Clerio</span>
+                  </div>
+
+                  <div className="pt-1.5 space-y-0.5">
+                    {[
+                      { label: 'Inicio', icon: '/sidebar/inicio_logo.png' },
+                      { label: 'Ingresos', icon: '/sidebar/ingresos_logo.png' },
+                      { label: 'Gastos', icon: '/sidebar/gastos_logo.png' },
+                      { label: 'Validación', icon: '/brand/tab_validacion/validacion_logo.png' },
+                      { label: 'Integraciones', icon: '/sidebar/integraciones_logo.png' },
+                      { label: 'Cler IA', icon: '/brand/tab_cleria/cleria_logo.png' },
+                    ].map((item, index) => (
+                      <div
+                        key={item.label}
+                        className={`px-2 h-[22px] flex items-center text-[8px] ${
+                          index === 0 ? 'bg-blue-700 font-semibold' : 'text-blue-100'
+                        }`}
+                      >
+                        <img src={item.icon} alt={item.label} className="h-3 w-3 object-contain mr-1.5" />
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-auto px-2 py-2 border-t border-white/20 flex items-center gap-1.5">
+                    <div className="h-4.5 w-4.5 rounded-full bg-blue-500 border border-white/70 flex items-center justify-center text-[7px] font-semibold">
+                      VT
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-semibold leading-none">Victor Torres</p>
+                      <p className="text-[7px] text-blue-200 mt-0.5">Administrador</p>
+                    </div>
+                  </div>
+                </aside>
+
+                <main className="w-[81.5%] bg-gray-50 px-2.5 pt-2.5 pb-1 overflow-hidden">
+                  <div className="h-full rounded-lg bg-gray-50">
+                    <div className="mb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[7px] text-gray-500">
+                            Hola Victor! Tienes <span className="font-semibold text-blue-600">7</span> facturas pendientes de validar.
+                          </p>
+                          <p className="text-[13px] font-bold text-gray-800 leading-tight">Dashboard de Victor Torres</p>
+                          <p className="text-[7px] text-gray-400">victor.torres@empresa-demo.com</p>
+                        </div>
+                        <div className="h-5 rounded-md border border-gray-200 bg-white px-1.5 flex items-center text-[7px] text-gray-500">
+                          01/04/2025 - 30/06/2025
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-2 mb-2.5 px-2.5 py-1">
+                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                        <p className="text-[8px] text-gray-500">Facturas Procesadas</p>
+                        <p className="text-[10px] font-semibold text-gray-900 mt-0.5">184</p>
+                      </div>
+                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                        <p className="text-[8px] text-gray-500">Ingresos</p>
+                        <p className="text-[10px] font-semibold text-gray-900 mt-0.5">42.680,00€</p>
+                      </div>
+                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                        <p className="text-[8px] text-gray-500">Gastos</p>
+                        <p className="text-[10px] font-semibold text-gray-900 mt-0.5">19.430,00€</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-5 gap-2">
+                      <div className="col-span-3 rounded-lg border border-gray-200 bg-white p-2 pb-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <div>
+                            <p className="text-[9px] font-semibold text-gray-800">Datos mensuales</p>
+                            <p className="text-[7px] text-gray-400">Resumen de ingresos y gastos mensuales</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1">
+                            <button type="button" className="rounded-[4px] border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[7px] font-semibold text-blue-600">
+                              Ingresos
+                            </button>
+                            <button type="button" className="rounded-[4px] border border-transparent bg-transparent px-1.5 py-0.5 text-[7px] font-semibold text-gray-400">
+                              Gastos
+                            </button>
+                          </div>
+                          <p className="text-[7px] text-gray-400">2025</p>
+                        </div>
+
+                        <div className="relative h-[98px]">
+                          <div className="absolute left-0 top-0 bottom-4 w-8 flex flex-col justify-between text-[6px] text-gray-400">
+                            <span>7.500 €</span>
+                            <span>5.000 €</span>
+                            <span>2.500 €</span>
+                            <span>0 €</span>
+                          </div>
+                          <div className="absolute left-8 right-0 top-0 bottom-4">
+                            <div className="h-full flex flex-col justify-between">
+                              {[0, 1, 2, 3].map((line) => (
+                                <div key={`grid-${line}`} className="border-t border-dashed border-gray-200" />
+                              ))}
+                            </div>
+                          </div>
+                          <div className="absolute left-8 right-0 bottom-4 top-1 flex items-end gap-1">
+                            {[78, 36, 84, 28, 69, 41, 74, 33, 66, 82, 45, 71].map((value, idx) => (
+                              <div key={`bar-${idx}`} className="flex-1 rounded-t-[2px] bg-emerald-500" style={{ height: `${value}%` }} />
+                            ))}
+                          </div>
+                          <div className="absolute left-8 right-0 bottom-0 flex justify-between text-[6px] text-gray-400">
+                            {['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((month) => (
+                              <span key={month}>{month}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="col-span-2 rounded-lg border border-gray-200 bg-white p-2 pb-3">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-[9px] font-semibold text-gray-800">ClerIA</p>
+                          <p className="text-[7px] text-blue-600">Abrir</p>
+                        </div>
+                        <div className="space-y-0.5 pr-1">
+                          {[
+                            ['Consulta de factura F250021', '02/04/2025'],
+                            ['Ingresos anuales: ¿cuánto tengo?', '02/04/2025'],
+                            ['Consulta de facturas anuales', '30/03/2025'],
+                            ['Presupuesto de Fotografía y Edición', '30/03/2025'],
+                            ['Gastos del 2025: Consulta rápida', '30/03/2025'],
+                            ['Facturación y consultas generales', '29/03/2025'],
+                            ['Factura de gastos: VAS MOTOR', '29/03/2025'],
+                            ['Gastos de agosto 2025', '27/03/2025'],
+                          ].map(([title, date]) => (
+                            <div key={`${title}-${date}`} className="flex items-center justify-between gap-1 rounded-md px-1 py-0.5 hover:bg-gray-50">
+                              <span className="text-[6.5px] text-gray-700 truncate">{title}</span>
+                              <span className="text-[6px] text-gray-400 shrink-0">{date}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </main>
+              </div>
+            </div>
           </div>
         </div>
       </div>
