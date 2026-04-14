@@ -19,7 +19,42 @@ type ProfilePayload = {
 
 type VisualScaleLevel = 'muy_grande' | 'grande' | 'normal' | 'pequeno' | 'muy_pequeno';
 
+type PeriodicScanSlot = {
+  label: string;
+  selected: boolean;
+  disabled: boolean;
+};
+
+type PeriodicScanGroup = {
+  title: string;
+  slots: PeriodicScanSlot[];
+};
+
 const VISUAL_SCALE_KEY = 'dashboard-visual-scale-level';
+
+const PERIODIC_SCAN_GROUPS: PeriodicScanGroup[] = [
+  {
+    title: 'Mañana',
+    slots: [
+      { label: '07:00', selected: false, disabled: true },
+      { label: '08:00', selected: true, disabled: false },
+    ],
+  },
+  {
+    title: 'Medio día',
+    slots: [
+      { label: '13:00', selected: false, disabled: true },
+      { label: '14:00', selected: true, disabled: false },
+    ],
+  },
+  {
+    title: 'Tarde',
+    slots: [
+      { label: '18:00', selected: true, disabled: false },
+      { label: '19:00', selected: false, disabled: true },
+    ],
+  },
+];
 
 const VISUAL_SCALE_OPTIONS: Array<{ value: VisualScaleLevel; label: string }> = [
   { value: 'muy_grande', label: 'Muy grande' },
@@ -278,6 +313,43 @@ export default function SettingsPage() {
             ))}
           </div>
         </div>
+      </Section>
+
+      <Section title="Escaneo Periódico" gridClassName="md:grid-cols-3">
+        {PERIODIC_SCAN_GROUPS.map((group) => (
+          <Field key={group.title} label={group.title}>
+            <div className="flex flex-wrap gap-2">
+              {group.slots.map((slot) => {
+                const isSelected = slot.selected;
+
+                return (
+                  <div key={slot.label} className="relative inline-flex group">
+                    <button
+                      type="button"
+                      disabled={slot.disabled}
+                      aria-pressed={isSelected}
+                      className={`inline-flex min-w-[92px] flex-col items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        isSelected
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700'
+                      } ${slot.disabled ? 'cursor-default opacity-50 hover:border-slate-200 hover:text-slate-700' : ''}`}
+                    >
+                      <span>{slot.label}</span>
+                    </button>
+                    {slot.disabled ? (
+                      <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100">
+                        <span className="mr-1 inline-block align-middle text-sm leading-none" aria-hidden="true">
+                          ⊘
+                        </span>
+                        Próximamente
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </Field>
+        ))}
       </Section>
 
       <div className="flex justify-end">
