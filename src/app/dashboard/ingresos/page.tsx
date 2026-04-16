@@ -20,6 +20,19 @@ import {
 const holdedStatusCache = new Map<string, boolean>();
 const ingresosCardsCache = new Map<string, { total: number; count: number }>();
 
+type EmailType = 'gmail' | 'outlook';
+
+const emailTypeCache = new Map<string, EmailType | null>();
+
+const normalizeEmailType = (value: unknown): EmailType | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'gmail' || normalized === 'outlook') {
+    return normalized;
+  }
+  return null;
+};
+
 const parseAmount = (value: unknown): number => {
   if (value === null || value === undefined) return 0;
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
@@ -87,6 +100,7 @@ const IngresosPage = () => {
   const { setIncomeData } = useInvoices();
   const { user } = useDashboardSession();
   const holdedCacheKey = user?.id ?? 'anonymous';
+  const emailTypeCacheKey = user?.id ?? 'anonymous';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
   const [dateRange, setDateRange] = React.useState<DateRangeValue>(getInitialSharedDashboardDateRange);
   const cardsCacheKey = `${empresaId ?? 'none'}::${dateRange.startDate}::${dateRange.endDate}`;
@@ -96,6 +110,10 @@ const IngresosPage = () => {
   const [tableRefreshKey, setTableRefreshKey] = React.useState<number>(0);
   const [isHoldedConnected, setIsHoldedConnected] = React.useState<boolean | null>(() => {
     const cached = holdedStatusCache.get(holdedCacheKey);
+    return cached === undefined ? null : cached;
+  });
+  const [emailType, setEmailType] = React.useState<EmailType | null>(() => {
+    const cached = emailTypeCache.get(emailTypeCacheKey);
     return cached === undefined ? null : cached;
   });
   const prevData = useRef({ total: 0, count: 0 });
@@ -281,12 +299,59 @@ const IngresosPage = () => {
     };
   }, [holdedCacheKey]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadEmailType = async () => {
+      if (!user?.id) {
+        if (isMounted) {
+          setEmailType(null);
+        }
+        return;
+      }
+
+      const cached = emailTypeCache.get(emailTypeCacheKey);
+      if (isMounted && cached !== undefined) {
+        setEmailType(cached);
+      }
+
+      const { data, error } = await supabase
+        .from('auth_users')
+        .select('email_type')
+        .eq('user_uid', user.id)
+        .maybeSingle();
+
+      if (error) {
+        return;
+      }
+
+      const nextEmailType = normalizeEmailType((data as { email_type?: unknown } | null)?.email_type);
+
+      emailTypeCache.set(emailTypeCacheKey, nextEmailType);
+      if (isMounted) {
+        setEmailType(nextEmailType);
+      }
+    };
+
+    void loadEmailType();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [emailTypeCacheKey, user?.id]);
+
   const getIncomeFontSize = (value: number) => {
     const valueStr = value.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (valueStr.length > 10) return 'text-xs';
     if (valueStr.length > 8) return 'text-sm';
     return 'text-base';
   };
+
+  const isOutlook = emailType === 'outlook';
+  const primaryLogoSrc = isOutlook ? '/brand/tab_ingresos/outlook_logo.png' : '/brand/tab_ingresos/gmail_logo.png';
+  const primaryLabel = isOutlook ? 'Outlook' : 'Gmail';
+  const isConfigured = emailType !== null;
+  const showHoldedCard = isHoldedConnected === true;
 
   return (
     <div className="-m-8">
@@ -311,19 +376,29 @@ const IngresosPage = () => {
               <StatCard
                 title="Conexiones"
                 value={
-                  <div className="flex items-center gap-3 -mt-2">
-                    <Image src="/brand/tab_ingresos/holded_logo.png" alt="Holded" width={32} height={32} className="h-8 w-8" />
-                    <div className="flex flex-col leading-tight">
-                      <span className="text-sm md:text-base font-semibold text-inherit">Holded</span>
-                      <span
-                        className={`text-sm font-light ${
-                          isHoldedConnected === null ? 'text-gray-500' : isHoldedConnected ? 'text-green-500' : 'text-red-500'
-                        }`}
-                      >
-                        {isHoldedConnected === null ? 'Cargando...' : isHoldedConnected ? 'Conectado' : 'Desconectado'}
-                      </span>
+                  showHoldedCard ? (
+                    <div className="flex items-center gap-3 -mt-2">
+                      <Image src="/brand/tab_ingresos/holded_logo.png" alt="Holded" width={32} height={32} className="h-8 w-8" />
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-sm md:text-base font-semibold text-inherit">Holded</span>
+                        <span className="text-sm font-light text-green-500">Conectado</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-3 -mt-2">
+                      <Image src={primaryLogoSrc} alt={primaryLabel} width={32} height={32} className="h-8 w-8" />
+                      <div className="flex flex-col leading-tight">
+                        <span className="text-sm md:text-base font-semibold text-inherit">{primaryLabel}</span>
+                        <span
+                          className={`text-sm font-light ${
+                            isConfigured ? 'text-green-500' : 'text-red-500'
+                          }`}
+                        >
+                          {isConfigured ? 'Conectado' : 'Desconectado'}
+                        </span>
+                      </div>
+                    </div>
+                  )
                 }
                 Icon={Link2}
                 size="compact"
