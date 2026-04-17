@@ -197,6 +197,7 @@ type FacturaRow = {
   factura_uid: string | null;
   invoice_reason: string | null;
   factura_validada?: boolean | null;
+  created_at?: string | null;
   reviewed_at?: string | null;
   deleted_at?: string | null;
   is_trashed?: boolean | null;
@@ -252,6 +253,7 @@ type RevisionRow = {
   retenciones: number | string | null;
   importeTotal: number | string | null;
   reviewed: boolean;
+  collectedAt: string | null;
   reviewedAt: string | null;
   deletedAt: string | null;
   isTrashed: boolean;
@@ -620,7 +622,7 @@ export default function RevisionsTable({
       let query = supabase
         .from('facturas')
         .select(
-          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_validada, reviewed_at, deleted_at, is_trashed, drive_file_id, drive_type'
+          'id, numero, fecha, tipo, buyer_name, buyer_tax_id, seller_name, seller_tax_id, invoice_concept, importe_sin_iva, iva, descuentos, retenciones, importe_total, factura_uid, invoice_reason, factura_validada, created_at, reviewed_at, deleted_at, is_trashed, drive_file_id, drive_type'
         );
 
       if (scope === 'trash') {
@@ -745,6 +747,7 @@ export default function RevisionsTable({
           retenciones: row.retenciones ?? null,
           importeTotal: row.importe_total ?? null,
           reviewed: Boolean(row.factura_validada),
+          collectedAt: row.created_at ?? null,
           reviewedAt: row.reviewed_at ?? null,
           deletedAt: row.deleted_at ?? null,
           isTrashed: Boolean(row.is_trashed),
@@ -1605,6 +1608,15 @@ export default function RevisionsTable({
         ),
         size: 124,
       });
+    } else if (scope === 'pending') {
+      base.push({
+        id: 'collectedAt',
+        header: () => <div className="text-center font-semibold">Recogida</div>,
+        cell: ({ row }) => (
+          <div className="text-center tabular-nums">{row.original.collectedAt ? formatRelativeTime(row.original.collectedAt) : '—'}</div>
+        ),
+        size: 124,
+      });
     }
 
     if (isTrashScope) {
@@ -2008,8 +2020,8 @@ export default function RevisionsTable({
 
         .revisions-table th:nth-child(4),
         .revisions-table td:nth-child(4) {
-          width: ${scope === 'trash' ? '96px' : scope === 'history' ? '61%' : '68%'};
-          min-width: ${scope === 'trash' ? '96px' : scope === 'history' ? '320px' : '300px'};
+          width: ${scope === 'trash' ? '96px' : '61%'};
+          min-width: ${scope === 'trash' ? '96px' : '320px'};
         }
 
         .revisions-table th:nth-child(5),
