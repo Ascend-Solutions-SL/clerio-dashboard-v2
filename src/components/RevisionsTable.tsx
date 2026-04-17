@@ -1658,14 +1658,6 @@ export default function RevisionsTable({
   }, [scope, dateSort, handleRestoreInvoice, isTrashScope]);
 
   const sortedData = React.useMemo(() => {
-    const tipoRank: Record<string, number> = {
-      'No Factura': 0,
-      Desconocido: 1,
-      'Por Revisar': 1,
-      Ingresos: 2,
-      Gastos: 3,
-    };
-
     const copy = data.map((row, idx) => ({ row, idx }));
     copy.sort((a, b) => {
       if (dateSort) {
@@ -1675,17 +1667,28 @@ export default function RevisionsTable({
         return dateSort === 'asc' ? diff : -diff;
       }
 
-      const aRank = tipoRank[a.row.tipo] ?? 99;
-      const bRank = tipoRank[b.row.tipo] ?? 99;
-      if (aRank !== bRank) {
-        return aRank - bRank;
+      const resolveScopeTime = (row: RevisionRow) => {
+        const iso =
+          scope === 'pending' ? row.collectedAt : scope === 'history' ? row.reviewedAt : scope === 'trash' ? row.deletedAt : null;
+        return iso ? new Date(iso).getTime() : 0;
+      };
+
+      const aScopeTime = resolveScopeTime(a.row);
+      const bScopeTime = resolveScopeTime(b.row);
+      if (aScopeTime !== bScopeTime) {
+        return bScopeTime - aScopeTime;
       }
 
-      // Preserve server order within same tipo when dateSort is not active
+      const aRawDate = a.row.rawDate ? new Date(a.row.rawDate).getTime() : 0;
+      const bRawDate = b.row.rawDate ? new Date(b.row.rawDate).getTime() : 0;
+      if (aRawDate !== bRawDate) {
+        return bRawDate - aRawDate;
+      }
+
       return a.idx - b.idx;
     });
     return copy.map((x) => x.row);
-  }, [data, dateSort]);
+  }, [data, dateSort, scope]);
 
   const moveSelection = React.useCallback(
     (currentId: number, direction: 'prev' | 'next', keepReviewMode: boolean) => {
