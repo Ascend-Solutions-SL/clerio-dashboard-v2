@@ -7,6 +7,70 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from '@/components/ui/use-toast';
 
 const TOGGLE_TRASH_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/toggle-trash';
+const TRASH_RUN_TIMEOUT_MS = 2 * 60 * 1000;
+const SUPPORT_CONTACT_HINT = 'Contacte con soporte (hola@clerio.es).';
+
+type TrashAction = 'restored' | 'moved_to_trash';
+
+type TrashWebhookStartResponse = {
+  run_id?: unknown;
+  user_uid?: unknown;
+  message?: unknown;
+};
+
+type TrashScanRunRealtimeRow = {
+  id?: string | number | null;
+  status?: string | null;
+  message?: unknown;
+  user_uid?: string | null;
+};
+
+type TrashRealtimeErrorPayload = {
+  error?: unknown;
+  message?: unknown;
+  action?: unknown;
+};
+
+const parseJsonSafely = (value: string): unknown => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const parseTrashRealtimeErrorPayload = (value: unknown): TrashRealtimeErrorPayload | null => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const parsed = parseJsonSafely(value.trim());
+    if (parsed && typeof parsed === 'object') {
+      return parsed as TrashRealtimeErrorPayload;
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return value as TrashRealtimeErrorPayload;
+  }
+
+  return null;
+};
+
+const resolveTrashAction = (value: unknown): TrashAction | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'restored' || normalized === 'moved_to_trash') {
+    return normalized;
+  }
+  return null;
+};
+
+const resolveTrashErrorMessage = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
 
 export type InvoiceDetailDrawerRow = {
   id?: string | number;
@@ -229,6 +293,91 @@ export function InvoiceDetailDrawer({ row, onClose, onInvoiceTrashed, closeAnima
         throw new Error('Autenticación JWT incorrecta o inexistente.');
       }
 
+      const userUid = session.user?.id;
+      if (!userUid) {
+        throw new Error('No se pudo identificar el usuario autenticado.');
+      }
+
+      const waitForTrashRunResult = (runId: string): Promise<{ action: TrashAction } | { message: string }> =>
+        new Promise((resolve, reject) => {
+          let settled = false;
+
+          const settle = (kind: 'resolve' | 'reject', payload?: { action: TrashAction } | { message: string } | Error) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            window.clearTimeout(timeoutId);
+            void supabase.removeChannel(channel);
+
+            if (kind === 'resolve' && payload && !(payload instanceof Error)) {
+              resolve(payload);
+              return;
+            }
+
+            reject(
+              payload instanceof Error
+                ? payload
+                : new Error(`No se pudo completar la acción. ${SUPPORT_CONTACT_HINT}`)
+            );
+          };
+
+          const timeoutId = window.setTimeout(() => {
+            settle('reject', new Error('Tiempo de espera agotado al esperar la confirmación de papelera.'));
+          }, TRASH_RUN_TIMEOUT_MS);
+
+          const channel = supabase
+            .channel(`trash_scan_run_drawer_${runId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'scan_runs',
+                filter: `id=eq.${runId}`,
+              },
+              (eventPayload: { new?: unknown }) => {
+                const row = (eventPayload.new as TrashScanRunRealtimeRow | null) ?? null;
+                if (!row) {
+                  return;
+                }
+
+                const rowRunId = row.id != null ? String(row.id) : null;
+                const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+                if (rowRunId !== runId || (rowUserUid && rowUserUid !== userUid)) {
+                  return;
+                }
+
+                const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+                if (status !== 'success' && status !== 'error') {
+                  return;
+                }
+
+                const details = parseTrashRealtimeErrorPayload(row.message);
+
+                if (status === 'success') {
+                  const resolvedAction = resolveTrashAction(details?.action) ?? 'moved_to_trash';
+                  settle('resolve', { action: resolvedAction });
+                  return;
+                }
+
+                const message =
+                  resolveTrashErrorMessage(details?.message) ??
+                  `No se pudo completar la acción. ${SUPPORT_CONTACT_HINT}`;
+                settle('resolve', { message });
+              }
+            )
+            .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR', err?: Error) => {
+              if (status === 'SUBSCRIBED') {
+                return;
+              }
+
+              if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                settle('reject', err ?? new Error(`Estado realtime inesperado: ${status}`));
+              }
+            });
+        });
+
       const response = await fetch(TOGGLE_TRASH_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -237,27 +386,37 @@ export function InvoiceDetailDrawer({ row, onClose, onInvoiceTrashed, closeAnima
         },
         body: JSON.stringify({
           factura_id: invoiceId,
+          user_uid: userUid,
         }),
       });
 
-      const payload = (await response.json().catch(() => null)) as
-        | {
-            success?: boolean;
-            error?: string;
-            message?: string;
-            action?: 'restored' | 'moved_to_trash' | string;
-          }
-        | null;
+      const rawResponse = (await response.text().catch(() => '')).trim();
+      const parsedResponse = parseJsonSafely(rawResponse);
+      const normalizedResponse = typeof parsedResponse === 'string' ? parseJsonSafely(parsedResponse.trim()) : parsedResponse;
+      const responsePayload =
+        normalizedResponse && typeof normalizedResponse === 'object'
+          ? (normalizedResponse as TrashWebhookStartResponse)
+          : null;
 
       if (!response.ok) {
-        throw new Error(payload?.message || 'No se pudo completar la acción.');
+        throw new Error(`No se pudo iniciar la acción (${response.status}). ${SUPPORT_CONTACT_HINT}`);
       }
 
-      if (payload?.success === false) {
-        throw new Error(payload.message || 'No se pudo completar la acción.');
+      const runId =
+        typeof responsePayload?.run_id === 'string' && responsePayload.run_id.trim().length > 0
+          ? responsePayload.run_id.trim()
+          : null;
+
+      if (!runId) {
+        throw new Error(`El webhook no devolvió run_id válido. ${SUPPORT_CONTACT_HINT}`);
       }
 
-      const wasRestored = payload?.action === 'restored';
+      const runResult = await waitForTrashRunResult(runId);
+      if ('message' in runResult) {
+        throw new Error(runResult.message);
+      }
+
+      const wasRestored = runResult.action === 'restored';
 
       toast({
         title: wasRestored ? 'Factura restaurada' : 'Factura eliminada',
@@ -265,11 +424,12 @@ export function InvoiceDetailDrawer({ row, onClose, onInvoiceTrashed, closeAnima
           ? 'La factura se ha restaurado correctamente.'
           : 'La factura se ha enviado correctamente a la papelera.',
         className: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+        duration: 2500,
       });
     } catch (error) {
       toast({
         title: 'No se pudo eliminar la factura',
-        description: error instanceof Error ? error.message : 'No se pudo completar la acción.',
+        description: error instanceof Error ? error.message : `No se pudo completar la acción. ${SUPPORT_CONTACT_HINT}`,
         variant: 'destructive',
       });
     } finally {

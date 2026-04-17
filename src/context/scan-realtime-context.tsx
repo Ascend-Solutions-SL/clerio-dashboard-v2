@@ -205,6 +205,9 @@ export function ScanRealtimeProvider({ children }: { children: React.ReactNode }
 
     void hydrateRunningLocks();
 
+    const hasRealtimeErrorDetails = (err?: Error) =>
+      err instanceof Error && typeof err.message === 'string' && err.message.trim().length > 0;
+
     const scanRunsChannel = supabase
       .channel(`scan_runs_lock_global_${user.id}`)
       .on(
@@ -275,7 +278,14 @@ export function ScanRealtimeProvider({ children }: { children: React.ReactNode }
         }
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[scan:realtime-context] scan_runs channel status', { status, err, userUid: user.id });
+          if (hasRealtimeErrorDetails(err)) {
+            console.error('[scan:realtime-context] scan_runs channel status', { status, err, userUid: user.id });
+            return;
+          }
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('[scan:realtime-context] scan_runs transient channel status', { status, userUid: user.id });
+          }
         }
       });
 
@@ -317,7 +327,14 @@ export function ScanRealtimeProvider({ children }: { children: React.ReactNode }
         }
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error('[scan:realtime-context] scan_steps channel status', { status, err, userUid: user.id });
+          if (hasRealtimeErrorDetails(err)) {
+            console.error('[scan:realtime-context] scan_steps channel status', { status, err, userUid: user.id });
+            return;
+          }
+
+          if (process.env.NODE_ENV !== 'production') {
+            console.warn('[scan:realtime-context] scan_steps transient channel status', { status, userUid: user.id });
+          }
         }
       });
 

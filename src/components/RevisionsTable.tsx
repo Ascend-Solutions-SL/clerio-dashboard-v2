@@ -34,6 +34,147 @@ import { supabase } from '@/lib/supabase';
 import { usePathname } from 'next/navigation';
 
 const TOGGLE_TRASH_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/toggle-trash';
+const VALIDATION_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura';
+const TRASH_RUN_TIMEOUT_MS = 2 * 60 * 1000;
+const VALIDATION_RUN_TIMEOUT_MS = 2 * 60 * 1000;
+const SUPPORT_CONTACT_HINT = 'Contacte con soporte (hola@clerio.es).';
+
+type TrashAction = 'restored' | 'moved_to_trash';
+type ValidationAction = 'validation_moved' | 'validation_not_moving';
+
+type TrashWebhookStartResponse = {
+  run_id?: unknown;
+  user_uid?: unknown;
+};
+
+type ValidationWebhookStartResponse = {
+  run_id?: unknown;
+  user_uid?: unknown;
+  message?: unknown;
+};
+
+type TrashScanRunRealtimeRow = {
+  id?: string | number | null;
+  status?: string | null;
+  message?: unknown;
+  user_uid?: string | null;
+};
+
+type TrashRealtimeErrorPayload = {
+  error?: unknown;
+  message?: unknown;
+  action?: unknown;
+};
+
+type ValidationRealtimePayload = {
+  error?: unknown;
+  message?: unknown;
+  action?: unknown;
+  factura_id?: unknown;
+};
+
+const parseJsonSafely = (value: string): unknown => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const parseTrashRealtimeErrorPayload = (value: unknown): TrashRealtimeErrorPayload | null => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const parsed = parseJsonSafely(value.trim());
+    if (parsed && typeof parsed === 'object') {
+      return parsed as TrashRealtimeErrorPayload;
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return value as TrashRealtimeErrorPayload;
+  }
+
+  return null;
+};
+
+const resolveTrashAction = (value: unknown): TrashAction | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'restored' || normalized === 'moved_to_trash') {
+    return normalized;
+  }
+  return null;
+};
+
+const resolveTrashErrorMessage = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const parseValidationRealtimePayload = (value: unknown): ValidationRealtimePayload | null => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const parsed = parseJsonSafely(value.trim());
+    if (parsed && typeof parsed === 'object') {
+      return parsed as ValidationRealtimePayload;
+    }
+    return null;
+  }
+
+  if (typeof value === 'object') {
+    return value as ValidationRealtimePayload;
+  }
+
+  return null;
+};
+
+const resolveValidationAction = (value: unknown): ValidationAction | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'validation_moved' || normalized === 'validation_not_moving') {
+    return normalized;
+  }
+  return null;
+};
+
+const resolveValidationInvoiceId = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
+const resolveValidationErrorMessage = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (value && typeof value === 'object') {
+    const nestedMessage = (value as { message?: unknown }).message;
+    if (typeof nestedMessage === 'string' && nestedMessage.trim().length > 0) {
+      return nestedMessage.trim();
+    }
+  }
+
+  return null;
+};
 
 type DriveType = 'googledrive' | 'onedrive';
 
@@ -177,6 +318,8 @@ interface RevisionsTableProps {
   onNoFacturasCountChange?: (count: number) => void;
   onHistoricoCountChange?: (count: number) => void;
   onPapeleraCountChange?: (count: number) => void;
+  onTrashMoveActivityChange?: (payload: { inProgressCount: number; justCompletedSuccessfully: boolean }) => void;
+  onValidationActivityChange?: (payload: { inProgressCount: number; justCompletedSuccessfully: boolean }) => void;
   selectedId?: number | null;
   onSelect?: (id: number, row: RevisionRow) => void;
   onDataLoaded?: (rows: RevisionRow[]) => void;
@@ -189,6 +332,8 @@ export default function RevisionsTable({
   onNoFacturasCountChange,
   onHistoricoCountChange,
   onPapeleraCountChange,
+  onTrashMoveActivityChange,
+  onValidationActivityChange,
   selectedId = null,
   onSelect,
   onDataLoaded,
@@ -266,6 +411,7 @@ export default function RevisionsTable({
   const prevPendingRowsCountRef = React.useRef<number | null>(null);
   const [showPendingConfetti, setShowPendingConfetti] = React.useState(false);
   const suppressedPendingIdsRef = React.useRef<Map<number, number>>(new Map());
+  const suppressedTrashActionIdsRef = React.useRef<Map<number, number>>(new Map());
   const unlockedNoFacturaIdsRef = React.useRef<Set<number>>(new Set());
   const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
   const rowElementRefs = React.useRef<Map<number, HTMLTableRowElement>>(new Map());
@@ -278,6 +424,15 @@ export default function RevisionsTable({
     null
   );
   const hydratedReviewInvoiceIdRef = React.useRef<number | null>(null);
+  const onDataLoadedRef = React.useRef(onDataLoaded);
+  const onPorRevisarCountChangeRef = React.useRef(onPorRevisarCountChange);
+  const onNoFacturasCountChangeRef = React.useRef(onNoFacturasCountChange);
+  const onHistoricoCountChangeRef = React.useRef(onHistoricoCountChange);
+  const onPapeleraCountChangeRef = React.useRef(onPapeleraCountChange);
+  const onTrashMoveActivityChangeRef = React.useRef(onTrashMoveActivityChange);
+  const onValidationActivityChangeRef = React.useRef(onValidationActivityChange);
+  const trashMoveInFlightCountRef = React.useRef(0);
+  const validationInFlightCountRef = React.useRef(0);
 
   const businessName = user?.businessName?.trim() || '';
   const empresaId = user?.empresaId != null ? Number(user.empresaId) : null;
@@ -414,6 +569,33 @@ export default function RevisionsTable({
   }, []);
 
   React.useEffect(() => {
+    onDataLoadedRef.current = onDataLoaded;
+    onPorRevisarCountChangeRef.current = onPorRevisarCountChange;
+    onNoFacturasCountChangeRef.current = onNoFacturasCountChange;
+    onHistoricoCountChangeRef.current = onHistoricoCountChange;
+    onPapeleraCountChangeRef.current = onPapeleraCountChange;
+    onTrashMoveActivityChangeRef.current = onTrashMoveActivityChange;
+    onValidationActivityChangeRef.current = onValidationActivityChange;
+  }, [
+    onDataLoaded,
+    onHistoricoCountChange,
+    onNoFacturasCountChange,
+    onPapeleraCountChange,
+    onPorRevisarCountChange,
+    onTrashMoveActivityChange,
+    onValidationActivityChange,
+  ]);
+
+  React.useEffect(() => {
+    return () => {
+      trashMoveInFlightCountRef.current = 0;
+      onTrashMoveActivityChangeRef.current?.({ inProgressCount: 0, justCompletedSuccessfully: false });
+      validationInFlightCountRef.current = 0;
+      onValidationActivityChangeRef.current?.({ inProgressCount: 0, justCompletedSuccessfully: false });
+    };
+  }, []);
+
+  React.useEffect(() => {
     if (isLoading) {
       return;
     }
@@ -424,8 +606,8 @@ export default function RevisionsTable({
 
     if (!businessName && empresaId == null) {
       setData([]);
-      onPorRevisarCountChange?.(0);
-      onNoFacturasCountChange?.(0);
+      onPorRevisarCountChangeRef.current?.(0);
+      onNoFacturasCountChangeRef.current?.(0);
       setHasLoadedRowsOnce(true);
       setIsRowsLoading(false);
       return;
@@ -520,10 +702,10 @@ export default function RevisionsTable({
 
       if (error || !rows) {
         setData([]);
-        onPorRevisarCountChange?.(pendingCountRes.count ?? 0);
-        onNoFacturasCountChange?.(0);
-        onHistoricoCountChange?.(historyCountRes.count ?? 0);
-        onPapeleraCountChange?.(trashCountRes.count ?? 0);
+        onPorRevisarCountChangeRef.current?.(pendingCountRes.count ?? 0);
+        onNoFacturasCountChangeRef.current?.(0);
+        onHistoricoCountChangeRef.current?.(historyCountRes.count ?? 0);
+        onPapeleraCountChangeRef.current?.(trashCountRes.count ?? 0);
         setHasLoadedRowsOnce(true);
         setIsRowsLoading(false);
         return;
@@ -533,10 +715,10 @@ export default function RevisionsTable({
 
       const noFacturasCount = scope === 'pending' ? typedRows.filter((r) => r.tipo === 'No Factura').length : 0;
 
-      onPorRevisarCountChange?.(pendingCountRes.count ?? 0);
-      onNoFacturasCountChange?.(noFacturasCount);
-      onHistoricoCountChange?.(historyCountRes.count ?? 0);
-      onPapeleraCountChange?.(trashCountRes.count ?? 0);
+      onPorRevisarCountChangeRef.current?.(pendingCountRes.count ?? 0);
+      onNoFacturasCountChangeRef.current?.(noFacturasCount);
+      onHistoricoCountChangeRef.current?.(historyCountRes.count ?? 0);
+      onPapeleraCountChangeRef.current?.(trashCountRes.count ?? 0);
 
       // Emit real-time count update for sidebar badge
       window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCountRes.count ?? 0 } }));
@@ -586,8 +768,21 @@ export default function RevisionsTable({
         }
       }
 
+      const now = Date.now();
+      const fetchedIds = new Set(mapped.map((row) => row.id));
+
+      suppressedTrashActionIdsRef.current.forEach((expiresAt, id) => {
+        if (expiresAt <= now || !fetchedIds.has(id)) {
+          suppressedTrashActionIdsRef.current.delete(id);
+        }
+      });
+
+      if (suppressedTrashActionIdsRef.current.size > 0) {
+        finalRows = finalRows.filter((row) => !suppressedTrashActionIdsRef.current.has(row.id));
+      }
+
       setData(finalRows);
-      onDataLoaded?.(finalRows);
+      onDataLoadedRef.current?.(finalRows);
       setHasLoadedRowsOnce(true);
       setIsRowsLoading(false);
     };
@@ -609,39 +804,65 @@ export default function RevisionsTable({
     periodRange,
     refreshKey,
     scope,
-    onDataLoaded,
-    onPorRevisarCountChange,
-    onNoFacturasCountChange,
-    onHistoricoCountChange,
-    onPapeleraCountChange,
   ]);
 
-  const refreshPendingCount = React.useCallback(async () => {
-    let pendingCountQuery = supabase
-      .from('facturas')
-      .select('id', { count: 'exact', head: true })
-      .eq('factura_validada', false)
-      .not('is_trashed', 'is', true);
+  const refreshRevisionCounts = React.useCallback(async () => {
+    const makeCountQuery = (reviewed: boolean) => {
+      let countQuery = supabase
+        .from('facturas')
+        .select('id', { count: 'exact', head: true })
+        .eq('factura_validada', reviewed)
+        .not('is_trashed', 'is', true);
+
+      if (empresaId != null) {
+        countQuery = countQuery.eq('empresa_id', empresaId);
+      } else if (businessName) {
+        countQuery = countQuery.eq('user_businessname', businessName);
+      }
+
+      if (tipoFilter !== 'all') {
+        countQuery = countQuery.eq('tipo', tipoFilter);
+      }
+
+      if (periodRange) {
+        countQuery = countQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
+      }
+
+      return countQuery;
+    };
+
+    let trashCountQuery = supabase.from('facturas').select('id', { count: 'exact', head: true }).eq('is_trashed', true);
 
     if (empresaId != null) {
-      pendingCountQuery = pendingCountQuery.eq('empresa_id', empresaId);
+      trashCountQuery = trashCountQuery.eq('empresa_id', empresaId);
     } else if (businessName) {
-      pendingCountQuery = pendingCountQuery.eq('user_businessname', businessName);
+      trashCountQuery = trashCountQuery.eq('user_businessname', businessName);
     }
 
     if (tipoFilter !== 'all') {
-      pendingCountQuery = pendingCountQuery.eq('tipo', tipoFilter);
+      trashCountQuery = trashCountQuery.eq('tipo', tipoFilter);
     }
 
     if (periodRange) {
-      pendingCountQuery = pendingCountQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
+      trashCountQuery = trashCountQuery.gte('fecha', periodRange.start).lte('fecha', periodRange.end);
     }
 
-    const pendingCountRes = await pendingCountQuery;
-    const pendingCount = pendingCountRes.count ?? 0;
-    onPorRevisarCountChange?.(pendingCount);
-    window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCount } }));
-  }, [businessName, empresaId, onPorRevisarCountChange, periodRange, tipoFilter]);
+    try {
+      const [pendingCountRes, historyCountRes, trashCountRes] = await Promise.all([
+        makeCountQuery(false),
+        makeCountQuery(true),
+        trashCountQuery,
+      ]);
+
+      const pendingCount = pendingCountRes.count ?? 0;
+      onPorRevisarCountChange?.(pendingCount);
+      onHistoricoCountChange?.(historyCountRes.count ?? 0);
+      onPapeleraCountChange?.(trashCountRes.count ?? 0);
+      window.dispatchEvent(new CustomEvent('revisions-count-updated', { detail: { pending: pendingCount } }));
+    } catch {
+      // no-op: avoid rolling back successful webhook actions if count refresh fails
+    }
+  }, [businessName, empresaId, onHistoricoCountChange, onPapeleraCountChange, onPorRevisarCountChange, periodRange, tipoFilter]);
 
   const toggleTrashState = React.useCallback(
     async (invoiceId: number, action: 'restore' | 'delete') => {
@@ -650,7 +871,15 @@ export default function RevisionsTable({
         description: 'Estamos procesando la solicitud.',
       });
 
+      let completedSuccessfully = false;
+      trashMoveInFlightCountRef.current += 1;
+      onTrashMoveActivityChangeRef.current?.({
+        inProgressCount: trashMoveInFlightCountRef.current,
+        justCompletedSuccessfully: false,
+      });
+
       let removedRow: RevisionRow | null = null;
+      suppressedTrashActionIdsRef.current.set(invoiceId, Date.now() + TRASH_RUN_TIMEOUT_MS + 15000);
       setData((prev) => {
         removedRow = prev.find((row) => row.id === invoiceId) ?? null;
         return prev.filter((row) => row.id !== invoiceId);
@@ -670,51 +899,156 @@ export default function RevisionsTable({
           throw new Error('Autenticación JWT incorrecta o inexistente.');
         }
 
+        const userUid = session.user?.id;
+        if (!userUid) {
+          throw new Error('No se pudo identificar el usuario autenticado.');
+        }
+
+        const waitForTrashRunResult = (runId: string): Promise<{ action: TrashAction } | { message: string }> =>
+          new Promise((resolve, reject) => {
+            let settled = false;
+
+            const settle = (kind: 'resolve' | 'reject', payload?: { action: TrashAction } | { message: string } | Error) => {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              window.clearTimeout(timeoutId);
+              void supabase.removeChannel(channel);
+
+              if (kind === 'resolve' && payload && !(payload instanceof Error)) {
+                resolve(payload);
+                return;
+              }
+
+              reject(payload instanceof Error ? payload : new Error('No se pudo completar la acción.'));
+            };
+
+            const timeoutId = window.setTimeout(() => {
+              settle('reject', new Error('Tiempo de espera agotado al esperar la confirmación de papelera.'));
+            }, TRASH_RUN_TIMEOUT_MS);
+
+            const channel = supabase
+              .channel(`trash_scan_run_${runId}`)
+              .on(
+                'postgres_changes',
+                {
+                  event: '*',
+                  schema: 'public',
+                  table: 'scan_runs',
+                  filter: `id=eq.${runId}`,
+                },
+                (eventPayload: { new?: unknown }) => {
+                  const row = (eventPayload.new as TrashScanRunRealtimeRow | null) ?? null;
+                  if (!row) {
+                    return;
+                  }
+
+                  const rowRunId = row.id != null ? String(row.id) : null;
+                  const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+                  if (rowRunId !== runId || (rowUserUid && rowUserUid !== userUid)) {
+                    return;
+                  }
+
+                  const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+                  if (status !== 'success' && status !== 'error') {
+                    return;
+                  }
+
+                  const details = parseTrashRealtimeErrorPayload(row.message);
+
+                  if (status === 'success') {
+                    const resolvedAction = resolveTrashAction(details?.action) ?? (action === 'restore' ? 'restored' : 'moved_to_trash');
+                    settle('resolve', { action: resolvedAction });
+                    return;
+                  }
+
+                  const message =
+                    resolveTrashErrorMessage(details?.message) ??
+                    'No se pudo completar la acción.';
+                  settle('resolve', { message });
+                }
+              )
+              .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR', err?: Error) => {
+                if (status === 'SUBSCRIBED') {
+                  return;
+                }
+
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                  settle('reject', err ?? new Error(`Estado realtime inesperado: ${status}`));
+                }
+              });
+          });
+
         const response = await fetch(TOGGLE_TRASH_WEBHOOK_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ factura_id: invoiceId }),
+          body: JSON.stringify({
+            factura_id: invoiceId,
+            user_uid: userUid,
+          }),
         });
 
-        const payload = (await response.json().catch(() => null)) as
-          | {
-              success?: boolean;
-              error?: string;
-              message?: string;
-              action?: 'restored' | 'moved_to_trash' | string;
-            }
-          | null;
+        const rawResponse = (await response.text().catch(() => '')).trim();
+        const parsedResponse = parseJsonSafely(rawResponse);
+        const normalizedResponse =
+          typeof parsedResponse === 'string' ? parseJsonSafely(parsedResponse.trim()) : parsedResponse;
+        const responsePayload =
+          normalizedResponse && typeof normalizedResponse === 'object'
+            ? (normalizedResponse as TrashWebhookStartResponse)
+            : null;
 
         if (!response.ok) {
-          throw new Error(payload?.message || 'No se pudo completar la acción.');
+          const message =
+            resolveTrashErrorMessage((responsePayload as { message?: unknown } | null)?.message) ??
+            'No se pudo completar la acción.';
+          throw new Error(message);
         }
 
-        if (payload?.success === false) {
-          throw new Error(payload.message || 'No se pudo completar la acción.');
+        const runId =
+          typeof responsePayload?.run_id === 'string' && responsePayload.run_id.trim().length > 0
+            ? responsePayload.run_id.trim()
+            : null;
+        if (!runId) {
+          throw new Error(`El webhook no devolvió run_id válido. ${SUPPORT_CONTACT_HINT}`);
         }
 
-        const wasRestored = payload?.action === 'restored' || action === 'restore';
+        const runResult = await waitForTrashRunResult(runId);
+        if ('message' in runResult) {
+          throw new Error(runResult.message);
+        }
+
+        const wasRestored = runResult.action === 'restored';
+        await refreshRevisionCounts();
         toast({
           title: wasRestored ? 'Factura restaurada' : 'Factura eliminada',
           description: wasRestored
             ? 'La factura se ha restaurado correctamente.'
             : 'La factura se ha enviado correctamente a la papelera.',
           className: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+          duration: 2500,
         });
-
-        void refreshPendingCount();
+        completedSuccessfully = true;
       } catch (error) {
+        suppressedTrashActionIdsRef.current.delete(invoiceId);
         if (removedRow) {
           setData((prev) => (prev.some((row) => row.id === removedRow!.id) ? prev : [removedRow!, ...prev]));
         }
 
         throw error;
+      } finally {
+        const nextInProgressCount = Math.max(0, trashMoveInFlightCountRef.current - 1);
+        trashMoveInFlightCountRef.current = nextInProgressCount;
+        onTrashMoveActivityChangeRef.current?.({
+          inProgressCount: nextInProgressCount,
+          justCompletedSuccessfully: completedSuccessfully && nextInProgressCount === 0,
+        });
       }
     },
-    [refreshPendingCount, selectedId, toast]
+    [refreshRevisionCounts, selectedId, toast]
   );
 
   const handleRestoreInvoice = React.useCallback(
@@ -738,7 +1072,8 @@ export default function RevisionsTable({
       return;
     }
 
-    const { invoiceId, action } = trashConfirmAction;
+    const currentTrashConfirmAction = trashConfirmAction;
+    const { invoiceId, action } = currentTrashConfirmAction;
     setIsTrashConfirmOpen(false);
 
     try {
@@ -750,7 +1085,7 @@ export default function RevisionsTable({
         variant: 'destructive',
       });
     } finally {
-      setTrashConfirmAction(null);
+      setTrashConfirmAction((prev) => (prev === currentTrashConfirmAction ? null : prev));
     }
   }, [toggleTrashState, toast, trashConfirmAction]);
 
@@ -802,6 +1137,8 @@ export default function RevisionsTable({
 
     const previousRows = data;
     setIsSaving(true);
+    let validationActivityTracked = false;
+    let completedSuccessfully = false;
     try {
       const numero = String(reviewForm.numero ?? '').trim();
       const fecha = String(reviewForm.fecha ?? '').trim();
@@ -874,6 +1211,104 @@ export default function RevisionsTable({
         setData((prev) => prev.map((row) => (row.id === selected.id ? optimisticRow : row)));
       }
 
+      validationInFlightCountRef.current += 1;
+      validationActivityTracked = true;
+      onValidationActivityChangeRef.current?.({
+        inProgressCount: validationInFlightCountRef.current,
+        justCompletedSuccessfully: false,
+      });
+
+      const waitForValidationRunResult = (
+        runId: string,
+        userUid: string | null,
+        invoiceId: number,
+        fallbackAction: ValidationAction
+      ): Promise<{ action: ValidationAction } | { message: string }> =>
+        new Promise((resolve, reject) => {
+          let settled = false;
+
+          const settle = (kind: 'resolve' | 'reject', payload?: { action: ValidationAction } | { message: string } | Error) => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            window.clearTimeout(timeoutId);
+            void supabase.removeChannel(channel);
+
+            if (kind === 'resolve' && payload && !(payload instanceof Error)) {
+              resolve(payload);
+              return;
+            }
+
+            reject(
+              payload instanceof Error
+                ? payload
+                : new Error(`No se pudo completar la validación. ${SUPPORT_CONTACT_HINT}`)
+            );
+          };
+
+          const timeoutId = window.setTimeout(() => {
+            settle('reject', new Error('Tiempo de espera agotado al esperar la confirmación de validación.'));
+          }, VALIDATION_RUN_TIMEOUT_MS);
+
+          const channel = supabase
+            .channel(`validation_scan_run_${runId}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'scan_runs',
+                filter: `id=eq.${runId}`,
+              },
+              (eventPayload: { new?: unknown }) => {
+                const row = (eventPayload.new as TrashScanRunRealtimeRow | null) ?? null;
+                if (!row) {
+                  return;
+                }
+
+                const rowRunId = row.id != null ? String(row.id) : null;
+                const rowUserUid = typeof row.user_uid === 'string' ? row.user_uid : null;
+                if (rowRunId !== runId || (rowUserUid && userUid && rowUserUid !== userUid)) {
+                  return;
+                }
+
+                const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+                if (status !== 'success' && status !== 'error') {
+                  return;
+                }
+
+                const details = parseValidationRealtimePayload(row.message);
+                const resolvedFacturaId = resolveValidationInvoiceId(details?.factura_id);
+                if (resolvedFacturaId != null && resolvedFacturaId !== invoiceId) {
+                  return;
+                }
+
+                if (status === 'success') {
+                  const resolvedAction = resolveValidationAction(details?.action) ?? fallbackAction;
+                  settle('resolve', { action: resolvedAction });
+                  return;
+                }
+
+                const message =
+                  resolveValidationErrorMessage(details?.message) ??
+                  resolveValidationErrorMessage(details?.error) ??
+                  `No se pudo completar la validación. ${SUPPORT_CONTACT_HINT}`;
+
+                settle('resolve', { message });
+              }
+            )
+            .subscribe((status: 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR', err?: Error) => {
+              if (status === 'SUBSCRIBED') {
+                return;
+              }
+
+              if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                settle('reject', err ?? new Error(`Estado realtime inesperado: ${status}`));
+              }
+            });
+        });
+
       const webhookPayload = {
         user_uid: user?.id ?? null,
         empresa_id: empresaId,
@@ -906,7 +1341,7 @@ export default function RevisionsTable({
         },
       };
 
-      const webhookRes = await fetch('https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura', {
+      const webhookRes = await fetch(VALIDATION_WEBHOOK_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -914,17 +1349,50 @@ export default function RevisionsTable({
         body: JSON.stringify(webhookPayload),
       });
 
+      const rawResponse = (await webhookRes.text().catch(() => '')).trim();
+      const parsedResponse = parseJsonSafely(rawResponse);
+      const normalizedResponse =
+        typeof parsedResponse === 'string' ? parseJsonSafely(parsedResponse.trim()) : parsedResponse;
+      const responsePayload =
+        normalizedResponse && typeof normalizedResponse === 'object'
+          ? (normalizedResponse as ValidationWebhookStartResponse)
+          : null;
+
       if (!webhookRes.ok) {
-        const text = await webhookRes.text().catch(() => '');
-        throw new Error(text || `Webhook error (${webhookRes.status})`);
+        throw new Error(`No se pudo iniciar la validación (${webhookRes.status}). ${SUPPORT_CONTACT_HINT}`);
       }
 
-      void refreshPendingCount();
+      const runId =
+        typeof responsePayload?.run_id === 'string' && responsePayload.run_id.trim().length > 0
+          ? responsePayload.run_id.trim()
+          : null;
+      if (!runId) {
+        throw new Error(`El webhook no devolvió run_id válido. ${SUPPORT_CONTACT_HINT}`);
+      }
+
+      const runUserUid =
+        typeof responsePayload?.user_uid === 'string' && responsePayload.user_uid.trim().length > 0
+          ? responsePayload.user_uid.trim()
+          : user?.id ?? null;
+
+      const fallbackAction: ValidationAction = scope === 'pending' ? 'validation_moved' : 'validation_not_moving';
+      const runResult = await waitForValidationRunResult(runId, runUserUid, selected.id, fallbackAction);
+      if ('message' in runResult) {
+        throw new Error(runResult.message);
+      }
+
+      void refreshRevisionCounts();
 
       toast({
-        title: 'Enviado',
-        description: 'La validación se ha guardado correctamente.',
+        title: runResult.action === 'validation_moved' ? 'Factura validada' : 'Validación actualizada',
+        description:
+          runResult.action === 'validation_moved'
+            ? 'La factura se ha validado y movido correctamente.'
+            : 'La validación se ha guardado correctamente.',
+        className: 'border-emerald-200 bg-emerald-50 text-emerald-950',
+        duration: 2500,
       });
+      completedSuccessfully = true;
     } catch (error) {
       if (scope === 'pending') {
         suppressedPendingIdsRef.current.delete(selected.id);
@@ -936,10 +1404,22 @@ export default function RevisionsTable({
       console.error('Error validando factura (supabase)', error);
       toast({
         title: 'No se pudo validar la factura',
-        description: error instanceof Error ? error.message : 'Inténtalo de nuevo. Si el problema persiste, contacta con soporte en hola@clerio.es',
+        description:
+          error instanceof Error
+            ? error.message
+            : `Inténtalo de nuevo. Si el problema persiste, ${SUPPORT_CONTACT_HINT}`,
         variant: 'destructive',
       });
     } finally {
+      if (validationActivityTracked) {
+        const nextInProgressCount = Math.max(0, validationInFlightCountRef.current - 1);
+        validationInFlightCountRef.current = nextInProgressCount;
+        onValidationActivityChangeRef.current?.({
+          inProgressCount: nextInProgressCount,
+          justCompletedSuccessfully: completedSuccessfully && nextInProgressCount === 0,
+        });
+      }
+
       setIsSaving(false);
       setValidateConfirmStep(0);
       if (validateConfirmTimeoutRef.current) {
@@ -1978,7 +2458,7 @@ export default function RevisionsTable({
       )}
 
       <Dialog
-        open={isTrashConfirmOpen}
+        open={isTrashConfirmOpen && trashConfirmAction != null}
         onOpenChange={(open) => {
           setIsTrashConfirmOpen(open);
           if (!open) {

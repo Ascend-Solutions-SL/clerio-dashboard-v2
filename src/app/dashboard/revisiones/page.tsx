@@ -1,7 +1,7 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Clock, Download, Trash2 } from 'lucide-react';
+import React, { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Check, CheckCircle2, Clock, Download, RefreshCw, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import RevisionsTable from '@/components/RevisionsTable';
 import { Button } from '@/components/ui/button';
@@ -16,6 +16,16 @@ const RevisionesPageContent = () => {
   const [historicoCount, setHistoricoCount] = useState<number>(0);
   const [papeleraCount, setPapeleraCount] = useState<number>(0);
   const [scope, setScope] = useState<'pending' | 'history' | 'trash'>('pending');
+  const [trashMoveInProgressCount, setTrashMoveInProgressCount] = useState(0);
+  const [validationInProgressCount, setValidationInProgressCount] = useState(0);
+  const [showTrashMoveSuccessState, setShowTrashMoveSuccessState] = useState(false);
+  const [isTrashMoveStatusVisible, setIsTrashMoveStatusVisible] = useState(true);
+  const [displayedTrashMoveStatus, setDisplayedTrashMoveStatus] = useState<{ text: string; tone: 'neutral' | 'success' }>({
+    text: 'Sincronizado',
+    tone: 'neutral',
+  });
+  const trashMoveSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trashMoveStatusSwapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [selectedRow, setSelectedRow] = useState<{
@@ -43,6 +53,35 @@ const RevisionesPageContent = () => {
         driveFileId: row.driveFileId,
         driveType: row.driveType,
       });
+    },
+    []
+  );
+
+  const handleValidationActivityChange = useCallback(
+    (payload: { inProgressCount: number; justCompletedSuccessfully: boolean }) => {
+      setValidationInProgressCount(payload.inProgressCount);
+
+      if (payload.inProgressCount > 0) {
+        if (trashMoveSuccessTimeoutRef.current) {
+          clearTimeout(trashMoveSuccessTimeoutRef.current);
+          trashMoveSuccessTimeoutRef.current = null;
+        }
+        setShowTrashMoveSuccessState(false);
+        return;
+      }
+
+      if (!payload.justCompletedSuccessfully) {
+        return;
+      }
+
+      setShowTrashMoveSuccessState(true);
+      if (trashMoveSuccessTimeoutRef.current) {
+        clearTimeout(trashMoveSuccessTimeoutRef.current);
+      }
+      trashMoveSuccessTimeoutRef.current = setTimeout(() => {
+        setShowTrashMoveSuccessState(false);
+        trashMoveSuccessTimeoutRef.current = null;
+      }, 2400);
     },
     []
   );
@@ -105,6 +144,88 @@ const RevisionesPageContent = () => {
     setEmbedUrl(null);
     setIsPreviewLoading(false);
   };
+
+  const handleTrashMoveActivityChange = useCallback(
+    (payload: { inProgressCount: number; justCompletedSuccessfully: boolean }) => {
+      setTrashMoveInProgressCount(payload.inProgressCount);
+
+      if (payload.inProgressCount > 0) {
+        if (trashMoveSuccessTimeoutRef.current) {
+          clearTimeout(trashMoveSuccessTimeoutRef.current);
+          trashMoveSuccessTimeoutRef.current = null;
+        }
+        setShowTrashMoveSuccessState(false);
+        return;
+      }
+
+      if (!payload.justCompletedSuccessfully) {
+        return;
+      }
+
+      setShowTrashMoveSuccessState(true);
+      if (trashMoveSuccessTimeoutRef.current) {
+        clearTimeout(trashMoveSuccessTimeoutRef.current);
+      }
+      trashMoveSuccessTimeoutRef.current = setTimeout(() => {
+        setShowTrashMoveSuccessState(false);
+        trashMoveSuccessTimeoutRef.current = null;
+      }, 2400);
+    },
+    []
+  );
+
+  useEffect(() => {
+    return () => {
+      if (trashMoveSuccessTimeoutRef.current) {
+        clearTimeout(trashMoveSuccessTimeoutRef.current);
+        trashMoveSuccessTimeoutRef.current = null;
+      }
+      if (trashMoveStatusSwapTimerRef.current) {
+        clearTimeout(trashMoveStatusSwapTimerRef.current);
+        trashMoveStatusSwapTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const isTrashMoveInProgress = trashMoveInProgressCount > 0 || validationInProgressCount > 0;
+  const targetTrashMoveStatus = isTrashMoveInProgress
+    ? ({ text: 'Procesando cambios', tone: 'neutral' } as const)
+    : showTrashMoveSuccessState
+      ? ({ text: 'Sincronizado', tone: 'success' } as const)
+      : ({ text: 'Sincronizado', tone: 'neutral' } as const);
+
+  const trashMoveStatusToneClass = displayedTrashMoveStatus.tone === 'success' ? 'text-emerald-700' : 'text-gray-500';
+
+  useLayoutEffect(() => {
+    if (
+      displayedTrashMoveStatus.text === targetTrashMoveStatus.text &&
+      displayedTrashMoveStatus.tone === targetTrashMoveStatus.tone
+    ) {
+      return;
+    }
+
+    if (displayedTrashMoveStatus.text === targetTrashMoveStatus.text) {
+      if (trashMoveStatusSwapTimerRef.current) {
+        clearTimeout(trashMoveStatusSwapTimerRef.current);
+        trashMoveStatusSwapTimerRef.current = null;
+      }
+      setDisplayedTrashMoveStatus(targetTrashMoveStatus);
+      setIsTrashMoveStatusVisible(true);
+      return;
+    }
+
+    setIsTrashMoveStatusVisible(false);
+
+    if (trashMoveStatusSwapTimerRef.current) {
+      clearTimeout(trashMoveStatusSwapTimerRef.current);
+    }
+
+    trashMoveStatusSwapTimerRef.current = setTimeout(() => {
+      setDisplayedTrashMoveStatus(targetTrashMoveStatus);
+      setIsTrashMoveStatusVisible(true);
+      trashMoveStatusSwapTimerRef.current = null;
+    }, 150);
+  }, [displayedTrashMoveStatus.text, displayedTrashMoveStatus.tone, targetTrashMoveStatus]);
 
   useEffect(() => {
     const invoiceIdParam = searchParams.get('invoiceId');
@@ -187,7 +308,7 @@ const RevisionesPageContent = () => {
             <div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="lg:col-span-1">
-                  <div className="flex flex-col md:flex-row md:justify-start gap-3 md:gap-4 mb-3">
+                  <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                     <button
                       type="button"
                       className={`w-full md:w-[175px] rounded-xl border px-3 py-2 text-left transition-colors ${
@@ -247,12 +368,32 @@ const RevisionesPageContent = () => {
                         </div>
                       </div>
                     </button>
+
+                    <div className="flex items-center gap-1.5 text-sm text-gray-500 md:pl-1">
+                      <div aria-live="polite" className="flex min-h-[20px] items-center gap-1.5 overflow-hidden">
+                        <span
+                          className={`block transform-gpu transition-all duration-300 ${isTrashMoveStatusVisible ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'} ${trashMoveStatusToneClass}`}
+                        >
+                          {displayedTrashMoveStatus.text}
+                        </span>
+                        {isTrashMoveInProgress ? (
+                          <RefreshCw className="h-4 w-4 animate-spin text-slate-900" />
+                        ) : showTrashMoveSuccessState ? (
+                          <span className="inline-flex h-4 w-4 items-center justify-center rounded-[5px] bg-emerald-500 text-white">
+                            <Check className="h-3 w-3" />
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                   <div style={{ height: VALIDATION_TABLE_HEIGHT }}>
                     <RevisionsTable
+                      key={scope}
                       onPorRevisarCountChange={setPorRevisarCount}
                       onHistoricoCountChange={setHistoricoCount}
                       onPapeleraCountChange={setPapeleraCount}
+                      onTrashMoveActivityChange={handleTrashMoveActivityChange}
+                      onValidationActivityChange={handleValidationActivityChange}
                       scope={scope}
                       selectedId={selectedId}
                       onSelect={handleRevisionSelect}
