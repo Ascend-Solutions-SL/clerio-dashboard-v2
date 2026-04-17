@@ -37,6 +37,7 @@ const TOGGLE_TRASH_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhoo
 const VALIDATION_WEBHOOK_URL = 'https://v-ascendsolutions.app.n8n.cloud/webhook/validacion-factura';
 const TRASH_RUN_TIMEOUT_MS = 2 * 60 * 1000;
 const VALIDATION_RUN_TIMEOUT_MS = 2 * 60 * 1000;
+// Generic fallback message for startup/realtime failures.
 const SUPPORT_CONTACT_HINT = 'Contacte con soporte (hola@clerio.es).';
 
 type TrashAction = 'restored' | 'moved_to_trash';
