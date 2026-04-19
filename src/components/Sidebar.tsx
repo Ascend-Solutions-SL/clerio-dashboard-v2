@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useDashboardSession } from '@/context/dashboard-session-context';
-import { Link as LinkIcon, LogOut, Settings } from 'lucide-react';
+import { Link as LinkIcon, LogOut, MessageSquareText, Settings } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { supabase } from '@/lib/supabase';
 
@@ -205,6 +205,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, setOpen }) => {
           })()
         ))}
       </nav>
+
+      <Link
+        href="/dashboard/feedback"
+        className="group relative mx-0 my-1 grid grid-cols-[36px_minmax(0,1fr)] items-center rounded-none px-4"
+      >
+        <div
+          className={`pointer-events-none absolute inset-0 transition-colors ${
+            pathname === '/dashboard/feedback' || pathname.startsWith('/dashboard/feedback/')
+              ? 'bg-blue-700'
+              : 'bg-transparent group-hover:bg-blue-700'
+          }`}
+        />
+
+        <div className="relative z-10 flex h-11 items-center justify-center">
+          <MessageSquareText size={18} />
+        </div>
+        <span
+          className={`relative z-10 whitespace-nowrap pr-2.5 transition-opacity duration-200 ${
+            isOpen ? 'opacity-100 text-sm' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {isOpen ? 'Feedback' : null}
+        </span>
+        {!isOpen ? <span className="sr-only">Feedback</span> : null}
+      </Link>
 
       <Link
         href="/dashboard/settings"

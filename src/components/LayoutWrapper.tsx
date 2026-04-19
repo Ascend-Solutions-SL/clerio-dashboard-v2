@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import MasterSidebar from './MasterSidebar';
 import { useDashboardSession } from '@/context/dashboard-session-context';
+import { FeedbackFloatingLauncher } from '@/features/feedback/FeedbackFloatingLauncher';
 
 interface LayoutWrapperProps {
   children: React.ReactNode;
@@ -75,6 +76,7 @@ const LayoutWrapper: React.FC<LayoutWrapperProps> = ({ children }) => {
           >
             {children}
           </main>
+          <FeedbackFloatingLauncher />
           {isSessionExpired ? (
             <div className="absolute inset-0 z-50 flex items-center justify-center p-6">
               <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/96 p-6 text-center shadow-[0_25px_70px_rgba(15,23,42,0.2)] backdrop-blur-sm">
@@ -118,6 +120,7 @@ const LayoutWrapper: React.FC<LayoutWrapperProps> = ({ children }) => {
             <div className={`min-h-full ${dashboardScaleClass}`}>{children}</div>
           </main>
         )}
+        <FeedbackFloatingLauncher />
         {isSessionExpired ? (
           <div className="absolute inset-0 z-50 flex items-center justify-center p-6">
             <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/96 p-6 text-center shadow-[0_25px_70px_rgba(15,23,42,0.2)] backdrop-blur-sm">
