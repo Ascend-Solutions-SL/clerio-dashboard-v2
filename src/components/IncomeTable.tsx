@@ -212,6 +212,7 @@ const SortIndicator = ({ state }: { state: false | 'asc' | 'desc' }) => (
 interface IncomeTableProps {
   onTotalIncomeChange?: (total: number) => void;
   onInvoiceCountChange?: (count: number) => void;
+  onInvoiceTrashedOptimistic?: (payload: { invoiceId: number; amount: number }) => void;
   onDateRangeChange?: (range: DateRangeValue) => void;
   initialDateRange?: DateRangeValue;
   refreshKey?: number;
@@ -479,6 +480,7 @@ export const columns: ColumnDef<Income>[] = [
 export function IncomeTable({
   onTotalIncomeChange,
   onInvoiceCountChange,
+  onInvoiceTrashedOptimistic,
   onDateRangeChange,
   initialDateRange,
   refreshKey = 0,
@@ -1029,6 +1031,13 @@ export function IncomeTable({
           row={drawerRow}
           onClose={() => setDrawerRow(null)}
           onInvoiceTrashed={(invoiceId) => {
+            const removedInvoice = sourceData.find((item) => item.id === invoiceId);
+            if (removedInvoice) {
+              onInvoiceTrashedOptimistic?.({
+                invoiceId,
+                amount: Math.max(0, Number(removedInvoice.totalValue) || 0),
+              });
+            }
             setSourceData((prev) => prev.filter((item) => item.id !== invoiceId));
           }}
         />

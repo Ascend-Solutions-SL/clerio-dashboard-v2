@@ -123,6 +123,26 @@ const GastosPage = () => {
     });
   }, []);
 
+  const handleRealtimeProgressUpdate = React.useCallback(() => {
+    setTableRefreshKey((prev) => prev + 1);
+  }, []);
+
+  const handleInvoiceTrashedOptimistic = React.useCallback((payload: { invoiceId: number; amount: number }) => {
+    const nextAmount = Math.max(0, payload.amount);
+
+    setInvoiceCount((prev) => {
+      const nextCount = Math.max(0, prev - 1);
+      const cached = gastosCardsCache.get(cardsCacheKey);
+      gastosCardsCache.set(cardsCacheKey, {
+        total: cached ? Math.max(0, cached.total - nextAmount) : Math.max(0, totalExpenses - nextAmount),
+        count: cached ? Math.max(0, cached.count - 1) : nextCount,
+      });
+      return nextCount;
+    });
+
+    setTotalExpenses((prev) => Math.max(0, prev - nextAmount));
+  }, [cardsCacheKey, totalExpenses]);
+
   React.useEffect(() => {
     const storedRange = getSharedDashboardDateRangeFromStorage();
     setDateRange((prev) =>
@@ -167,7 +187,8 @@ const GastosPage = () => {
           .from('facturas')
           .select('id', { count: 'exact', head: true })
           .eq('empresa_id', empresaId)
-          .eq('tipo', 'Gastos');
+          .eq('tipo', 'Gastos')
+          .eq('is_trashed', false);
 
         if (dateRange.startDate && dateRange.endDate) {
           countQuery = countQuery.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
@@ -185,6 +206,7 @@ const GastosPage = () => {
             .select('importe_total')
             .eq('empresa_id', empresaId)
             .eq('tipo', 'Gastos')
+            .eq('is_trashed', false)
             .range(from, from + chunk - 1);
 
           if (dateRange.startDate && dateRange.endDate) {
@@ -299,7 +321,7 @@ const GastosPage = () => {
                 className={`md:w-[250px] ${getExpensesFontSize(totalExpenses)}`}
               />
               <StatCard
-                title="Facturas procesadas"
+                title="Facturas"
                 value={cardsLoading ? '—' : invoiceCount.toString()}
                 Icon={FileText}
                 size="compact"
@@ -331,7 +353,10 @@ const GastosPage = () => {
 
             <div>
               <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
-                <InvoiceScanControls onScanned={() => setTableRefreshKey((prev) => prev + 1)} />
+                <InvoiceScanControls
+                  onScanned={() => setTableRefreshKey((prev) => prev + 1)}
+                  onProgressUpdate={handleRealtimeProgressUpdate}
+                />
                 <div className="flex justify-end">
                   <InvoiceUploadDialog type="Gastos" onCreated={() => setTableRefreshKey((prev) => prev + 1)} />
                 </div>
@@ -342,6 +367,7 @@ const GastosPage = () => {
                 processedInvoiceCountReady={!cardsLoading}
                 initialDateRange={dateRange}
                 onDateRangeChange={handleDateRangeChange}
+                onInvoiceTrashedOptimistic={handleInvoiceTrashedOptimistic}
               />
             </div>
           </div>

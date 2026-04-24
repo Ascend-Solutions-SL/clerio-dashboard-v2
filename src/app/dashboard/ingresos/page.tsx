@@ -133,6 +133,22 @@ const IngresosPage = () => {
     setTableRefreshKey((prev) => prev + 1);
   }, []);
 
+  const handleInvoiceTrashedOptimistic = React.useCallback((payload: { invoiceId: number; amount: number }) => {
+    const nextAmount = Math.max(0, payload.amount);
+
+    setInvoiceCount((prev) => {
+      const nextCount = Math.max(0, prev - 1);
+      const cached = ingresosCardsCache.get(cardsCacheKey);
+      ingresosCardsCache.set(cardsCacheKey, {
+        total: cached ? Math.max(0, cached.total - nextAmount) : Math.max(0, totalIncome - nextAmount),
+        count: cached ? Math.max(0, cached.count - 1) : nextCount,
+      });
+      return nextCount;
+    });
+
+    setTotalIncome((prev) => Math.max(0, prev - nextAmount));
+  }, [cardsCacheKey, totalIncome]);
+
   React.useEffect(() => {
     const storedRange = getSharedDashboardDateRangeFromStorage();
     setDateRange((prev) =>
@@ -177,7 +193,8 @@ const IngresosPage = () => {
           .from('facturas')
           .select('id', { count: 'exact', head: true })
           .eq('empresa_id', empresaId)
-          .eq('tipo', 'Ingresos');
+          .eq('tipo', 'Ingresos')
+          .eq('is_trashed', false);
 
         if (dateRange.startDate && dateRange.endDate) {
           countQuery = countQuery.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
@@ -195,6 +212,7 @@ const IngresosPage = () => {
             .select('importe_total')
             .eq('empresa_id', empresaId)
             .eq('tipo', 'Ingresos')
+            .eq('is_trashed', false)
             .range(from, from + chunk - 1);
 
           if (dateRange.startDate && dateRange.endDate) {
@@ -367,7 +385,7 @@ const IngresosPage = () => {
                 className={`md:w-[250px] ${getIncomeFontSize(totalIncome)}`}
               />
               <StatCard
-                title="Facturas procesadas"
+                title="Facturas"
                 value={cardsLoading ? '—' : invoiceCount.toString()}
                 Icon={FileText}
                 size="compact"
@@ -424,6 +442,7 @@ const IngresosPage = () => {
                 processedInvoiceCountReady={!cardsLoading}
                 initialDateRange={dateRange}
                 onDateRangeChange={handleDateRangeChange}
+                onInvoiceTrashedOptimistic={handleInvoiceTrashedOptimistic}
               />
             </div>
           </div>

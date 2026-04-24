@@ -166,7 +166,8 @@ export default function DashboardHome() {
             .from('facturas')
             .select('id', { count: 'exact', head: true })
             .eq('empresa_id', empresaId)
-            .eq('tipo', tipo);
+            .eq('tipo', tipo)
+            .eq('is_trashed', false);
           if (hasDateFilter) {
             q = q.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
           }
@@ -186,7 +187,8 @@ export default function DashboardHome() {
             .from('facturas')
             .select('id', { count: 'exact', head: true })
             .eq('empresa_id', empresaId)
-            .eq('tipo', tipo);
+            .eq('tipo', tipo)
+            .eq('is_trashed', false);
 
           if (hasDateFilter) {
             countQuery = countQuery.gte('fecha', dateRange.startDate).lte('fecha', dateRange.endDate);
@@ -207,6 +209,7 @@ export default function DashboardHome() {
               .select('importe_total')
               .eq('empresa_id', empresaId)
               .eq('tipo', tipo)
+              .eq('is_trashed', false)
               .range(from, from + chunk - 1);
 
             if (hasDateFilter) {
@@ -283,7 +286,7 @@ export default function DashboardHome() {
 
             <div className="flex flex-col md:flex-row md:justify-between gap-4 md:gap-6">
             <StatCard
-              title="Facturas Procesadas"
+              title="Facturas"
               value={shouldShowCardsPlaceholder ? '—' : totalInvoices.toString()}
               Icon={FileText}
               size="compact"

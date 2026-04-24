@@ -2142,8 +2142,31 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
     }
 
     if (lastPrimaryRunForProcessedStepsRef.current !== runId) {
-      processedPrimaryStepEventKeysRef.current.clear();
+      const rows = getBufferedScanStepsForRun(runId);
+      const hydratedKeys = new Set<string>();
+      rows.forEach((row) => {
+        const key = getScanStepEventKey(row);
+        if (key) {
+          hydratedKeys.add(key);
+        }
+      });
+
+      processedPrimaryStepEventKeysRef.current = hydratedKeys;
       lastPrimaryRunForProcessedStepsRef.current = runId;
+
+      const latestRow = getLatestBufferedNonCredentialStepForRun(runId);
+      if (latestRow) {
+        const latestKey = getScanStepEventKey(latestRow);
+        if (latestKey) {
+          processedPrimaryStepEventKeysRef.current.delete(latestKey);
+          const wasHandled = processPrimaryStepRow(latestRow as ScanStepRealtimeRow);
+          if (wasHandled) {
+            processedPrimaryStepEventKeysRef.current.add(latestKey);
+          }
+        }
+      }
+
+      return;
     }
 
     const rows = getBufferedScanStepsForRun(runId);
@@ -2158,7 +2181,14 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
         processedPrimaryStepEventKeysRef.current.add(key);
       }
     });
-  }, [activeScanRunId, getBufferedScanStepsForRun, isScanInProgress, processPrimaryStepRow, scanStepsVersion]);
+  }, [
+    activeScanRunId,
+    getBufferedScanStepsForRun,
+    getLatestBufferedNonCredentialStepForRun,
+    isScanInProgress,
+    processPrimaryStepRow,
+    scanStepsVersion,
+  ]);
 
   React.useEffect(() => {
     if (isScanInProgress || isHoldedScanInProgress) {
@@ -2245,8 +2275,31 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
     }
 
     if (lastHoldedRunForProcessedStepsRef.current !== runId) {
-      processedHoldedStepEventKeysRef.current.clear();
+      const rows = getBufferedScanStepsForRun(runId);
+      const hydratedKeys = new Set<string>();
+      rows.forEach((row) => {
+        const key = getScanStepEventKey(row);
+        if (key) {
+          hydratedKeys.add(key);
+        }
+      });
+
+      processedHoldedStepEventKeysRef.current = hydratedKeys;
       lastHoldedRunForProcessedStepsRef.current = runId;
+
+      const latestRow = getLatestBufferedNonCredentialStepForRun(runId);
+      if (latestRow) {
+        const latestKey = getScanStepEventKey(latestRow);
+        if (latestKey) {
+          processedHoldedStepEventKeysRef.current.delete(latestKey);
+          const wasHandled = processHoldedStepRow(latestRow as ScanStepRealtimeRow);
+          if (wasHandled) {
+            processedHoldedStepEventKeysRef.current.add(latestKey);
+          }
+        }
+      }
+
+      return;
     }
 
     const rows = getBufferedScanStepsForRun(runId);
@@ -2264,6 +2317,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
   }, [
     activeHoldedScanRunId,
     getBufferedScanStepsForRun,
+    getLatestBufferedNonCredentialStepForRun,
     isHoldedScanInProgress,
     processHoldedStepRow,
     scanStepsVersion,
@@ -2695,6 +2749,96 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
     }
   };
 
+  const bufferedScanStatusText = (() => {
+    const resolvePrimaryBufferedText = (row: ScanStepRealtimeRow | null): string | null => {
+      if (!row) {
+        return null;
+      }
+
+      const step = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+      const provider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
+      const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+
+      if (step === 'scrapper' && (provider === 'gmail' || provider === 'outlook') && status === 'processing') {
+        return 'Escaneando e-mail...';
+      }
+
+      if (step === 'scanning_cloud' && status === 'processing') {
+        return 'Escaneando nube...';
+      }
+
+      if (step === 'invoice_processing') {
+        const total = toNonNegativeInteger(row.progress_total);
+        const current = toNonNegativeInteger(row.progress_current);
+
+        if (total === 0 && current === 0) {
+          return 'No hay archivos por procesar';
+        }
+
+        if (typeof total === 'number' && total > 0 && current === 0) {
+          return `Se han encontrado ${total} documentos`;
+        }
+
+        if (typeof total === 'number' && total > 0 && typeof current === 'number' && current > 0) {
+          return `Escaneando factura ${Math.min(current, total)} de ${total}...`;
+        }
+      }
+
+      return null;
+    };
+
+    const resolveHoldedBufferedText = (row: ScanStepRealtimeRow | null): string | null => {
+      if (!row) {
+        return null;
+      }
+
+      const step = typeof row.step === 'string' ? row.step.trim().toLowerCase() : '';
+      const provider = typeof row.provider === 'string' ? row.provider.trim().toLowerCase() : '';
+      const status = typeof row.status === 'string' ? row.status.trim().toLowerCase() : '';
+
+      if (step === 'scrapper' && provider === 'holded' && status === 'processing') {
+        return 'Conectando con Holded...';
+      }
+
+      if (step === 'invoice_processing' && provider === 'holded') {
+        const total = toNonNegativeInteger(row.progress_total);
+        const current = toNonNegativeInteger(row.progress_current);
+
+        if (typeof total === 'number' && total > 0 && current === 0) {
+          return `Se han encontrado ${total} facturas nuevas en Holded`;
+        }
+
+        if (typeof total === 'number' && total > 0 && typeof current === 'number' && current > 0) {
+          return `Escaneando factura ${Math.min(current, total)} de ${total}...`;
+        }
+      }
+
+      return null;
+    };
+
+    if (scanStatusMessage?.text) {
+      return null;
+    }
+
+    if (isHoldedScanInProgress && activeHoldedScanRunId) {
+      const holdedRow = getLatestBufferedNonCredentialStepForRun(activeHoldedScanRunId) as ScanStepRealtimeRow | null;
+      const holdedText = resolveHoldedBufferedText(holdedRow);
+      if (holdedText) {
+        return holdedText;
+      }
+    }
+
+    if (isScanInProgress && activeScanRunId) {
+      const primaryRow = getLatestBufferedNonCredentialStepForRun(activeScanRunId) as ScanStepRealtimeRow | null;
+      const primaryText = resolvePrimaryBufferedText(primaryRow);
+      if (primaryText) {
+        return primaryText;
+      }
+    }
+
+    return null;
+  })();
+
   const statusToneClass =
     scanStatusMessage?.tone === 'success'
       ? 'text-emerald-700'
@@ -2705,6 +2849,7 @@ export function InvoiceScanControls({ onScanned, onProgressUpdate, showHoldedSca
     (loading || holdedLoading || isBootstrapping || isScanInProgress || isHoldedScanInProgress) && !stopStatusSpinner;
   const statusText =
     scanStatusMessage?.text ??
+    bufferedScanStatusText ??
     (isScanInProgress || isHoldedScanInProgress
       ? 'Escaneo en curso...'
       : `Último escaneo exitoso hace ${formatElapsedSince(lastScanAt)}`);
