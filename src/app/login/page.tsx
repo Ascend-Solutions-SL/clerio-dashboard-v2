@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 import { assertEnv } from '@/lib/config';
@@ -34,6 +34,10 @@ const normalizeTitleCase = (value: string) => {
 const normalizeCif = (value: string) => value.trim().toUpperCase();
 
 assertEnv();
+
+const LOGIN_DASHBOARD_MOCK_BASE_WIDTH = 760;
+const LOGIN_DASHBOARD_MOCK_BASE_HEIGHT = (LOGIN_DASHBOARD_MOCK_BASE_WIDTH * 9) / 16;
+const LOGIN_DASHBOARD_MOCK_MAX_SCALE = 1.4;
 
 function LoginForm() {
   const router = useRouter();
@@ -69,6 +73,44 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [emailChecked, setEmailChecked] = useState(false);
   const [showSessionExpiredNotice, setShowSessionExpiredNotice] = useState(false);
+  const dashboardMockScaleHostRef = useRef<HTMLDivElement | null>(null);
+  const [dashboardMockScale, setDashboardMockScale] = useState(1);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const host = dashboardMockScaleHostRef.current;
+    if (!host) {
+      return;
+    }
+
+    const updateScale = () => {
+      const availableWidth = host.clientWidth;
+      if (!availableWidth) {
+        return;
+      }
+
+      const rawScale = availableWidth / LOGIN_DASHBOARD_MOCK_BASE_WIDTH;
+      const nextScale = Math.min(Math.max(rawScale, 1), LOGIN_DASHBOARD_MOCK_MAX_SCALE);
+      setDashboardMockScale((prev) => (Math.abs(prev - nextScale) < 0.01 ? prev : nextScale));
+    };
+
+    updateScale();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateScale();
+    });
+
+    resizeObserver.observe(host);
+    window.addEventListener('resize', updateScale);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateScale);
+    };
+  }, []);
 
   const emailRedirectTo = useMemo(() => {
     if (!ENV.APP_BASE_URL) {
@@ -624,10 +666,22 @@ function LoginForm() {
 
         {/* Dashboard mock (estética Inicio Clerio) */}
         <div className="relative z-10 flex-1 flex items-start justify-center mt-25 px-2">
-          <div className="w-full" style={{ aspectRatio: '16/9' }}>
-            <div className="h-full w-full overflow-hidden rounded-xl border-[4px] border-blue-600 bg-blue-600">
+          <div
+            ref={dashboardMockScaleHostRef}
+            className="w-full flex justify-center"
+            style={{ height: `${LOGIN_DASHBOARD_MOCK_BASE_HEIGHT * dashboardMockScale}px` }}
+          >
+            <div
+              className="overflow-hidden rounded-xl border-[4px] border-blue-600 bg-blue-600 will-change-transform"
+              style={{
+                width: `${LOGIN_DASHBOARD_MOCK_BASE_WIDTH}px`,
+                height: `${LOGIN_DASHBOARD_MOCK_BASE_HEIGHT}px`,
+                transform: `scale(${dashboardMockScale})`,
+                transformOrigin: 'top center',
+              }}
+            >
               <div className="flex h-full">
-                <aside className="w-[18.5%] bg-blue-600 text-white flex flex-col">
+                <aside className="w-[17%] bg-blue-600 text-white flex flex-col">
                   <div className="h-10 px-2 flex items-center border-b border-white/20">
                     <img src="/brand/IMAGO_BLANCO.png" alt="Clerio" className="h-4 w-4 object-contain" />
                     <span className="ml-1.5 text-[10px] font-bold tracking-wide">Clerio</span>
@@ -665,7 +719,7 @@ function LoginForm() {
                   </div>
                 </aside>
 
-                <main className="w-[81.5%] bg-gray-50 px-2.5 pt-2.5 pb-1 overflow-hidden">
+                <main className="w-[83%] bg-gray-50 px-2.5 pt-2.5 pb-1 overflow-hidden">
                   <div className="h-full rounded-lg bg-gray-50">
                     <div className="mb-2">
                       <div className="flex items-start justify-between gap-2">
@@ -683,22 +737,22 @@ function LoginForm() {
                     </div>
 
                     <div className="flex items-center justify-center gap-2 mb-2.5 px-2.5 py-1">
-                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                      <div className="w-[24%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
                         <p className="text-[8px] text-gray-500">Facturas Procesadas</p>
                         <p className="text-[10px] font-semibold text-gray-900 mt-0.5">184</p>
                       </div>
-                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                      <div className="w-[24%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
                         <p className="text-[8px] text-gray-500">Ingresos</p>
                         <p className="text-[10px] font-semibold text-gray-900 mt-0.5">42.680,00€</p>
                       </div>
-                      <div className="w-[26%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
+                      <div className="w-[24%] rounded-xl border border-gray-200 bg-white pl-2.5 pr-1 py-1 h-11">
                         <p className="text-[8px] text-gray-500">Gastos</p>
                         <p className="text-[10px] font-semibold text-gray-900 mt-0.5">19.430,00€</p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-5 gap-2">
-                      <div className="col-span-3 rounded-lg border border-gray-200 bg-white p-2 pb-3">
+                    <div className="grid grid-cols-12 gap-2">
+                      <div className="col-span-7 min-h-[204px] rounded-lg border border-gray-200 bg-white p-2 pb-3">
                         <div className="flex items-center justify-between mb-1">
                           <div>
                             <p className="text-[9px] font-semibold text-gray-800">Datos mensuales</p>
@@ -717,7 +771,7 @@ function LoginForm() {
                           <p className="text-[7px] text-gray-400">2025</p>
                         </div>
 
-                        <div className="relative h-[98px]">
+                        <div className="relative h-[132px]">
                           <div className="absolute left-0 top-0 bottom-4 w-8 flex flex-col justify-between text-[6px] text-gray-400">
                             <span>7.500 €</span>
                             <span>5.000 €</span>
@@ -744,10 +798,10 @@ function LoginForm() {
                         </div>
                       </div>
 
-                      <div className="col-span-2 rounded-lg border border-gray-200 bg-white p-2 pb-3">
-                        <div className="flex items-center justify-between mb-1.5">
+                      <div className="col-span-5 min-h-[204px] rounded-lg border border-gray-200 bg-white p-2 pb-3">
+                        <div className="mb-1.5 flex items-center justify-between pr-1">
                           <p className="text-[9px] font-semibold text-gray-800">ClerIA</p>
-                          <p className="text-[7px] text-blue-600">Abrir</p>
+                          <p className="text-[7px] text-blue-600 text-right">Abrir</p>
                         </div>
                         <div className="space-y-0.5 pr-1">
                           {[
@@ -760,7 +814,7 @@ function LoginForm() {
                             ['Factura de gastos: VAS MOTOR', '29/03/2025'],
                             ['Gastos de agosto 2025', '27/03/2025'],
                           ].map(([title, date]) => (
-                            <div key={`${title}-${date}`} className="flex items-center justify-between gap-1 rounded-md px-1 py-0.5 hover:bg-gray-50">
+                            <div key={`${title}-${date}`} className="flex items-center justify-between gap-1 rounded-md px-1 py-0.5">
                               <span className="text-[6.5px] text-gray-700 truncate">{title}</span>
                               <span className="text-[6px] text-gray-400 shrink-0">{date}</span>
                             </div>
